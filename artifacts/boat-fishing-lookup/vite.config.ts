@@ -27,6 +27,12 @@ if (!basePath) {
   );
 }
 
+// The API server runs as a separate process inside the same Render service,
+// listening on an internal port (see the Start Command). The dev/preview
+// server proxies /api/* to it so the frontend and backend can share the
+// single public PORT Render exposes.
+const backendPort = Number(process.env.BACKEND_PORT ?? 5001);
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -72,10 +78,22 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    proxy: {
+      '/api': {
+        target: `http://localhost:${backendPort}`,
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: `http://localhost:${backendPort}`,
+        changeOrigin: true,
+      },
+    },
   },
 });
