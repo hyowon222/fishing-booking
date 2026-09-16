@@ -24,6 +24,21 @@ const blankForm: FishingSourceInput = {
   enabled: true,
 };
 
+/**
+ * API mutation errors carry the backend's `{ error }` body on `error.data`
+ * (see ApiError in @workspace/api-client-react's custom-fetch). Use that
+ * message when we have one instead of guessing at the cause, since the
+ * backend already distinguishes duplicate URLs (409), validation problems
+ * (400), and unexpected failures (500) with different text.
+ */
+function apiErrorMessage(error: unknown, fallback: string): string {
+  const data = (error as { data?: unknown } | null | undefined)?.data;
+  if (data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string') {
+    return (data as { error: string }).error;
+  }
+  return fallback;
+}
+
 function Field({
   label,
   value,
@@ -194,7 +209,7 @@ function VesselBulkImport({
         setError('');
         onChanged();
       },
-      onError: () => setError('선박 목록을 등록하지 못했습니다.'),
+      onError: (error) => setError(apiErrorMessage(error, '선박 목록을 등록하지 못했습니다.')),
     },
   });
   const clearMutation = useClearFishingSourceVessels({
@@ -203,7 +218,7 @@ function VesselBulkImport({
         setError('');
         onChanged();
       },
-      onError: () => setError('선박 목록을 비우지 못했습니다.'),
+      onError: (error) => setError(apiErrorMessage(error, '선박 목록을 비우지 못했습니다.')),
     },
   });
 
@@ -355,7 +370,8 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
         refreshData();
         closeForm();
       },
-      onError: () => setFormError('예약처를 추가하지 못했습니다. URL이 이미 등록되어 있는지 확인해 주세요.'),
+      onError: (error) =>
+        setFormError(apiErrorMessage(error, '예약처를 추가하지 못했습니다. 잠시 후 다시 시도해 주세요.')),
     },
   });
   const updateMutation = useUpdateFishingSource({
@@ -364,7 +380,8 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
         refreshData();
         closeForm();
       },
-      onError: () => setFormError('예약처를 수정하지 못했습니다. URL이 이미 등록되어 있는지 확인해 주세요.'),
+      onError: (error) =>
+        setFormError(apiErrorMessage(error, '예약처를 수정하지 못했습니다. 잠시 후 다시 시도해 주세요.')),
     },
   });
   const deleteMutation = useDeleteFishingSource({
@@ -454,7 +471,7 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
             <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-16 text-center text-sm text-muted-foreground">등록된 예약처가 없습니다. 항구를 추가해 주세요.</div>
           ) : (
             <div className="space-y-3">
-              {(sources ?? [])?.map((source) => (
+              {sources.map((source) => (
                 <SourceCard
                   key={source.id}
                   source={source}
