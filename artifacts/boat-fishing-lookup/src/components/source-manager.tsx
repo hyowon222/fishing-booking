@@ -16,6 +16,27 @@ import {
   type FishingSourceInput,
 } from '@workspace/api-client-react';
 
+/**
+ * `useListFishingSources().data`는 정상적인 경우 FishingSource[] 배열이어야 하지만,
+ * 백엔드 응답 스펙이 바뀌거나(예: 페이지네이션 envelope로 변경) 에러 바디가 섞여 들어오면
+ * 배열이 아닌 객체가 넘어올 수 있다. 이 경우 `sources.map is not a function`으로 앱이 죽으므로,
+ * 여기서 알려진 래핑 형태들을 방어적으로 풀어주고, 그래도 배열이 아니면 빈 배열로 폴백한다.
+ */
+function toSourceArray(data: unknown): FishingSource[] {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object') {
+    const record = data as Record<string, unknown>;
+    for (const key of ['data', 'items', 'sources', 'results']) {
+      if (Array.isArray(record[key])) return record[key] as FishingSource[];
+    }
+  }
+  if (data !== undefined) {
+    // 예상치 못한 형태가 온 경우 콘솔에 남겨 원인 추적을 돕는다.
+    console.error('useListFishingSources: unexpected data shape', data);
+  }
+  return [];
+}
+
 const blankForm: FishingSourceInput = {
   name: '',
   region: '',
@@ -430,7 +451,7 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
   }
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
-  const sources = sourcesQuery.data ?? [];
+  const sources = toSourceArray(sourcesQuery.data);
 
   return (
     <main className="mx-auto min-h-[calc(100dvh-72px)] max-w-[1080px] px-4 pb-12 pt-8 sm:px-6 lg:px-8">
