@@ -454,7 +454,7 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
             <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-16 text-center text-sm text-muted-foreground">등록된 예약처가 없습니다. 항구를 추가해 주세요.</div>
           ) : (
             <div className="space-y-3">
-              {sources.map((source) => (
+              {sources?.map((source) => (
                 <SourceCard
                   key={source.id}
                   source={source}
