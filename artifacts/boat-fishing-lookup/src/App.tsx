@@ -136,8 +136,8 @@ function FilterColumn({
         </button>
       </div>
       <div className="max-h-32 space-y-0.5 overflow-y-auto pr-1">
-        {values.length ? (
-          values.map((value) => (
+        {values?.length ? (
+          values?.map((value) => (
             <MultiOption
               key={value}
               value={value}
@@ -262,7 +262,7 @@ function SearchForm({
                 data-testid="select-port"
               >
                 <option value="">전체 항구</option>
-                {options?.ports.map((port) => <option value={port} key={port}>{port}</option>)}
+                {options?.ports?.map((port) => <option value={port} key={port}>{port}</option>)}
               </select>
             </div>
             <FilterColumn
@@ -297,7 +297,7 @@ function SearchForm({
                   }`}
                   data-testid="button-tide-all"
                 >전체</button>
-                {(options?.tides ?? []).map((tide) => (
+                {(options?.tides ?? [])?.map((tide) => (
                   <button
                     type="button"
                     key={tide}
@@ -408,7 +408,7 @@ function ScheduleResults({
       <div className="hidden grid-cols-[1.1fr_.9fr_1fr_1.1fr_.85fr_1fr_110px] gap-4 border-b border-border bg-muted/40 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground md:grid">
         <span>출항일</span><span>지역</span><span>선박</span><span>운영사</span><span>장르</span><span>물때</span><span className="text-right">잔여</span>
       </div>
-      {data.items.map((schedule) => <ScheduleRow schedule={schedule} key={schedule.id} />)}
+      {data.items?.map((schedule) => <ScheduleRow schedule={schedule} key={schedule.id} />)}
     </div>
   );
 }
