@@ -62,7 +62,9 @@ export const GetFishingFilterOptionsResponse = zod.object({
   "regions": zod.array(zod.string()),
   "ports": zod.array(zod.string()),
   "ships": zod.array(zod.string()),
-  "tides": zod.array(zod.string())
+  "tides": zod.array(zod.string()),
+  "shipsByPort": zod.record(zod.array(zod.string())),
+  "shipsByRegion": zod.record(zod.array(zod.string()))
 })
 
 

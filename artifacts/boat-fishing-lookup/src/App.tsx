@@ -1,5 +1,7 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ko } from 'date-fns/locale';
+import type { DateRange } from 'react-day-picker';
 import {
   Anchor,
   ArrowUpRight,
@@ -32,6 +34,8 @@ import {
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import SourceManager from '@/components/source-manager';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
@@ -44,6 +48,7 @@ type Criteria = SearchFishingSchedulesParams;
 const pad = (value: number) => String(value).padStart(2, '0');
 const toInputDate = (date: Date) =>
   `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+const parseInputDate = (value: string) => new Date(`${value}T00:00:00`);
 const today = new Date();
 const initialCriteria: Criteria = {
   startDate: toInputDate(today),
@@ -72,23 +77,30 @@ function MultiOption({
   checked,
   onChange,
   testId,
+  disabled,
 }: {
   value: string;
   label: string;
   checked: boolean;
   onChange: (value: string) => void;
   testId: string;
+  disabled?: boolean;
 }) {
   return (
     <label
-      className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
-        checked ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted'
+      className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+        disabled
+          ? 'cursor-not-allowed opacity-50'
+          : checked
+            ? 'cursor-pointer bg-primary/10 text-primary'
+            : 'cursor-pointer text-foreground hover:bg-muted'
       }`}
     >
       <input
         type="checkbox"
         value={value}
         checked={checked}
+        disabled={disabled}
         onChange={() => onChange(value)}
         className="peer sr-only"
         data-testid={testId}
@@ -114,6 +126,8 @@ function FilterColumn({
   onSelectAll,
   emptyText,
   testPrefix,
+  disabled,
+  disabledHint,
 }: {
   title: string;
   values: string[];
@@ -122,20 +136,29 @@ function FilterColumn({
   onSelectAll: () => void;
   emptyText: string;
   testPrefix: string;
+  disabled?: boolean;
+  disabledHint?: string;
 }) {
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs font-bold text-foreground">{title}</span>
+        <span className={`text-xs font-bold ${disabled ? 'text-muted-foreground' : 'text-foreground'}`}>{title}</span>
         <button
           type="button"
-          onClick={onSelectAll}
-          className={`rounded px-1.5 py-0.5 text-[10px] font-bold transition ${selected.length === 0 ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+          onClick={disabled ? undefined : onSelectAll}
+          disabled={disabled}
+          className={`rounded px-1.5 py-0.5 text-[10px] font-bold transition ${
+            disabled
+              ? 'cursor-not-allowed text-muted-foreground/50'
+              : selected.length === 0
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+          }`}
         >
           전체
         </button>
       </div>
-      <div className="max-h-32 space-y-0.5 overflow-y-auto pr-1">
+      <div className={`max-h-32 space-y-0.5 overflow-y-auto pr-1 ${disabled ? 'opacity-70' : ''}`}>
         {values?.length ? (
           values?.map((value) => (
             <MultiOption
@@ -145,10 +168,11 @@ function FilterColumn({
               checked={selected.includes(value)}
               onChange={onToggle}
               testId={`checkbox-${testPrefix}-${value}`}
+              disabled={disabled}
             />
           ))
         ) : (
-          <p className="py-2 text-xs text-muted-foreground">{emptyText}</p>
+          <p className="py-2 text-xs text-muted-foreground">{disabled && disabledHint ? disabledHint : emptyText}</p>
         )}
       </div>
     </div>
@@ -174,7 +198,20 @@ function SearchForm({
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dateError, setDateError] = useState('');
+  const [rangeOpen, setRangeOpen] = useState(false);
+  const [pendingRange, setPendingRange] = useState<DateRange | undefined>({
+    from: parseInputDate(criteria.startDate),
+    to: parseInputDate(criteria.endDate),
+  });
   const selectedRegions = criteria.region ?? [];
+  const selectedShips = criteria.ship ?? [];
+  const portSelected = Boolean(criteria.port);
+  const regionSelected = selectedRegions.length > 0;
+  const shipSelected = selectedShips.length > 0;
+  // 항구를 선택하면 지역이, 지역을 선택하면 항구가 잠깁니다. 선박을 하나라도
+  // 선택하면 두 조건 모두 잠겨서 지금 보고 있는 선박 기준을 벗어나지 않게 합니다.
+  const portDisabled = regionSelected || shipSelected;
+  const regionDisabled = portSelected || shipSelected;
   const resolveShips = (port: string | undefined, regions: string[]) => {
     const portShips = port ? options?.shipsByPort?.[port] ?? [] : options?.ships ?? [];
     if (!regions.length) return portShips;
@@ -186,8 +223,9 @@ function SearchForm({
     const current = criteria[key] ?? [];
     const next = current.includes(value) ? current.filter((item) => item !== value) : [...current, value];
     if (key === 'region') {
-      const ships = resolveShips(criteria.port, next);
-      setCriteria({ ...criteria, region: next, ship: (criteria.ship ?? []).filter((ship) => ships.includes(ship)) });
+      // 지역을 선택하면 항구 조건은 비활성화되므로 값도 함께 비워 둡니다.
+      const ships = resolveShips(undefined, next);
+      setCriteria({ ...criteria, region: next, port: undefined, ship: (criteria.ship ?? []).filter((ship) => ships.includes(ship)) });
       return;
     }
     setCriteria({ ...criteria, ship: next });
@@ -204,6 +242,19 @@ function SearchForm({
   const clearAll = () => {
     setDateError('');
     onReset();
+  };
+  const openRangePicker = (open: boolean) => {
+    if (open) {
+      setPendingRange({ from: parseInputDate(criteria.startDate), to: parseInputDate(criteria.endDate) });
+    }
+    setRangeOpen(open);
+  };
+  const confirmRange = () => {
+    if (!pendingRange?.from) return;
+    const from = pendingRange.from;
+    const to = pendingRange.to ?? from;
+    setCriteria({ ...criteria, startDate: toInputDate(from), endDate: toInputDate(to) });
+    setRangeOpen(false);
   };
 
   return (
@@ -230,40 +281,69 @@ function SearchForm({
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1.25fr_1.25fr_1fr_1fr]">
             <div>
               <FieldLabel icon={CalendarDays}>출항 기간</FieldLabel>
-              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                <input
-                  type="date"
-                  value={criteria.startDate}
-                  onChange={(event) => setCriteria({ ...criteria, startDate: event.target.value })}
-                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  data-testid="input-start-date"
-                />
-                <span className="text-muted-foreground">—</span>
-                <input
-                  type="date"
-                  value={criteria.endDate}
-                  onChange={(event) => setCriteria({ ...criteria, endDate: event.target.value })}
-                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  data-testid="input-end-date"
-                />
-              </div>
+              <Popover open={rangeOpen} onOpenChange={openRangePicker}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+                    data-testid="button-date-range"
+                  >
+                    <span className="truncate">{formatDate(criteria.startDate)} — {formatDate(criteria.endDate)}</span>
+                    <CalendarDays size={15} className="shrink-0 text-muted-foreground" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-auto p-0">
+                  <Calendar
+                    mode="range"
+                    locale={ko}
+                    selected={pendingRange}
+                    onSelect={setPendingRange}
+                    defaultMonth={pendingRange?.from ?? parseInputDate(criteria.startDate)}
+                    numberOfMonths={1}
+                  />
+                  <div className="flex items-center justify-between gap-2 border-t border-border p-3">
+                    <p className="text-xs text-muted-foreground">
+                      {pendingRange?.from
+                        ? `${formatDate(toInputDate(pendingRange.from))} — ${formatDate(toInputDate(pendingRange.to ?? pendingRange.from))}`
+                        : '날짜를 선택하세요'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={confirmRange}
+                      disabled={!pendingRange?.from}
+                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground transition disabled:cursor-not-allowed disabled:opacity-50"
+                      data-testid="button-confirm-date-range"
+                    >
+                      확인
+                    </button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">하루만 이용하시려면 같은 날짜를 두 번 선택한 뒤 확인을 눌러주세요.</p>
               {dateError && <p className="mt-1.5 flex items-center gap-1 text-xs text-destructive"><CircleAlert size={12} />{dateError}</p>}
             </div>
             <div>
               <FieldLabel icon={MapPin}>출항 항구</FieldLabel>
               <select
                 value={criteria.port ?? ''}
+                disabled={portDisabled}
                  onChange={(event) => {
                    const port = event.target.value || undefined;
-                   const ships = resolveShips(port, selectedRegions);
-                   setCriteria({ ...criteria, port, ship: (criteria.ship ?? []).filter((ship) => ships.includes(ship)) });
+                   // 항구를 선택하면 지역 조건은 비활성화되므로 값도 함께 비웁니다.
+                   const ships = resolveShips(port, []);
+                   setCriteria({ ...criteria, port, region: [], ship: (criteria.ship ?? []).filter((ship) => ships.includes(ship)) });
                  }}
-                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
                 data-testid="select-port"
               >
                 <option value="">전체 항구</option>
                 {options?.ports?.map((port) => <option value={port} key={port}>{port}</option>)}
               </select>
+              {portDisabled && (
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  {shipSelected ? '선박 선택을 해제하면 다시 고를 수 있어요.' : '지역 선택을 해제하면 다시 고를 수 있어요.'}
+                </p>
+              )}
             </div>
             <FilterColumn
               title="지역"
@@ -273,6 +353,8 @@ function SearchForm({
                onSelectAll={() => setCriteria({ ...criteria, region: [], ship: (criteria.ship ?? []).filter((ship) => resolveShips(criteria.port, []).includes(ship)) })}
               emptyText={isOptionsLoading ? '목록 불러오는 중' : '사용 가능한 지역 없음'}
               testPrefix="region"
+              disabled={regionDisabled}
+              disabledHint={shipSelected ? '선박 선택을 해제하면 다시 고를 수 있어요.' : '항구 선택을 해제하면 다시 고를 수 있어요.'}
             />
             <FilterColumn
               title="선박"
@@ -375,13 +457,24 @@ function ScheduleResults({
   data,
   isLoading,
   isError,
+  hasSearched,
   onRetry,
 }: {
   data?: { items: FishingSchedule[]; total: number; searchedAt: string; source: string; cachedUntil: string | null; warning: string | null };
   isLoading: boolean;
   isError: boolean;
+  hasSearched: boolean;
   onRetry: () => void;
 }) {
+  if (!hasSearched) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card px-6 py-20 text-center">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Search size={25} /></div>
+        <h3 className="font-bold">검색 조건을 설정해 주세요</h3>
+        <p className="mt-1 max-w-sm text-sm leading-6 text-muted-foreground">기간과 항구·지역·선박 조건을 정한 뒤 '자리 찾기'를 누르면 출항 일정을 조회합니다.</p>
+      </div>
+    );
+  }
   if (isLoading) return <LoadingTable />;
   if (isError) {
     return (
@@ -417,8 +510,12 @@ function Home() {
   const [criteria, setCriteria] = useState<Criteria>(initialCriteria);
   const [appliedParams, setAppliedParams] = useState<Criteria>(initialCriteria);
   const [showSourceManager, setShowSourceManager] = useState(false);
+  // 사이트 진입 시 자동으로 일정을 조회하지 않고, "자리 찾기"를 눌렀을 때만 조회합니다.
+  const [hasSearched, setHasSearched] = useState(false);
   const optionsQuery = useGetFishingFilterOptions({ query: { queryKey: getGetFishingFilterOptionsQueryKey() } });
-  const searchQuery = useSearchFishingSchedules(appliedParams, { query: { queryKey: getSearchFishingSchedulesQueryKey(appliedParams), retry: 1 } });
+  const searchQuery = useSearchFishingSchedules(appliedParams, {
+    query: { queryKey: getSearchFishingSchedulesQueryKey(appliedParams), retry: 1, enabled: hasSearched },
+  });
   const data = searchQuery.data;
   const options = optionsQuery.data;
   const activeFilterCount = (criteria.region?.length ?? 0) + (criteria.ship?.length ?? 0) + (criteria.port ? 1 : 0) + (criteria.tide ? 1 : 0);
@@ -427,10 +524,12 @@ function Home() {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAppliedParams({ ...criteria });
+    setHasSearched(true);
   };
   const reset = () => {
     setCriteria(initialCriteria);
     setAppliedParams(initialCriteria);
+    setHasSearched(false);
   };
 
   return (
@@ -487,7 +586,7 @@ function Home() {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="font-serif text-xl font-bold tracking-tight">출항 일정</h2>
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary" data-testid="text-result-count">{searchQuery.isLoading ? '—' : `${data?.total ?? 0}건`}</span>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary" data-testid="text-result-count">{!hasSearched || searchQuery.isLoading ? '—' : `${data?.total ?? 0}건`}</span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground"><CalendarDays size={12} className="mr-1 inline" />{rangeLabel} · {activeFilterCount ? `필터 ${activeFilterCount}개 적용` : '전체 조건'} </p>
             </div>
@@ -496,7 +595,7 @@ function Home() {
               {data?.cachedUntil && <span className="hidden items-center gap-1.5 sm:flex"><RefreshCw size={12} /> {formatSearchedAt(data.cachedUntil)}까지 캐시</span>}
             </div>
           </div>
-          <ScheduleResults data={data} isLoading={searchQuery.isLoading} isError={searchQuery.isError} onRetry={() => searchQuery.refetch()} />
+          <ScheduleResults data={data} isLoading={hasSearched && searchQuery.isLoading} isError={hasSearched && searchQuery.isError} hasSearched={hasSearched} onRetry={() => searchQuery.refetch()} />
         </section>
       </main>
       )}

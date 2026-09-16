@@ -45,6 +45,8 @@ export interface FishingFilterOptions {
   ports: string[];
   ships: string[];
   tides: string[];
+  shipsByPort: { [key: string]: string[] };
+  shipsByRegion: { [key: string]: string[] };
 }
 
 export interface FishingSource {
