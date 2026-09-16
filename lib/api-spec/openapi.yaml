@@ -1,0 +1,499 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: fishing
+    description: Boat fishing reservation lookup operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /fishing/schedules:
+    get:
+      operationId: searchFishingSchedules
+      tags: [fishing]
+      summary: Search available boat fishing schedules
+      description: Searches the configured public reservation source for sailings matching the requested filters.
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: region
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: port
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: ship
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: tide
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Matching schedules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FishingScheduleSearchResponse"
+        "400":
+          description: Invalid search range or filters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Reservation source unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /fishing/options:
+    get:
+      operationId: getFishingFilterOptions
+      tags: [fishing]
+      summary: Get available fishing filters
+      description: Returns filter values discovered from the configured public reservation source.
+      responses:
+        "200":
+          description: Filter values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FishingFilterOptions"
+        "502":
+          description: Reservation source unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /fishing/sources:
+    get:
+      operationId: listFishingSources
+      tags: [fishing]
+      summary: List configured fishing reservation sources
+      responses:
+        "200":
+          description: Configured sources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FishingSource"
+    post:
+      operationId: createFishingSource
+      tags: [fishing]
+      summary: Add a fishing reservation source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FishingSourceInput"
+      responses:
+        "201":
+          description: Created source
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FishingSource"
+        "400":
+          description: Invalid source
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Source already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /fishing/sources/{id}:
+    patch:
+      operationId: updateFishingSource
+      tags: [fishing]
+      summary: Update a fishing reservation source
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FishingSourceInput"
+      responses:
+        "200":
+          description: Updated source
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FishingSource"
+        "400":
+          description: Invalid source
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Source already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteFishingSource
+      tags: [fishing]
+      summary: Delete a fishing reservation source
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /fishing/sources/{id}/vessels:
+    post:
+      operationId: addFishingSourceVessels
+      tags: [fishing]
+      summary: Add vessels to a fishing reservation source
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FishingSourceVesselsInput"
+      responses:
+        "200":
+          description: Updated source with vessels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FishingSource"
+        "400":
+          description: Invalid vessels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: clearFishingSourceVessels
+      tags: [fishing]
+      summary: Clear manually registered vessels for a source
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Cleared
+        "404":
+          description: Source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    FishingSchedule:
+      type: object
+      required:
+        - id
+        - departureDate
+        - weekday
+        - region
+        - port
+        - tide
+        - genre
+        - operator
+        - vessel
+        - remainingSeats
+        - operatorUrl
+        - bookingUrl
+        - source
+      properties:
+        id:
+          type: string
+        departureDate:
+          type: string
+          format: date
+        weekday:
+          type: string
+        region:
+          type: string
+        port:
+          type: string
+        tide:
+          type: string
+        genre:
+          type: string
+        operator:
+          type: string
+        vessel:
+          type: string
+        remainingSeats:
+          type: ["integer", "null"]
+        operatorUrl:
+          type: ["string", "null"]
+          format: uri
+        bookingUrl:
+          type: ["string", "null"]
+          format: uri
+        source:
+          type: string
+    FishingScheduleSearchResponse:
+      type: object
+      required:
+        - items
+        - total
+        - searchedAt
+        - source
+        - cachedUntil
+        - warning
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FishingSchedule"
+        total:
+          type: integer
+        searchedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+          description: URL for one source, or a label when multiple sources are configured
+        cachedUntil:
+          type: ["string", "null"]
+          format: date-time
+        warning:
+          type: ["string", "null"]
+    FishingFilterOptions:
+      type: object
+      required:
+        - regions
+        - ports
+        - ships
+        - tides
+        - shipsByPort
+        - shipsByRegion
+      properties:
+        regions:
+          type: array
+          items:
+            type: string
+        ports:
+          type: array
+          items:
+            type: string
+        ships:
+          type: array
+          items:
+            type: string
+        tides:
+          type: array
+          items:
+            type: string
+        shipsByPort:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        shipsByRegion:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+    FishingSource:
+      type: object
+      required:
+        - id
+        - name
+        - region
+        - port
+        - sourceUrl
+        - enabled
+        - createdAt
+        - updatedAt
+        - vessels
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        region:
+          type: string
+        port:
+          type: string
+        sourceUrl:
+          type: string
+          format: uri
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        vessels:
+          type: array
+          items:
+            $ref: "#/components/schemas/FishingSourceVessel"
+    FishingSourceVessel:
+      type: object
+      required:
+        - id
+        - name
+        - departurePort
+        - address
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        departurePort:
+          type: string
+        address:
+          type: string
+    FishingSourceVesselsInput:
+      type: object
+      required:
+        - vessels
+      properties:
+        vessels:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/FishingSourceVesselInput"
+    FishingSourceVesselInput:
+      type: object
+      required:
+        - name
+        - departurePort
+        - address
+      properties:
+        name:
+          type: string
+          minLength: 1
+        departurePort:
+          type: string
+        address:
+          type: string
+    FishingSourceInput:
+      type: object
+      required:
+        - name
+        - region
+        - port
+        - sourceUrl
+      properties:
+        name:
+          type: string
+          minLength: 1
+        region:
+          type: string
+          minLength: 1
+        port:
+          type: string
+          minLength: 1
+        sourceUrl:
+          type: string
+          format: uri
+        enabled:
+          type: boolean
+          default: true
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+

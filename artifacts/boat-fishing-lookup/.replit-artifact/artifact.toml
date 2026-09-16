@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Boat Fishing Reservation Lookup"
+description = "A Korean boat-fishing reservation lookup that searches available sailings by date, region, port, vessel, and tide, then links through to live reservation pages."
+version = "1.0.0"
+id = "artifacts/boat-fishing-lookup"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23251
+
+[services.development]
+run = "pnpm --filter @workspace/boat-fishing-lookup run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/boat-fishing-lookup", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/boat-fishing-lookup/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23251"
+BASE_PATH = "/"

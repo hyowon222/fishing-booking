@@ -1,0 +1,2 @@
+- [Fishing date contract](fishing-date-contract.md) — generated date responses arrive as ISO timestamps; normalize them before display.
+- [Fishing source lifecycle](fishing-source-lifecycle.md) — user-managed sources are seeded as setup data, never silently recreated after deletion.
