@@ -51,14 +51,18 @@ const toInputDate = (date: Date) =>
 const parseInputDate = (value: string) => new Date(`${value}T00:00:00`);
 const today = new Date();
 const initialCriteria: Criteria = {
-  startDate: toInputDate(today),
-  endDate: toInputDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 13)),
+  startDate: '',
+  endDate: '',
 };
 
-const formatDate = (value: string) =>
-  new Intl.DateTimeFormat('ko-KR', { month: 'short', day: 'numeric' }).format(
+const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+
+const formatDate = (value: string) => {
+  if (!value) return '';
+  return new Intl.DateTimeFormat('ko-KR', { month: 'short', day: 'numeric' }).format(
     new Date(value.includes('T') ? value : `${value}T00:00:00`),
   );
+};
 const formatSearchedAt = (value?: string) =>
   value ? new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value)) : '—';
 
@@ -128,6 +132,7 @@ function FilterColumn({
   testPrefix,
   disabled,
   disabledHint,
+  layout = 'list',
 }: {
   title: string;
   values: string[];
@@ -138,6 +143,7 @@ function FilterColumn({
   testPrefix: string;
   disabled?: boolean;
   disabledHint?: string;
+  layout?: 'list' | 'grid';
 }) {
   return (
     <div>
@@ -158,7 +164,11 @@ function FilterColumn({
           전체
         </button>
       </div>
-      <div className={`max-h-32 space-y-0.5 overflow-y-auto pr-1 ${disabled ? 'opacity-70' : ''}`}>
+      <div
+        className={`max-h-40 overflow-y-auto pr-1 ${disabled ? 'opacity-70' : ''} ${
+          layout === 'grid' ? 'grid grid-cols-2 gap-x-1 gap-y-0.5 sm:grid-cols-3' : 'space-y-0.5'
+        }`}
+      >
         {values?.length ? (
           values?.map((value) => (
             <MultiOption
@@ -187,6 +197,8 @@ function SearchForm({
   onSubmit,
   onReset,
   isFetching,
+  weekdays,
+  setWeekdays,
 }: {
   criteria: Criteria;
   setCriteria: (next: Criteria) => void;
@@ -195,14 +207,17 @@ function SearchForm({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onReset: () => void;
   isFetching: boolean;
+  weekdays: number[];
+  setWeekdays: (next: number[]) => void;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dateError, setDateError] = useState('');
   const [rangeOpen, setRangeOpen] = useState(false);
-  const [pendingRange, setPendingRange] = useState<DateRange | undefined>({
-    from: parseInputDate(criteria.startDate),
-    to: parseInputDate(criteria.endDate),
-  });
+  const [pendingRange, setPendingRange] = useState<DateRange | undefined>(
+    criteria.startDate && criteria.endDate
+      ? { from: parseInputDate(criteria.startDate), to: parseInputDate(criteria.endDate) }
+      : undefined,
+  );
   const selectedRegions = criteria.region ?? [];
   const selectedShips = criteria.ship ?? [];
   const portSelected = Boolean(criteria.port);
@@ -232,6 +247,10 @@ function SearchForm({
   };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!criteria.startDate || !criteria.endDate) {
+      setDateError('출항 기간을 선택해 주세요.');
+      return;
+    }
     if (criteria.startDate > criteria.endDate) {
       setDateError('출항 시작일은 종료일보다 빠르거나 같아야 합니다.');
       return;
@@ -239,13 +258,24 @@ function SearchForm({
     setDateError('');
     onSubmit(event);
   };
+  const toggleWeekday = (day: number) => {
+    setWeekdays(weekdays.includes(day) ? weekdays.filter((item) => item !== day) : [...weekdays, day].sort());
+  };
   const clearAll = () => {
     setDateError('');
+    setPendingRange(undefined);
+    setWeekdays([]);
     onReset();
   };
   const openRangePicker = (open: boolean) => {
     if (open) {
-      setPendingRange({ from: parseInputDate(criteria.startDate), to: parseInputDate(criteria.endDate) });
+      // 열 때마다 이전에 확정한 기간을 그대로 보여주되, 아직 아무 기간도
+      // 고르지 않았다면(기본값 없음) 빈 상태로 열어서 직접 시작일부터 고르게 한다.
+      setPendingRange(
+        criteria.startDate && criteria.endDate
+          ? { from: parseInputDate(criteria.startDate), to: parseInputDate(criteria.endDate) }
+          : undefined,
+      );
     }
     setRangeOpen(open);
   };
@@ -288,7 +318,13 @@ function SearchForm({
                     className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
                     data-testid="button-date-range"
                   >
-                    <span className="truncate">{formatDate(criteria.startDate)} — {formatDate(criteria.endDate)}</span>
+                    <span className="truncate">
+                      {criteria.startDate && criteria.endDate ? (
+                        `${formatDate(criteria.startDate)} — ${formatDate(criteria.endDate)}`
+                      ) : (
+                        <span className="text-muted-foreground">출항 기간을 선택해 주세요</span>
+                      )}
+                    </span>
                     <CalendarDays size={15} className="shrink-0 text-muted-foreground" />
                   </button>
                 </PopoverTrigger>
@@ -298,7 +334,7 @@ function SearchForm({
                     locale={ko}
                     selected={pendingRange}
                     onSelect={setPendingRange}
-                    defaultMonth={pendingRange?.from ?? parseInputDate(criteria.startDate)}
+                    defaultMonth={pendingRange?.from ?? today}
                     numberOfMonths={1}
                   />
                   <div className="flex items-center justify-between gap-2 border-t border-border p-3">
@@ -355,6 +391,7 @@ function SearchForm({
               testPrefix="region"
               disabled={regionDisabled}
               disabledHint={shipSelected ? '선박 선택을 해제하면 다시 고를 수 있어요.' : '항구 선택을 해제하면 다시 고를 수 있어요.'}
+              layout="grid"
             />
             <FilterColumn
               title="선박"
@@ -365,6 +402,38 @@ function SearchForm({
               emptyText={isOptionsLoading ? '목록 불러오는 중' : '사용 가능한 선박 없음'}
               testPrefix="ship"
             />
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <FieldLabel icon={CalendarDays}>요일</FieldLabel>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setWeekdays([])}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  weekdays.length === 0 ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background hover:border-primary/50'
+                }`}
+                data-testid="button-weekday-all"
+              >전체</button>
+              {WEEKDAY_LABELS.map((label, day) => (
+                <button
+                  type="button"
+                  key={label}
+                  onClick={() => toggleWeekday(day)}
+                  className={`h-8 w-8 rounded-full border text-xs font-bold transition ${
+                    weekdays.includes(day)
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : day === 0
+                        ? 'border-input bg-background text-destructive hover:border-primary/50'
+                        : day === 6
+                          ? 'border-input bg-background text-[hsl(210_70%_45%)] hover:border-primary/50'
+                          : 'border-input bg-background hover:border-primary/50'
+                  }`}
+                  data-testid={`button-weekday-${day}`}
+                >{label}</button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">기간을 넓게 잡고 특정 요일만 골라 잔여석을 확인할 수 있어요.</p>
           </div>
 
           <div className="flex flex-col gap-4 border-t border-border pt-4 sm:flex-row sm:items-end sm:justify-between">
@@ -509,6 +578,8 @@ function ScheduleResults({
 function Home() {
   const [criteria, setCriteria] = useState<Criteria>(initialCriteria);
   const [appliedParams, setAppliedParams] = useState<Criteria>(initialCriteria);
+  const [weekdays, setWeekdays] = useState<number[]>([]);
+  const [appliedWeekdays, setAppliedWeekdays] = useState<number[]>([]);
   const [showSourceManager, setShowSourceManager] = useState(false);
   // 사이트 진입 시 자동으로 일정을 조회하지 않고, "자리 찾기"를 눌렀을 때만 조회합니다.
   const [hasSearched, setHasSearched] = useState(false);
@@ -516,19 +587,33 @@ function Home() {
   const searchQuery = useSearchFishingSchedules(appliedParams, {
     query: { queryKey: getSearchFishingSchedulesQueryKey(appliedParams), retry: 1, enabled: hasSearched },
   });
-  const data = searchQuery.data;
   const options = optionsQuery.data;
-  const activeFilterCount = (criteria.region?.length ?? 0) + (criteria.ship?.length ?? 0) + (criteria.port ? 1 : 0) + (criteria.tide ? 1 : 0);
-  const rangeLabel = useMemo(() => `${formatDate(appliedParams.startDate)} — ${formatDate(appliedParams.endDate)}`, [appliedParams.endDate, appliedParams.startDate]);
+  // 요일 필터는 서버에 보내지 않고, 이미 받아온 기간 전체 결과에서 화면에
+  // 표시하기 직전에만 걸러낸다 (기간을 넓게 잡고 특정 요일만 보고 싶을 때 사용).
+  const data = useMemo(() => {
+    const raw = searchQuery.data;
+    if (!raw || appliedWeekdays.length === 0) return raw;
+    const items = raw.items.filter((item) => appliedWeekdays.includes(new Date(`${item.departureDate}T00:00:00`).getDay()));
+    return { ...raw, items, total: items.length };
+  }, [searchQuery.data, appliedWeekdays]);
+  const activeFilterCount =
+    (criteria.region?.length ?? 0) + (criteria.ship?.length ?? 0) + (criteria.port ? 1 : 0) + (criteria.tide ? 1 : 0) + (weekdays.length ? 1 : 0);
+  const rangeLabel = useMemo(
+    () => (appliedParams.startDate && appliedParams.endDate ? `${formatDate(appliedParams.startDate)} — ${formatDate(appliedParams.endDate)}` : '기간 미선택'),
+    [appliedParams.endDate, appliedParams.startDate],
+  );
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAppliedParams({ ...criteria });
+    setAppliedWeekdays(weekdays);
     setHasSearched(true);
   };
   const reset = () => {
     setCriteria(initialCriteria);
     setAppliedParams(initialCriteria);
+    setWeekdays([]);
+    setAppliedWeekdays([]);
     setHasSearched(false);
   };
 
@@ -579,7 +664,7 @@ function Home() {
           </div>
         </section>
 
-        <SearchForm criteria={criteria} setCriteria={setCriteria} options={options} isOptionsLoading={optionsQuery.isLoading} onSubmit={submit} onReset={reset} isFetching={searchQuery.isFetching} />
+        <SearchForm criteria={criteria} setCriteria={setCriteria} options={options} isOptionsLoading={optionsQuery.isLoading} onSubmit={submit} onReset={reset} isFetching={searchQuery.isFetching} weekdays={weekdays} setWeekdays={setWeekdays} />
 
         <section className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 lg:px-8">
           <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">

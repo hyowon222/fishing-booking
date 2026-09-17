@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { ArrowLeft, Check, FileSpreadsheet, Pencil, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { ArrowLeft, Check, Download, FileSpreadsheet, Pencil, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
 import {
@@ -208,6 +208,64 @@ function downloadVesselTemplate() {
   const link = document.createElement('a');
   link.href = url;
   link.download = '선박정보_업로드_양식.csv';
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * 등록된 예약처(및 각 예약처에 딸린 선박) 목록을 내려받기용 표 형태로 변환한다.
+ * 선박이 없는 예약처도 한 줄은 남겨서 누락 없이 보이게 한다.
+ */
+function buildSourceExportRows(sources: FishingSource[]): string[][] {
+  const header = ['예약처 이름', '지역', '출항 항구', '예약처 URL', '사용 여부', '선박명', '선박 출항지', '선박 주소'];
+  const rows: string[][] = [header];
+  for (const source of sources) {
+    const base = [source.name, source.region, source.port, source.sourceUrl, source.enabled ? '사용' : '중지'];
+    if (source.vessels.length === 0) {
+      rows.push([...base, '', '', '']);
+      continue;
+    }
+    for (const vessel of source.vessels) {
+      rows.push([...base, vessel.name, vessel.departurePort || source.port, vessel.address ?? '']);
+    }
+  }
+  return rows;
+}
+
+function todayStamp(): string {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+}
+
+function escapeCsvCell(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function downloadSourcesAsExcel(sources: FishingSource[]) {
+  const rows = buildSourceExportRows(sources);
+  const worksheet = XLSX.utils.aoa_to_sheet(rows);
+  worksheet['!cols'] = [{ wch: 16 }, { wch: 8 }, { wch: 12 }, { wch: 32 }, { wch: 8 }, { wch: 14 }, { wch: 12 }, { wch: 28 }];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, '예약처 목록');
+  const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `예약처_목록_${todayStamp()}.xlsx`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadSourcesAsText(sources: FishingSource[]) {
+  const rows = buildSourceExportRows(sources);
+  const text = `\uFEFF${rows.map((row) => row.map(escapeCsvCell).join(',')).join('\n')}\n`;
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `예약처_목록_${todayStamp()}.txt`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -482,9 +540,31 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)]">
         <section>
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-bold">등록된 예약처 <span className="ml-1 text-primary">{sources.length}</span></h2>
-            {sourcesQuery.isLoading && <span className="text-xs text-muted-foreground">불러오는 중</span>}
+            <div className="flex items-center gap-3">
+              {sourcesQuery.isLoading && <span className="text-xs text-muted-foreground">불러오는 중</span>}
+              {sources.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => downloadSourcesAsExcel(sources)}
+                    className="flex items-center gap-1 rounded-lg border border-input px-2.5 py-1.5 text-xs font-bold text-muted-foreground transition hover:border-primary hover:text-primary"
+                    data-testid="button-download-sources-excel"
+                  >
+                    <Download size={13} /> 엑셀 다운로드
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadSourcesAsText(sources)}
+                    className="flex items-center gap-1 rounded-lg border border-input px-2.5 py-1.5 text-xs font-bold text-muted-foreground transition hover:border-primary hover:text-primary"
+                    data-testid="button-download-sources-txt"
+                  >
+                    <Download size={13} /> TXT 다운로드
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           {sourcesQuery.isError ? (
             <div className="rounded-2xl border border-destructive/25 bg-card p-6 text-sm text-destructive">예약처 목록을 불러오지 못했습니다.</div>
