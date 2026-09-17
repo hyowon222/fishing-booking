@@ -231,10 +231,118 @@ async function fetchMonth(
   return sourceItems;
 }
 
+// ---------------------------------------------------------------------------
+// SUNSANG24 플랫폼 (예: metafishingclub.sunsang24.com, daebak.sunsang24.com)
+//
+// 더피싱과 달리 캘린더 달 페이지(/ship/schedule_fleet/{yyyymm})가 서버에서
+// 완전히 렌더링된 정적 HTML로 내려온다. 세션 쿠키나 AJAX 재요청이 필요 없고,
+// 날짜별 <table class="shipsinfo_daywarp"> 블록 안에 선박별 "남은자리" 텍스트가
+// 그대로 박혀 있다. 예약이 마감된 날은 "남은자리" 대신
+// <span class="shipping_status" data-status_code="END">예약마감</span> 이 온다.
+// ---------------------------------------------------------------------------
+
+const WEEKDAY_KO = ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"];
+
+function isSunsang24(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname.endsWith("sunsang24.com");
+  } catch {
+    return false;
+  }
+}
+
+function parseSunsangDayBlock(
+  $: cheerio.CheerioAPI,
+  dayTable: cheerio.Cheerio<any>,
+  config: SourceConfig,
+): FishingSchedule[] {
+  const idMatch = (dayTable.attr("id") || "").match(/^d(\d{4}-\d{2}-\d{2})$/);
+  const departureDate = idMatch?.[1];
+  if (!departureDate) return [];
+
+  const weekday = WEEKDAY_KO[new Date(`${departureDate}T00:00:00Z`).getUTCDay()];
+  const tide = cleanText(dayTable.find(".date_info2").first().text()) || "미정";
+
+  const items: FishingSchedule[] = [];
+  dayTable.find(".ship_unit").each((_index, element) => {
+    const unit = $(element);
+    const vessel = cleanText(unit.find(".ship_info .title").first().text());
+    if (!vessel) return;
+
+    const remainCell = unit.find(".ship_info2 .remain").first();
+    const isClosed = remainCell.find(".shipping_status").attr("data-status_code") === "END";
+    let remainingSeats: number | null = null;
+    if (isClosed) {
+      remainingSeats = 0;
+    } else {
+      const numberText = cleanText(remainCell.find(".number").first().text());
+      const match = numberText.match(/(\d+)/);
+      remainingSeats = match ? Number(match[1]) : null;
+    }
+    if (remainingSeats === null || remainingSeats <= 0) return;
+
+    const genre = cleanText(unit.find("#fish").first().text()) || "선상 낚시";
+    const scheduleNo = unit.find("[data-schedule_no]").first().attr("data-schedule_no") || "";
+    const monthPath = departureDate.slice(0, 4) + departureDate.slice(5, 7);
+    const bookingUrl = `${config.baseUrl}/ship/schedule_fleet/${monthPath}`;
+    const id = `${departureDate}-${vessel}-${scheduleNo || "schedule"}`
+      .replace(/[^0-9A-Za-z가-힣-]+/g, "-")
+      .toLowerCase();
+
+    items.push({
+      id,
+      departureDate,
+      weekday,
+      region: config.region,
+      port: config.port,
+      tide,
+      genre,
+      operator: cleanText(config.name),
+      vessel,
+      remainingSeats,
+      operatorUrl: config.baseUrl,
+      bookingUrl,
+      source: bookingUrl,
+    });
+  });
+
+  return items;
+}
+
+async function fetchSunsangMonth(year: number, month: number, config: SourceConfig): Promise<FishingSchedule[]> {
+  const monthValue = `${year}${String(month).padStart(2, "0")}`;
+  const url = new URL(`/ship/schedule_fleet/${monthValue}`, config.baseUrl);
+
+  const response = await fetch(url, {
+    headers: browserHeaders(config.baseUrl),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.`);
+  }
+
+  const html = await response.text();
+  const $ = cheerio.load(html);
+  const sourceItems: FishingSchedule[] = [];
+  $(".shipsinfo_daywarp").each((_index, element) => {
+    sourceItems.push(...parseSunsangDayBlock($, $(element), config));
+  });
+  return sourceItems;
+}
+
 async function fetchSourceMonths(
   months: Array<{ year: number; month: number }>,
   config: SourceConfig,
 ): Promise<FishingSchedule[]> {
+  if (isSunsang24(config.baseUrl)) {
+    const items: FishingSchedule[] = [];
+    for (const { year, month } of months) {
+      items.push(...(await fetchSunsangMonth(year, month, config)));
+      await sleep(300);
+    }
+    return items;
+  }
+
   const session = await establishSession(config);
   const items: FishingSchedule[] = [];
   for (const { year, month } of months) {
