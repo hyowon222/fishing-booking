@@ -322,12 +322,27 @@ export async function getSchedules(startDate: string, endDate: string): Promise<
   return { items, sources, failedSources };
 }
 
+// 실제로 한 번이라도 스크래핑에서 관측된 물때 표기(예: "7물", "조금", "무시")를
+// 서버가 계속 기억해둔다. 물때는 그 날짜에 고유하게 정해지는 값이라 매번 다시
+// 긁어올 필요가 없는데, 사이트마다 표기(1~13물 vs 1~15물, 조금/무시 위치 등)가
+// 조금씩 달라서 임의로 목록을 하드코딩하기보다는 실제 관측치를 누적하는 편이
+// 더 정확하다. 이렇게 하면 이후 조회가 느리거나 실패해도 필터 목록은 비지 않는다.
+const knownTides = new Set<string>();
+// 서버가 막 재시작돼서 아직 아무것도 관측 못 했을 때를 위한 초기값(그동안
+// 실제로 확인된 표기 기준). 실제 스크래핑 결과가 들어오면 자동으로 더
+// 정확한 값으로 채워지고 넓어진다 — 이건 그냥 첫 요청부터 비어보이지
+// 않게 하기 위한 임시 출발점일 뿐이다.
+["1물", "2물", "3물", "4물", "5물", "6물", "7물", "8물", "9물", "10물", "11물", "12물", "13물", "조금", "무시"].forEach(
+  (tide) => knownTides.add(tide),
+);
+
 export function getFilterOptions(
   items: FishingSchedule[],
   sources: Array<Pick<SourceConfig, "region" | "port" | "vessels">> = [],
 ): FishingFilterOptions {
-  const values = (selector: (item: FishingSchedule) => string) =>
-    [...new Set(items.map(selector).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
+  for (const item of items) {
+    if (item.tide) knownTides.add(item.tide);
+  }
   const sourceValues = (selector: (source: SourceConfig) => string) =>
     sources.map(selector).filter(Boolean);
   const shipsByPort = new Map<string, Set<string>>();
@@ -354,7 +369,7 @@ export function getFilterOptions(
     regions: [...new Set([...items.map((item) => item.region), ...sourceValues((source) => source.region)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
     ports: [...new Set([...items.map((item) => item.port), ...sourceValues((source) => source.port)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
     ships: [...new Set([...items.map((item) => item.vessel), ...sources.flatMap((source) => source.vessels)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
-    tides: values((item) => item.tide),
+    tides: [...new Set([...items.map((item) => item.tide), ...knownTides])].filter(Boolean).sort((a, b) => a.localeCompare(b, "ko")),
     shipsByPort: serializeMap(shipsByPort),
     shipsByRegion: serializeMap(shipsByRegion),
   };
