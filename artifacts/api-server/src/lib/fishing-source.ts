@@ -136,9 +136,17 @@ function parseSeatCount(value: string): number | null {
 
 function parseDateFromDayBlock(id: string, text: string): string | null {
   const idMatch = id.match(/new-div-(\d{8})/);
-  const dateValue = idMatch?.[1] ?? text.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/)?.slice(1).join("");
-  if (!dateValue || dateValue.length !== 8) return null;
-  return `${dateValue.slice(0, 4)}-${dateValue.slice(4, 6)}-${dateValue.slice(6, 8)}`;
+  if (idMatch?.[1]) {
+    const digits = idMatch[1];
+    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  }
+  // "9월 3일"처럼 월/일이 0으로 채워지지 않은 경우도 있으므로, 각 자리를
+  // 직접 2자리로 맞춰서 파싱한다 (이전에는 join()한 문자열 길이가 8이 아니면
+  // 통째로 버려서 그런 날짜의 데이터가 조용히 누락됐다).
+  const textMatch = text.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
+  if (!textMatch) return null;
+  const [, year, month, day] = textMatch;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
 function extractBookingUrl(onclick: string, baseUrl: string): string | null {

@@ -41,7 +41,18 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 
-const queryClient = new QueryClient();
+// 기본값(refetchOnWindowFocus 등)을 그대로 두면 탭에 포커스가 돌아올 때마다
+// 조용히 모든 예약처를 다시 조회한다. "자리 찾기"를 직접 눌렀을 때만 조회되도록
+// 자동 재조회를 모두 끈다.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+    },
+  },
+});
 
 type Criteria = SearchFishingSchedulesParams;
 
@@ -56,6 +67,9 @@ const initialCriteria: Criteria = {
 };
 
 const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+// getDay()와 동일한 인덱스(0=일요일)로, 백엔드가 원문 사이트에서 파싱해 주는
+// weekday 필드("일요일"~"토요일")와 그대로 비교하기 위한 매핑.
+const WEEKDAY_FULL_LABELS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
 
 const formatDate = (value: string) => {
   if (!value) return '';
@@ -606,10 +620,14 @@ function Home() {
   const options = optionsQuery.data;
   // 요일 필터는 서버에 보내지 않고, 이미 받아온 기간 전체 결과에서 화면에
   // 표시하기 직전에만 걸러낸다 (기간을 넓게 잡고 특정 요일만 보고 싶을 때 사용).
+  // item.departureDate를 브라우저에서 다시 Date로 파싱해 getDay()를 구하면
+  // 브라우저 시간대/파싱 방식에 따라 어긋날 수 있으므로, 백엔드가 원문 사이트에서
+  // 직접 읽어온 정확한 요일 텍스트(item.weekday, 예: "토요일")로 비교한다.
   const data = useMemo(() => {
     const raw = searchQuery.data;
     if (!raw || appliedWeekdays.length === 0) return raw;
-    const items = raw.items.filter((item) => appliedWeekdays.includes(new Date(`${item.departureDate}T00:00:00`).getDay()));
+    const selectedLabels = new Set(appliedWeekdays.map((day) => WEEKDAY_FULL_LABELS[day]));
+    const items = raw.items.filter((item) => selectedLabels.has(item.weekday));
     return { ...raw, items, total: items.length };
   }, [searchQuery.data, appliedWeekdays]);
   const activeFilterCount =
