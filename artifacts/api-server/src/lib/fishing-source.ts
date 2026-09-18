@@ -123,10 +123,22 @@ export async function listConfiguredSources(): Promise<FishingSourceWithVessels[
 
 export function clearSourceCache(): void {
   monthCache.clear();
+  // 물때 어휘는 날짜에 따른 보편적인 값이라 예약처 설정과 무관하게 계속 유지한다.
+  // 반면 선박-항구/지역 매핑은 예약처의 항구·지역 설정이 바뀌면 낡은 값이 될 수
+  // 있으므로, 예약처가 추가/수정/삭제되거나 수동으로 새로고침할 때 같이 비운다.
+  knownShips.clear();
+  knownShipsByPort.clear();
+  knownShipsByRegion.clear();
 }
 
 function cleanText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+// "OO호좌대", "몇번좌대"처럼 이름에 "좌대"가 들어간 항목은 배가 아니라
+// 고정된 좌대낚시 자리라 이 앱(선상 예약)과는 성격이 달라 결과에서 제외한다.
+function isExcludedVessel(vessel: string): boolean {
+  return vessel.includes("좌대");
 }
 
 function parseSeatCount(value: string): number | null {
@@ -177,7 +189,7 @@ function parseDayBlock(
     const vessel = cleanText(cells.eq(0).find("span").first().text() || cells.eq(0).text());
     const seatAlt = cells.eq(2).find("img").first().attr("alt") || "";
     const remainingSeats = parseSeatCount(seatAlt);
-    if (!vessel || remainingSeats === null || remainingSeats <= 0) return;
+    if (!vessel || isExcludedVessel(vessel) || remainingSeats === null || remainingSeats <= 0) return;
 
     const genre = cleanText(
       cells.eq(1).find('img[alt="낚시종류"]').closest("tr").find("td").last().text() ||
@@ -245,6 +257,109 @@ async function fetchMonth(year: number, month: number, config: SourceConfig): Pr
   return sourceItems;
 }
 
+// ---------------------------------------------------------------------------
+// SUNSANG24 플랫폼 (예: metafishingclub.sunsang24.com, daebak.sunsang24.com)
+//
+// 더피싱과 달리 캘린더 달 페이지(/ship/schedule_fleet/{yyyymm})가 서버에서
+// 완전히 렌더링된 정적 HTML로 내려온다. 세션 쿠키나 AJAX 재요청이 필요 없고,
+// 날짜별 <table class="shipsinfo_daywarp"> 블록 안에 선박별 "남은자리" 텍스트가
+// 그대로 박혀 있다. 예약이 마감된 날은 "남은자리" 대신
+// <span class="shipping_status" data-status_code="END">예약마감</span> 이 온다.
+// ---------------------------------------------------------------------------
+
+const WEEKDAY_KO = ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"];
+
+function isSunsang24(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname.endsWith("sunsang24.com");
+  } catch {
+    return false;
+  }
+}
+
+function parseSunsangDayBlock(
+  $: cheerio.CheerioAPI,
+  dayTable: cheerio.Cheerio<any>,
+  config: SourceConfig,
+): FishingSchedule[] {
+  const idMatch = (dayTable.attr("id") || "").match(/^d(\d{4}-\d{2}-\d{2})$/);
+  const departureDate = idMatch?.[1];
+  if (!departureDate) return [];
+
+  const weekday = WEEKDAY_KO[new Date(`${departureDate}T00:00:00Z`).getUTCDay()];
+  const tide = cleanText(dayTable.find(".date_info2").first().text()) || "미정";
+
+  const items: FishingSchedule[] = [];
+  dayTable.find(".ship_unit").each((_index, element) => {
+    const unit = $(element);
+    const vessel = cleanText(unit.find(".ship_info .title").first().text());
+    if (!vessel || isExcludedVessel(vessel)) return;
+
+    const remainCell = unit.find(".ship_info2 .remain").first();
+    const isClosed = remainCell.find(".shipping_status").attr("data-status_code") === "END";
+    let remainingSeats: number | null = null;
+    if (isClosed) {
+      remainingSeats = 0;
+    } else {
+      const numberText = cleanText(remainCell.find(".number").first().text());
+      const match = numberText.match(/(\d+)/);
+      remainingSeats = match ? Number(match[1]) : null;
+    }
+    if (remainingSeats === null || remainingSeats <= 0) return;
+
+    const genre = cleanText(unit.find("#fish").first().text()) || "선상 낚시";
+    const scheduleNo = unit.find("[data-schedule_no]").first().attr("data-schedule_no") || "";
+    const monthPath = departureDate.slice(0, 4) + departureDate.slice(5, 7);
+    const bookingUrl = `${config.baseUrl}/ship/schedule_fleet/${monthPath}`;
+    const id = `${departureDate}-${vessel}-${scheduleNo || "schedule"}`
+      .replace(/[^0-9A-Za-z가-힣-]+/g, "-")
+      .toLowerCase();
+
+    items.push({
+      id,
+      departureDate,
+      weekday,
+      region: config.region,
+      port: config.port,
+      tide,
+      genre,
+      operator: cleanText(config.name),
+      vessel,
+      remainingSeats,
+      operatorUrl: config.baseUrl,
+      bookingUrl,
+      source: bookingUrl,
+    });
+  });
+
+  return items;
+}
+
+async function fetchSunsangMonth(year: number, month: number, config: SourceConfig): Promise<FishingSchedule[]> {
+  const monthValue = `${year}${String(month).padStart(2, "0")}`;
+  const url = new URL(`/ship/schedule_fleet/${monthValue}`, config.baseUrl);
+
+  const response = await fetch(url, {
+    headers: browserHeaders(config.baseUrl),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.`);
+  }
+
+  const html = await response.text();
+  const $ = cheerio.load(html);
+  const sourceItems: FishingSchedule[] = [];
+  $(".shipsinfo_daywarp").each((_index, element) => {
+    sourceItems.push(...parseSunsangDayBlock($, $(element), config));
+  });
+  return sourceItems;
+}
+
+async function fetchMonthForConfig(year: number, month: number, config: SourceConfig): Promise<FishingSchedule[]> {
+  return isSunsang24(config.baseUrl) ? fetchSunsangMonth(year, month, config) : fetchMonth(year, month, config);
+}
+
 async function fetchSourceMonths(
   months: Array<{ year: number; month: number }>,
   config: SourceConfig,
@@ -256,7 +371,7 @@ async function fetchSourceMonths(
       if (cached && cached.expiresAt > Date.now()) {
         return cached.items;
       }
-      const monthItems = await fetchMonth(year, month, config);
+      const monthItems = await fetchMonthForConfig(year, month, config);
       monthCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items: monthItems });
       return monthItems;
     }),
@@ -336,42 +451,52 @@ const knownTides = new Set<string>();
   (tide) => knownTides.add(tide),
 );
 
+// 선박명도 물때와 같은 이유로 누적 기억한다: 한 번이라도 실시간 조회나 업로드로
+// 확인된 선박은, 이후 해당 예약처 조회가 느리거나 실패해도 필터에서 계속 선택
+// 가능하게 한다. 항구별/지역별 매핑도 동일하게 누적한다(예약처 설정이 바뀌면
+// clearSourceCache()에서 비워진다).
+const knownShips = new Set<string>();
+const knownShipsByPort = new Map<string, Set<string>>();
+const knownShipsByRegion = new Map<string, Set<string>>();
+
+function addToKnownMap(map: Map<string, Set<string>>, key: string, vessel: string): void {
+  if (!key || !vessel) return;
+  const values = map.get(key) ?? new Set<string>();
+  values.add(vessel);
+  map.set(key, values);
+}
+
 export function getFilterOptions(
   items: FishingSchedule[],
   sources: Array<Pick<SourceConfig, "region" | "port" | "vessels">> = [],
 ): FishingFilterOptions {
   for (const item of items) {
     if (item.tide) knownTides.add(item.tide);
-  }
-  const sourceValues = (selector: (source: SourceConfig) => string) =>
-    sources.map(selector).filter(Boolean);
-  const shipsByPort = new Map<string, Set<string>>();
-  const shipsByRegion = new Map<string, Set<string>>();
-  const addToMap = (map: Map<string, Set<string>>, key: string, vessel: string) => {
-    if (!key || !vessel) return;
-    const values = map.get(key) ?? new Set<string>();
-    values.add(vessel);
-    map.set(key, values);
-  };
-  for (const item of items) {
-    addToMap(shipsByPort, item.port, item.vessel);
-    addToMap(shipsByRegion, item.region, item.vessel);
+    if (item.vessel && !isExcludedVessel(item.vessel)) knownShips.add(item.vessel);
+    if (!isExcludedVessel(item.vessel)) {
+      addToKnownMap(knownShipsByPort, item.port, item.vessel);
+      addToKnownMap(knownShipsByRegion, item.region, item.vessel);
+    }
   }
   for (const source of sources) {
     for (const vessel of source.vessels) {
-      addToMap(shipsByPort, source.port, vessel);
-      addToMap(shipsByRegion, source.region, vessel);
+      if (isExcludedVessel(vessel)) continue;
+      knownShips.add(vessel);
+      addToKnownMap(knownShipsByPort, source.port, vessel);
+      addToKnownMap(knownShipsByRegion, source.region, vessel);
     }
   }
+  const sourceValues = (selector: (source: SourceConfig) => string) =>
+    sources.map(selector).filter(Boolean);
   const serializeMap = (map: Map<string, Set<string>>) =>
     Object.fromEntries([...map.entries()].map(([key, values]) => [key, [...values].sort((a, b) => a.localeCompare(b, "ko"))]));
   return {
     regions: [...new Set([...items.map((item) => item.region), ...sourceValues((source) => source.region)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
     ports: [...new Set([...items.map((item) => item.port), ...sourceValues((source) => source.port)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
-    ships: [...new Set([...items.map((item) => item.vessel), ...sources.flatMap((source) => source.vessels)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
-    tides: [...new Set([...items.map((item) => item.tide), ...knownTides])].filter(Boolean).sort((a, b) => a.localeCompare(b, "ko")),
-    shipsByPort: serializeMap(shipsByPort),
-    shipsByRegion: serializeMap(shipsByRegion),
+    ships: [...knownShips].sort((a, b) => a.localeCompare(b, "ko")),
+    tides: [...knownTides].sort((a, b) => a.localeCompare(b, "ko")),
+    shipsByPort: serializeMap(knownShipsByPort),
+    shipsByRegion: serializeMap(knownShipsByRegion),
   };
 }
 
