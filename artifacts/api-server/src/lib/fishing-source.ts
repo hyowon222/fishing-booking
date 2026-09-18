@@ -48,11 +48,37 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 const monthCache = new Map<string, { expiresAt: number; items: FishingSchedule[] }>();
 
 /**
+ * 예약처가 20곳 이상이고 각각 여러 달을 조회하다 보니, 한 번에 수십~백 개의
+ * 요청이 동시에 나갈 수 있다(사용자 검색과 백그라운드 캐시 워머가 겹치는
+ * 경우 더 심함). 서버가 그걸 한꺼번에 처리하려다 스스로 느려지면, 실제로는
+ * 살아있는 예약처들도 타임아웃으로 "실패"처리되고 그게 다시 반복 실패 건너뛰기
+ * 로 이어져 한꺼번에 많은 예약처가 실패로 뜨는 악순환이 생긴다. 이를 막기 위해
+ * 서버 전체에서 동시에 진행 중인 예약처 조회 요청 수를 제한한다.
+ */
+const MAX_CONCURRENT_FETCHES = 6;
+let activeFetches = 0;
+const fetchQueue: Array<() => void> = [];
+
+async function withFetchLimit<T>(task: () => Promise<T>): Promise<T> {
+  if (activeFetches >= MAX_CONCURRENT_FETCHES) {
+    await new Promise<void>((resolve) => fetchQueue.push(resolve));
+  }
+  activeFetches += 1;
+  try {
+    return await task();
+  } finally {
+    activeFetches -= 1;
+    const next = fetchQueue.shift();
+    if (next) next();
+  }
+}
+
+/**
  * 반복적으로 실패하는 예약처(robots.txt 차단, 서버 다운 등)를 매 검색마다
  * 15초 타임아웃까지 기다리지 않도록, 최근 실패 이력을 추적해서 쿨다운 기간
  * 동안은 요청 자체를 건너뛴다.
  */
-const FAILURE_THRESHOLD = 2;
+const FAILURE_THRESHOLD = 3;
 const COOLDOWN_MS = 10 * 60 * 1000; // 10분
 type SourceHealth = { consecutiveFailures: number; skipUntil: number; lastError?: string };
 const sourceHealth = new Map<number, SourceHealth>();
@@ -240,10 +266,12 @@ async function fetchMonth(year: number, month: number, config: SourceConfig): Pr
   url.searchParams.set("month", monthValue);
   url.searchParams.set("day", "01");
 
-  const response = await fetch(url, {
-    headers: browserHeaders(config.baseUrl),
-    signal: AbortSignal.timeout(15_000),
-  });
+  const response = await withFetchLimit(() =>
+    fetch(url, {
+      headers: browserHeaders(config.baseUrl),
+      signal: AbortSignal.timeout(15_000),
+    }),
+  );
   if (!response.ok) {
     throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.`);
   }
@@ -339,10 +367,12 @@ async function fetchSunsangMonth(year: number, month: number, config: SourceConf
   const monthValue = `${year}${String(month).padStart(2, "0")}`;
   const url = new URL(`/ship/schedule_fleet/${monthValue}`, config.baseUrl);
 
-  const response = await fetch(url, {
-    headers: browserHeaders(config.baseUrl),
-    signal: AbortSignal.timeout(15_000),
-  });
+  const response = await withFetchLimit(() =>
+    fetch(url, {
+      headers: browserHeaders(config.baseUrl),
+      signal: AbortSignal.timeout(15_000),
+    }),
+  );
   if (!response.ok) {
     throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.`);
   }
