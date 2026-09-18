@@ -398,9 +398,23 @@ export type FishingScheduleSearch = {
   failedSources: string[];
 };
 
-export async function getSchedules(startDate: string, endDate: string): Promise<FishingScheduleSearch> {
+export async function getSchedules(
+  startDate: string,
+  endDate: string,
+  filter?: { region?: string[]; port?: string },
+): Promise<FishingScheduleSearch> {
   const sourceRecords = await listConfiguredSources();
-  const sources = sourceRecords.filter((source) => source.enabled).map(toSourceConfig);
+  let sources = sourceRecords.filter((source) => source.enabled).map(toSourceConfig);
+  // 지역/항구를 선택해서 검색한 경우, 처음부터 관련 없는 예약처는 조회 대상에서
+  // 뺀다. 예전에는 항상 등록된 예약처 전체를 다 조회한 뒤 결과만 걸러냈어서,
+  // 관련 없는 지역까지 매번 스크래핑하느라 느렸고, "일부 예약처를 불러오지
+  // 못했습니다" 경고에도 선택한 지역과 무관한 예약처 이름까지 나열됐다.
+  if (filter?.region?.length) {
+    sources = sources.filter((source) => filter.region!.includes(source.region));
+  }
+  if (filter?.port) {
+    sources = sources.filter((source) => source.port === filter.port);
+  }
 
   if (sources.length === 0) {
     return { items: [], sources, failedSources: [] };
