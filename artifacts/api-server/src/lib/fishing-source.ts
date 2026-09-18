@@ -211,56 +211,16 @@ function parseDayBlock(
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-function browserHeaders(referer: string, cookie?: string): HeadersInit {
-  const headers: Record<string, string> = {
+function browserHeaders(referer: string): HeadersInit {
+  return {
     "User-Agent": BROWSER_USER_AGENT,
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
     Referer: referer,
   };
-  if (cookie) headers.Cookie = cookie;
-  return headers;
 }
 
-function extractCookie(response: Response): string | undefined {
-  // Node/undici exposes multiple Set-Cookie headers via getSetCookie(); fall back to a single header.
-  const anyHeaders = response.headers as Headers & { getSetCookie?: () => string[] };
-  const raw = anyHeaders.getSetCookie?.() ?? (response.headers.get("set-cookie") ? [response.headers.get("set-cookie")!] : []);
-  if (raw.length === 0) return undefined;
-  return raw.map((entry) => entry.split(";")[0]).join("; ");
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * 일부 예약처(더피싱 플랫폼)는 세션/쿠키 없이 year/month 파라미터를 바꿔가며
- * 여러 번 요청하는 패턴을 스크래핑으로 간주해, 실제 예약 데이터 대신 매 요청마다
- * 점점 먼 미래로 밀려나는 빈 캘린더를 반환하는 것으로 보인다. 이를 피하기 위해
- * (1) 캘린더 기본 페이지에서 먼저 세션 쿠키를 확보하고, (2) 그 쿠키와 Referer를
- * 재사용하며, (3) 병렬이 아니라 순차적으로, 약간의 지연을 두고 요청한다.
- */
-async function establishSession(config: SourceConfig): Promise<{ cookie?: string; referer: string }> {
-  const baseUrl = new URL("/index.php", config.baseUrl);
-  baseUrl.searchParams.set("mid", "bk");
-  const response = await fetch(baseUrl, {
-    headers: browserHeaders(config.baseUrl),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) {
-    throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.`);
-  }
-  await response.text();
-  return { cookie: extractCookie(response), referer: baseUrl.href };
-}
-
-async function fetchMonth(
-  year: number,
-  month: number,
-  config: SourceConfig,
-  session: { cookie?: string; referer: string },
-): Promise<FishingSchedule[]> {
+async function fetchMonth(year: number, month: number, config: SourceConfig): Promise<FishingSchedule[]> {
   const monthValue = String(month).padStart(2, "0");
   const url = new URL("/index.php", config.baseUrl);
   url.searchParams.set("mid", "bk");
@@ -269,7 +229,7 @@ async function fetchMonth(
   url.searchParams.set("day", "01");
 
   const response = await fetch(url, {
-    headers: browserHeaders(session.referer, session.cookie),
+    headers: browserHeaders(config.baseUrl),
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
@@ -289,31 +249,19 @@ async function fetchSourceMonths(
   months: Array<{ year: number; month: number }>,
   config: SourceConfig,
 ): Promise<FishingSchedule[]> {
-  const uncachedMonths = months.filter(({ year, month }) => {
-    const cached = monthCache.get(`${config.id}:${year}-${month}`);
-    return !(cached && cached.expiresAt > Date.now());
-  });
-
-  let session: { cookie?: string; referer: string } | undefined;
-  if (uncachedMonths.length > 0) {
-    session = await establishSession(config);
-  }
-
-  const items: FishingSchedule[] = [];
-  for (const { year, month } of months) {
-    const cacheKey = `${config.id}:${year}-${month}`;
-    const cached = monthCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      items.push(...cached.items);
-      continue;
-    }
-    const monthItems = await fetchMonth(year, month, config, session!);
-    monthCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items: monthItems });
-    items.push(...monthItems);
-    // 짧은 지연으로 병렬 버스트 요청처럼 보이지 않게 함 (실제로 새로 조회한 경우만)
-    await sleep(300);
-  }
-  return items;
+  const results = await Promise.all(
+    months.map(async ({ year, month }) => {
+      const cacheKey = `${config.id}:${year}-${month}`;
+      const cached = monthCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.items;
+      }
+      const monthItems = await fetchMonth(year, month, config);
+      monthCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items: monthItems });
+      return monthItems;
+    }),
+  );
+  return results.flat();
 }
 
 function monthCursor(startDate: string, endDate: string): Array<{ year: number; month: number }> {
