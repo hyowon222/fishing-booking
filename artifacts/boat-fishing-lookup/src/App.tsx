@@ -199,6 +199,8 @@ function SearchForm({
   isFetching,
   weekdays,
   setWeekdays,
+  onForceRefresh,
+  isRefreshingAll,
 }: {
   criteria: Criteria;
   setCriteria: (next: Criteria) => void;
@@ -209,6 +211,8 @@ function SearchForm({
   isFetching: boolean;
   weekdays: number[];
   setWeekdays: (next: number[]) => void;
+  onForceRefresh: () => void;
+  isRefreshingAll: boolean;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dateError, setDateError] = useState('');
@@ -463,6 +467,17 @@ function SearchForm({
               </div>
             </div>
             <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={onForceRefresh}
+                disabled={isRefreshingAll}
+                title="캐시를 비우고 모든 예약처를 처음부터 다시 조회합니다"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-input px-4 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-70"
+                data-testid="button-force-refresh"
+              >
+                <RefreshCw size={14} className={isRefreshingAll ? 'animate-spin' : undefined} />
+                {isRefreshingAll ? '전체 조회 중' : '전체 다시 조회'}
+              </button>
               <button type="button" onClick={clearAll} className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-input px-4 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground" data-testid="button-reset-filters">
                 <RefreshCw size={14} /> 초기화
               </button>
@@ -581,6 +596,7 @@ function Home() {
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const [appliedWeekdays, setAppliedWeekdays] = useState<number[]>([]);
   const [showSourceManager, setShowSourceManager] = useState(false);
+  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
   // 사이트 진입 시 자동으로 일정을 조회하지 않고, "자리 찾기"를 눌렀을 때만 조회합니다.
   const [hasSearched, setHasSearched] = useState(false);
   const optionsQuery = useGetFishingFilterOptions({ query: { queryKey: getGetFishingFilterOptionsQueryKey() } });
@@ -615,6 +631,16 @@ function Home() {
     setWeekdays([]);
     setAppliedWeekdays([]);
     setHasSearched(false);
+  };
+  // 서버의 캐시(5분 유지)를 비우고, 모든 예약처를 처음부터 다시 스크래핑하도록 강제한다.
+  const forceRefreshAll = async () => {
+    setIsRefreshingAll(true);
+    try {
+      await fetch('/api/fishing/cache/refresh', { method: 'POST' });
+      await Promise.all([optionsQuery.refetch(), hasSearched ? searchQuery.refetch() : Promise.resolve()]);
+    } finally {
+      setIsRefreshingAll(false);
+    }
   };
 
   return (
@@ -664,7 +690,7 @@ function Home() {
           </div>
         </section>
 
-        <SearchForm criteria={criteria} setCriteria={setCriteria} options={options} isOptionsLoading={optionsQuery.isLoading} onSubmit={submit} onReset={reset} isFetching={searchQuery.isFetching} weekdays={weekdays} setWeekdays={setWeekdays} />
+        <SearchForm criteria={criteria} setCriteria={setCriteria} options={options} isOptionsLoading={optionsQuery.isLoading} onSubmit={submit} onReset={reset} isFetching={searchQuery.isFetching} weekdays={weekdays} setWeekdays={setWeekdays} onForceRefresh={forceRefreshAll} isRefreshingAll={isRefreshingAll} />
 
         <section className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 lg:px-8">
           <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">

@@ -20,6 +20,7 @@ import {
   getSchedules,
   getSourceLabel,
   listConfiguredSources,
+  resetSourceHealth,
 } from "../lib/fishing-source";
 
 const router: IRouter = Router();
@@ -88,6 +89,12 @@ router.get("/fishing/schedules", async (req, res) => {
   }
 });
 
+router.post("/fishing/cache/refresh", (_req, res) => {
+  clearSourceCache();
+  resetSourceHealth();
+  res.json({ ok: true });
+});
+
 router.get("/fishing/options", async (_req, res) => {
   try {
     const today = new Date();
@@ -98,7 +105,13 @@ router.get("/fishing/options", async (_req, res) => {
     const configuredSources = (await listConfiguredSources()).filter((source) => source.enabled);
     let options;
     try {
-      const search = await getSchedules(startDate, endDate);
+      // 느린/막힌 예약처 때문에 화면이 오래 멈춰있지 않도록 최대 4초만 기다린다.
+      // 시간 안에 못 끝나도 getSchedules 자체는 백그라운드에서 계속 진행되어
+      // 캐시를 채우므로, 다음 요청(검색/재조회)부터는 더 빨라진다.
+      const search = await Promise.race([
+        getSchedules(startDate, endDate),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("filter-options-timeout")), 4000)),
+      ]);
       options = getFilterOptions(search.items, search.sources);
     } catch {
       // Stored source metadata should still populate filters while a live page is unavailable.

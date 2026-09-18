@@ -43,7 +43,53 @@ type SourceConfig = {
 };
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const sourceCache = new Map<string, { expiresAt: number; items: FishingSchedule[] }>();
+// 예약처별로 이미 조회한 '연-월'은 캐시해서, 겹치는 기간을 다시 조회할 때
+// 네트워크 스크래핑 없이 재사용한다. 키 형태: `${sourceId}:${year}-${month}`
+const monthCache = new Map<string, { expiresAt: number; items: FishingSchedule[] }>();
+
+/**
+ * 반복적으로 실패하는 예약처(robots.txt 차단, 서버 다운 등)를 매 검색마다
+ * 15초 타임아웃까지 기다리지 않도록, 최근 실패 이력을 추적해서 쿨다운 기간
+ * 동안은 요청 자체를 건너뛴다.
+ */
+const FAILURE_THRESHOLD = 2;
+const COOLDOWN_MS = 10 * 60 * 1000; // 10분
+type SourceHealth = { consecutiveFailures: number; skipUntil: number; lastError?: string };
+const sourceHealth = new Map<number, SourceHealth>();
+
+function isSkipped(sourceId: number): SourceHealth | undefined {
+  const health = sourceHealth.get(sourceId);
+  if (health && health.skipUntil > Date.now()) return health;
+  return undefined;
+}
+
+function recordSuccess(sourceId: number): void {
+  sourceHealth.delete(sourceId);
+}
+
+function recordFailure(sourceId: number, error: unknown): void {
+  const prev = sourceHealth.get(sourceId);
+  const consecutiveFailures = (prev?.consecutiveFailures ?? 0) + 1;
+  const skipUntil = consecutiveFailures >= FAILURE_THRESHOLD ? Date.now() + COOLDOWN_MS : 0;
+  sourceHealth.set(sourceId, {
+    consecutiveFailures,
+    skipUntil,
+    lastError: error instanceof Error ? error.message : String(error),
+  });
+}
+
+export function getSourceHealthSnapshot(): Array<{ id: number; consecutiveFailures: number; skippedUntil: string | null; lastError?: string }> {
+  return [...sourceHealth.entries()].map(([id, health]) => ({
+    id,
+    consecutiveFailures: health.consecutiveFailures,
+    skippedUntil: health.skipUntil > Date.now() ? new Date(health.skipUntil).toISOString() : null,
+    lastError: health.lastError,
+  }));
+}
+
+export function resetSourceHealth(): void {
+  sourceHealth.clear();
+}
 
 export type FishingSourceWithVessels = FishingSourceRecord & { vessels: FishingSourceVesselRecord[] };
 
@@ -76,7 +122,7 @@ export async function listConfiguredSources(): Promise<FishingSourceWithVessels[
 }
 
 export function clearSourceCache(): void {
-  sourceCache.clear();
+  monthCache.clear();
 }
 
 function cleanText(value: string): string {
@@ -231,123 +277,32 @@ async function fetchMonth(
   return sourceItems;
 }
 
-// ---------------------------------------------------------------------------
-// SUNSANG24 플랫폼 (예: metafishingclub.sunsang24.com, daebak.sunsang24.com)
-//
-// 더피싱과 달리 캘린더 달 페이지(/ship/schedule_fleet/{yyyymm})가 서버에서
-// 완전히 렌더링된 정적 HTML로 내려온다. 세션 쿠키나 AJAX 재요청이 필요 없고,
-// 날짜별 <table class="shipsinfo_daywarp"> 블록 안에 선박별 "남은자리" 텍스트가
-// 그대로 박혀 있다. 예약이 마감된 날은 "남은자리" 대신
-// <span class="shipping_status" data-status_code="END">예약마감</span> 이 온다.
-// ---------------------------------------------------------------------------
-
-const WEEKDAY_KO = ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"];
-
-function isSunsang24(baseUrl: string): boolean {
-  try {
-    return new URL(baseUrl).hostname.endsWith("sunsang24.com");
-  } catch {
-    return false;
-  }
-}
-
-function parseSunsangDayBlock(
-  $: cheerio.CheerioAPI,
-  dayTable: cheerio.Cheerio<any>,
-  config: SourceConfig,
-): FishingSchedule[] {
-  const idMatch = (dayTable.attr("id") || "").match(/^d(\d{4}-\d{2}-\d{2})$/);
-  const departureDate = idMatch?.[1];
-  if (!departureDate) return [];
-
-  const weekday = WEEKDAY_KO[new Date(`${departureDate}T00:00:00Z`).getUTCDay()];
-  const tide = cleanText(dayTable.find(".date_info2").first().text()) || "미정";
-
-  const items: FishingSchedule[] = [];
-  dayTable.find(".ship_unit").each((_index, element) => {
-    const unit = $(element);
-    const vessel = cleanText(unit.find(".ship_info .title").first().text());
-    if (!vessel) return;
-
-    const remainCell = unit.find(".ship_info2 .remain").first();
-    const isClosed = remainCell.find(".shipping_status").attr("data-status_code") === "END";
-    let remainingSeats: number | null = null;
-    if (isClosed) {
-      remainingSeats = 0;
-    } else {
-      const numberText = cleanText(remainCell.find(".number").first().text());
-      const match = numberText.match(/(\d+)/);
-      remainingSeats = match ? Number(match[1]) : null;
-    }
-    if (remainingSeats === null || remainingSeats <= 0) return;
-
-    const genre = cleanText(unit.find("#fish").first().text()) || "선상 낚시";
-    const scheduleNo = unit.find("[data-schedule_no]").first().attr("data-schedule_no") || "";
-    const monthPath = departureDate.slice(0, 4) + departureDate.slice(5, 7);
-    const bookingUrl = `${config.baseUrl}/ship/schedule_fleet/${monthPath}`;
-    const id = `${departureDate}-${vessel}-${scheduleNo || "schedule"}`
-      .replace(/[^0-9A-Za-z가-힣-]+/g, "-")
-      .toLowerCase();
-
-    items.push({
-      id,
-      departureDate,
-      weekday,
-      region: config.region,
-      port: config.port,
-      tide,
-      genre,
-      operator: cleanText(config.name),
-      vessel,
-      remainingSeats,
-      operatorUrl: config.baseUrl,
-      bookingUrl,
-      source: bookingUrl,
-    });
-  });
-
-  return items;
-}
-
-async function fetchSunsangMonth(year: number, month: number, config: SourceConfig): Promise<FishingSchedule[]> {
-  const monthValue = `${year}${String(month).padStart(2, "0")}`;
-  const url = new URL(`/ship/schedule_fleet/${monthValue}`, config.baseUrl);
-
-  const response = await fetch(url, {
-    headers: browserHeaders(config.baseUrl),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) {
-    throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.`);
-  }
-
-  const html = await response.text();
-  const $ = cheerio.load(html);
-  const sourceItems: FishingSchedule[] = [];
-  $(".shipsinfo_daywarp").each((_index, element) => {
-    sourceItems.push(...parseSunsangDayBlock($, $(element), config));
-  });
-  return sourceItems;
-}
-
 async function fetchSourceMonths(
   months: Array<{ year: number; month: number }>,
   config: SourceConfig,
 ): Promise<FishingSchedule[]> {
-  if (isSunsang24(config.baseUrl)) {
-    const items: FishingSchedule[] = [];
-    for (const { year, month } of months) {
-      items.push(...(await fetchSunsangMonth(year, month, config)));
-      await sleep(300);
-    }
-    return items;
+  const uncachedMonths = months.filter(({ year, month }) => {
+    const cached = monthCache.get(`${config.id}:${year}-${month}`);
+    return !(cached && cached.expiresAt > Date.now());
+  });
+
+  let session: { cookie?: string; referer: string } | undefined;
+  if (uncachedMonths.length > 0) {
+    session = await establishSession(config);
   }
 
-  const session = await establishSession(config);
   const items: FishingSchedule[] = [];
   for (const { year, month } of months) {
-    items.push(...(await fetchMonth(year, month, config, session)));
-    // 짧은 지연으로 병렬 버스트 요청처럼 보이지 않게 함
+    const cacheKey = `${config.id}:${year}-${month}`;
+    const cached = monthCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      items.push(...cached.items);
+      continue;
+    }
+    const monthItems = await fetchMonth(year, month, config, session!);
+    monthCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items: monthItems });
+    items.push(...monthItems);
+    // 짧은 지연으로 병렬 버스트 요청처럼 보이지 않게 함 (실제로 새로 조회한 경우만)
     await sleep(300);
   }
   return items;
@@ -375,11 +330,6 @@ export type FishingScheduleSearch = {
 export async function getSchedules(startDate: string, endDate: string): Promise<FishingScheduleSearch> {
   const sourceRecords = await listConfiguredSources();
   const sources = sourceRecords.filter((source) => source.enabled).map(toSourceConfig);
-  const cacheKey = `${sources.map((source) => source.id).join(",")}:${startDate}:${endDate}`;
-  const cached = sourceCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return { items: cached.items, sources, failedSources: [] };
-  }
 
   if (sources.length === 0) {
     return { items: [], sources, failedSources: [] };
@@ -387,16 +337,32 @@ export async function getSchedules(startDate: string, endDate: string): Promise<
 
   const months = monthCursor(startDate, endDate);
   const sourceResults = await Promise.allSettled(
-    sources.map((source) => fetchSourceMonths(months, source)),
+    sources.map(async (source) => {
+      const skipped = isSkipped(source.id);
+      if (skipped) {
+        throw new Error(`최근 반복 실패로 건너뜀 (${skipped.consecutiveFailures}회 연속 실패, 이전 오류: ${skipped.lastError ?? "알 수 없음"})`);
+      }
+      try {
+        const result = await fetchSourceMonths(months, source);
+        recordSuccess(source.id);
+        return result;
+      } catch (error) {
+        recordFailure(source.id, error);
+        throw error;
+      }
+    }),
   );
-  const items = sourceResults.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  // fetchSourceMonths는 해당 월 전체 데이터를 돌려주므로, 실제 요청한
+  // 날짜 범위(startDate~endDate)에 맞게 여기서 다시 걸러낸다.
+  const items = sourceResults
+    .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+    .filter((item) => item.departureDate >= startDate && item.departureDate <= endDate);
   const failedSources = sourceResults.flatMap((result, index) =>
     result.status === "rejected" ? [sources[index]?.name || "예약처"] : [],
   );
   if (items.length === 0 && failedSources.length === sources.length) {
     throw new Error("모든 예약처를 불러오지 못했습니다.");
   }
-  sourceCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items });
   return { items, sources, failedSources };
 }
 
