@@ -25,6 +25,10 @@ import {
 
 const router: IRouter = Router();
 
+// 필터 옵션(지역/항구/선박/물때) 계산이 타임아웃에 걸렸을 때, 텅 빈 값 대신
+// 직전에 온전히 성공했던 결과를 대신 보여주기 위한 메모리 캐시.
+let lastGoodOptions: ReturnType<typeof getFilterOptions> | null = null;
+
 function queryValues(value: unknown): string[] | undefined {
   if (value === undefined) return undefined;
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
@@ -92,6 +96,7 @@ router.get("/fishing/schedules", async (req, res) => {
 router.post("/fishing/cache/refresh", (_req, res) => {
   clearSourceCache();
   resetSourceHealth();
+  lastGoodOptions = null;
   res.json({ ok: true });
 });
 
@@ -105,17 +110,21 @@ router.get("/fishing/options", async (_req, res) => {
     const configuredSources = (await listConfiguredSources()).filter((source) => source.enabled);
     let options;
     try {
-      // 느린/막힌 예약처 때문에 화면이 오래 멈춰있지 않도록 최대 4초만 기다린다.
+      // 느린/막힌 예약처 때문에 화면이 오래 멈춰있지 않도록 최대 12초만 기다린다.
       // 시간 안에 못 끝나도 getSchedules 자체는 백그라운드에서 계속 진행되어
       // 캐시를 채우므로, 다음 요청(검색/재조회)부터는 더 빨라진다.
       const search = await Promise.race([
         getSchedules(startDate, endDate),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("filter-options-timeout")), 4000)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("filter-options-timeout")), 12_000)),
       ]);
       options = getFilterOptions(search.items, search.sources);
+      if (search.items.length > 0) {
+        lastGoodOptions = options;
+      }
     } catch {
-      // Stored source metadata should still populate filters while a live page is unavailable.
-      options = getFilterOptions([], configuredSources);
+      // 타임아웃에 걸리면, 텅 빈 값 대신 직전에 성공했던 온전한 필터 목록을
+      // 먼저 보여준다 (없으면 예약처 설정에 저장된 지역/항구/업로드 선박만으로 대체).
+      options = lastGoodOptions ?? getFilterOptions([], configuredSources);
     }
     const parsedOptions = GetFishingFilterOptionsResponse.parse(options);
     res.json(parsedOptions);
