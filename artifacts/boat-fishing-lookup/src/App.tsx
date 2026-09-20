@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ko } from 'date-fns/locale';
 import type { DateRange } from 'react-day-picker';
@@ -639,10 +639,27 @@ function Home() {
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setAppliedParams({ ...criteria });
+    const nextParams = { ...criteria };
+    // 조건이 이전과 완전히 똑같으면 쿼리 키가 안 바뀌어서 React Query가 "이미
+    // 있는 결과"로 판단해 자동으로 다시 조회하지 않는다. 이 경우엔 직접 강제
+    // 새로고침해서 "자리 찾기"를 다시 눌렀을 때 항상 반응하도록 한다.
+    const unchanged = hasSearched && JSON.stringify(nextParams) === JSON.stringify(appliedParams);
+    setAppliedParams(nextParams);
     setAppliedWeekdays(weekdays);
     setHasSearched(true);
+    if (unchanged) {
+      searchQuery.refetch();
+    }
   };
+  // 검색이 성공적으로 끝날 때마다 선박/물때 필터 목록도 함께 새로고침한다.
+  // 백엔드가 방금 검색된 결과의 선박 정보를 필터 목록에 반영해두므로, 검색
+  // 직후 다시 물어봐야 화면의 "선박" 목록에도 그 결과가 나타난다.
+  useEffect(() => {
+    if (hasSearched && searchQuery.isSuccess) {
+      optionsQuery.refetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery.dataUpdatedAt]);
   const reset = () => {
     setCriteria(initialCriteria);
     setAppliedParams(initialCriteria);
