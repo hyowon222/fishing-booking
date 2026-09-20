@@ -65,13 +65,16 @@ router.get("/fishing/schedules", async (req, res) => {
   }
 
   try {
+    const search = await getSchedules(startDate, endDate);
+    // 검색이 실제로 성공할 때마다, 그 결과에 담긴 선박/물때 정보를 필터 목록에도
+    // 반영해둔다. 이렇게 하면 /fishing/options 쪽이 어쩌다 타임아웃에 걸려도,
+    // 사용자가 직접 조회에 성공한 결과만으로도 선박 필터가 계속 채워진다.
+    const warmedOptions = getFilterOptions(search.items, search.sources);
+    if (search.items.length > 0) {
+      lastGoodOptions = warmedOptions;
+    }
     const region = parsed.data.region || [];
     const ship = parsed.data.ship || [];
-    const search = await getSchedules(startDate, endDate, { region, port: parsed.data.port });
-    // "자리 찾기"로 실제 확인된 선박/물때 정보도 선박 누적 기억(getFilterOptions의
-    // 내부 상태)에 반영한다. 예전에는 /fishing/options에서만 이게 채워져서,
-    // 사용자가 직접 검색해 찾아낸 선박이 필터 목록에는 반영되지 않는 문제가 있었다.
-    getFilterOptions(search.items, search.sources);
     const items = search.items.filter((item) => {
       const departureMatches = item.departureDate >= startDate && item.departureDate <= endDate;
       const regionMatches = region.length === 0 || region.includes(item.region);
