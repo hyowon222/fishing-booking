@@ -83,6 +83,8 @@ router.get("/fishing/schedules", async (req, res) => {
       const tideMatches = !parsed.data.tide || parsed.data.tide === item.tide;
       return departureMatches && regionMatches && portMatches && shipMatches && tideMatches;
     });
+    // 출항일이 빠른 순서대로, 같은 날짜 안에서는 선박명 가나다순으로 정렬한다.
+    items.sort((a, b) => a.departureDate.localeCompare(b.departureDate) || a.vessel.localeCompare(b.vessel, "ko"));
     const response = SearchFishingSchedulesResponse.parse({
       items,
       total: items.length,

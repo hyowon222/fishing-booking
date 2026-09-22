@@ -737,7 +737,7 @@ function Home() {
               <p className="mt-1 text-xs text-muted-foreground"><CalendarDays size={12} className="mr-1 inline" />{rangeLabel} · {activeFilterCount ? `필터 ${activeFilterCount}개 적용` : '전체 조건'} </p>
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5"><Sparkles size={13} className="text-accent-foreground" /> 잔여 좌석 기준 정렬</span>
+              <span className="flex items-center gap-1.5"><Sparkles size={13} className="text-accent-foreground" /> 출항일 기준 정렬</span>
               {data?.cachedUntil && <span className="hidden items-center gap-1.5 sm:flex"><RefreshCw size={12} /> {formatSearchedAt(data.cachedUntil)}까지 캐시</span>}
             </div>
           </div>
