@@ -39,6 +39,20 @@ function dateValue(value: unknown): Date {
   return new Date(`${String(value)}T00:00:00.000Z`);
 }
 
+// drizzle-orm이 실제 pg 에러를 DrizzleQueryError로 감싸면서, Postgres 에러 코드(예:
+// 유니크 제약 위반 "23505")가 error.code가 아니라 error.cause.code에 들어가게 됐다.
+// .cause 체인을 따라가며 code를 찾아, 감싸졌든 아니든 항상 정확히 잡아낸다.
+function getPgErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  if ("code" in error && typeof (error as { code?: unknown }).code === "string") {
+    return (error as { code: string }).code;
+  }
+  if ("cause" in error) {
+    return getPgErrorCode((error as { cause?: unknown }).cause);
+  }
+  return undefined;
+}
+
 router.get("/fishing/schedules", async (req, res) => {
   const parsed = SearchFishingSchedulesQueryParams.safeParse({
     startDate: dateValue(req.query.startDate),
@@ -166,7 +180,7 @@ router.post("/fishing/sources", async (req, res) => {
     clearSourceCache();
     res.status(201).json(source);
   } catch (error: unknown) {
-    if (error && typeof error === "object" && "code" in error && error.code === "23505") {
+    if (getPgErrorCode(error) === "23505") {
       res.status(409).json({ error: "이미 등록된 예약처 URL입니다." });
       return;
     }
@@ -197,7 +211,7 @@ router.patch("/fishing/sources/:id", async (req, res) => {
     clearSourceCache();
     res.json(source);
   } catch (error: unknown) {
-    if (error && typeof error === "object" && "code" in error && error.code === "23505") {
+    if (getPgErrorCode(error) === "23505") {
       res.status(409).json({ error: "이미 등록된 예약처 URL입니다." });
       return;
     }
