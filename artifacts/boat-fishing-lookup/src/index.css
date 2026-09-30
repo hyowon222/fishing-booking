@@ -475,3 +475,51 @@
 }
 @keyframes shimmer { to { background-position: -200% 0; } }
 .mono { font-family: var(--app-font-mono); }
+
+/* SeatRadar 로딩 애니메이션 — 헤더의 "Open seat radar" 컨셉을 그대로 가져온
+   레이더 스캔 연출. 예약처를 하나씩 훑어보는 과정을 표현한다. */
+.radar-scope { position: relative; width: 168px; height: 168px; }
+.radar-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.radar-ring { fill: none; stroke: hsl(var(--primary) / .16); stroke-width: 1; }
+.radar-crosshair { stroke: hsl(var(--primary) / .1); stroke-width: 1; }
+.radar-blip { fill: hsl(var(--accent)); opacity: 0; animation: radar-blip-pulse 3.6s ease-in-out infinite; }
+.radar-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(from 0deg, hsl(var(--primary) / .5), transparent 26%, transparent 100%);
+  animation: radar-spin 2.6s linear infinite;
+}
+.radar-center {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--primary));
+}
+.radar-center svg { animation: pulse-line 2.4s ease-in-out infinite; }
+.radar-ellipsis { display: inline-flex; gap: 3px; margin-left: 3px; }
+.radar-ellipsis span {
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: .25;
+  animation: radar-dot-blink 1.4s ease-in-out infinite;
+}
+.radar-ellipsis span:nth-child(2) { animation-delay: .2s; }
+.radar-ellipsis span:nth-child(3) { animation-delay: .4s; }
+
+@keyframes radar-spin { to { transform: rotate(360deg); } }
+@keyframes radar-blip-pulse {
+  0%, 18% { opacity: 0; transform: scale(.4); }
+  28% { opacity: 1; transform: scale(1.15); }
+  40% { opacity: .7; transform: scale(1); }
+  70%, 100% { opacity: 0; transform: scale(.4); }
+}
+@keyframes radar-dot-blink {
+  0%, 80%, 100% { opacity: .25; }
+  40% { opacity: 1; }
+}

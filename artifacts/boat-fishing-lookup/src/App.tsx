@@ -33,6 +33,7 @@ import {
   type SearchFishingSchedulesParams,
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { SeatRadar } from '@/components/seat-radar';
 import SourceManager from '@/components/source-manager';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -507,18 +508,34 @@ function SearchForm({
   );
 }
 
-function LoadingTable() {
+// 표준 7물때식(서해) 15일 주기를 기준으로 물때 이름을 조류 세기(%)로 근사한다.
+// 조금·무시가 가장 약하고, 사리 절정(6~7물 부근)에서 가장 강하다. 실측 조류
+// 데이터가 아니라 물때 주기상의 상대적 위치를 사인 곡선으로 근사한 값이다.
+const TIDE_CYCLE_ORDER = ['조금', '무시', '1물', '2물', '3물', '4물', '5물', '6물', '7물', '8물', '9물', '10물', '11물', '12물', '13물'];
+
+function getTideStrength(tide: string): number | null {
+  const index = TIDE_CYCLE_ORDER.indexOf(tide.trim());
+  if (index === -1) return null;
+  const radians = (2 * Math.PI * index) / TIDE_CYCLE_ORDER.length;
+  return Math.round(50 - 50 * Math.cos(radians));
+}
+
+function TideStrength({ tide }: { tide: string }) {
+  const percent = getTideStrength(tide);
+  if (percent === null) return null;
+  // 세기가 강해질수록 primary(teal) → accent(amber) 색조로 자연스럽게 이어지도록 보간.
+  const hue = 174 + ((37 - 174) * percent) / 100;
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
-      <div className="hidden grid-cols-[1.1fr_.9fr_1fr_1.1fr_.85fr_1fr_110px] gap-4 border-b border-border bg-muted/40 px-5 py-3 md:grid">
-        {[80, 70, 75, 86, 70, 70, 56].map((width, index) => <div key={index} className="skeleton-shimmer h-3 rounded" style={{ width }} />)}
-      </div>
-      {[1, 2, 3, 4, 5].map((row) => (
-        <div key={row} className="flex flex-col gap-3 border-b border-border p-4 last:border-0 md:grid md:grid-cols-[1.1fr_.9fr_1fr_1.1fr_.85fr_1fr_110px] md:items-center md:gap-4 md:px-5">
-          {[100, 65, 80, 120, 45, 78, 68].map((width, index) => <div key={index} className={`${index > 0 ? 'hidden md:block' : ''} skeleton-shimmer h-4 rounded`} style={{ width }} />)}
-        </div>
-      ))}
-    </div>
+    <span
+      className="inline-flex items-center gap-1.5"
+      title={`조류 세기 약 ${percent}% (물때 주기 기준 근사치)`}
+      data-testid="indicator-tide-strength"
+    >
+      <span className="h-1.5 w-8 overflow-hidden rounded-full bg-muted">
+        <span className="block h-full rounded-full" style={{ width: `${percent}%`, backgroundColor: `hsl(${hue.toFixed(0)} 70% 45%)` }} />
+      </span>
+      <span className="text-xs font-semibold text-muted-foreground">{percent}%</span>
+    </span>
   );
 }
 
@@ -538,7 +555,7 @@ function ScheduleRow({ schedule }: { schedule: FishingSchedule }) {
       <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">선박</span><span className="font-semibold">{schedule.vessel}</span></div>
       <div className="flex min-w-0 items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">운영사</span>{schedule.operatorUrl ? <a href={schedule.operatorUrl} target="_blank" rel="noreferrer" className="truncate font-medium hover:text-primary hover:underline">{schedule.operator}</a> : <span className="truncate">{schedule.operator}</span>}</div>
       <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">장르</span><span className="rounded-md bg-secondary px-2 py-1 text-xs font-semibold text-secondary-foreground">{schedule.genre}</span></div>
-      <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">물때</span><span>{schedule.tide}</span></div>
+      <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">물때</span><span>{schedule.tide}</span><TideStrength tide={schedule.tide} /></div>
       <div className="flex items-center justify-between gap-2 pt-2 md:justify-end md:pt-0">
         <span className={`hidden rounded-full px-2.5 py-1 text-xs font-bold md:inline-flex ${seatClass}`}>{seatState}</span>
         {schedule.bookingUrl && schedule.remainingSeats !== 0 ? (
@@ -573,7 +590,7 @@ function ScheduleResults({
       </div>
     );
   }
-  if (isLoading) return <LoadingTable />;
+  if (isLoading) return <SeatRadar />;
   if (isError) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-destructive/25 bg-card px-6 py-16 text-center">
