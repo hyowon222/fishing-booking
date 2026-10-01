@@ -507,12 +507,22 @@ async function fetchTideStrengthMonth(locationId: number, year: number, month: n
   }
   const html = await response.text();
   const $ = cheerio.load(html);
-  const bodyText = $("body").text();
 
+  // 날짜당 모바일용 "mo-row-only" 줄이 하나씩 있고, 그 안에 progress-bar의
+  // data-value(물흐름 %)와 /{id}/graph/YYYY-M-D 링크(정확한 날짜)가 같이 있다.
   const days = new Map<string, number>();
-  for (const match of bodyText.matchAll(BADATIME_ROW_RE)) {
-    const [, percentText, y, m, d] = match;
-    days.set(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`, parseBadatimePercent(percentText));
+  $("tr.mo-row-only").each((_, row) => {
+    const value = $(row).find(".progress-bar").first().attr("data-value");
+    const href = $(row).find('a[href*="/graph/"]').first().attr("href") ?? "";
+    const dateMatch = href.match(/\/graph\/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (value === undefined || !dateMatch) return;
+    const percent = Number(value);
+    if (!Number.isFinite(percent)) return;
+    const [, y, m, d] = dateMatch;
+    days.set(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`, percent);
+  });
+  if (days.size === 0) {
+    console.warn(`[tide] 바다타임 파싱 결과 0건: ${url} (HTML 구조가 바뀌었을 수 있음)`);
   }
   tideStrengthMonthCache.set(cacheKey, { expiresAt: Date.now() + TIDE_STRENGTH_CACHE_TTL_MS, days });
   return days;
@@ -542,8 +552,9 @@ async function attachTideStrength(items: FishingSchedule[]): Promise<void> {
           try {
             const monthDays = await fetchTideStrengthMonth(locationId, year, month);
             for (const [date, percent] of monthDays) merged.set(date, percent);
-          } catch {
+          } catch (err) {
             // 이 달만 못 가져온 것으로 취급하고 넘어간다 — 나머지 결과에는 영향 없음.
+            console.warn(`[tide] ${port} ${yearMonth} 조회 실패:`, err);
           }
         }),
       );
