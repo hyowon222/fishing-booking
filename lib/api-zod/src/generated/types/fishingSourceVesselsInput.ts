@@ -5,11 +5,9 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { FishingSourceVesselInput } from './fishingSourceVesselInput';
 
 export interface FishingSourceVesselsInput {
-  /**
-     * @minItems 1
-     * @items.minLength 1
-     */
-  vessels: string[];
+  /** @minItems 1 */
+  vessels: FishingSourceVesselInput[];
 }

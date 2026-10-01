@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { FishingSourceVessel } from './fishingSourceVessel';
 
 export interface FishingSource {
   id: number;
@@ -15,5 +16,5 @@ export interface FishingSource {
   enabled: boolean;
   createdAt: Date;
   updatedAt: Date;
-  vessels: string[];
+  vessels: FishingSourceVessel[];
 }

@@ -16,6 +16,11 @@ export interface FishingSchedule {
   region: string;
   port: string;
   tide: string;
+  /**
+     * 바다타임(badatime.com) 기준 조류 세기(%). 매핑되지 않은 항구이거나 조회에 실패하면 null.
+     * @nullable
+     */
+  tideStrengthPercent: number | null;
   genre: string;
   operator: string;
   vessel: string;
@@ -40,13 +45,24 @@ export interface FishingScheduleSearchResponse {
   warning: string | null;
 }
 
+export type FishingFilterOptionsShipsByPort = {[key: string]: string[]};
+
+export type FishingFilterOptionsShipsByRegion = {[key: string]: string[]};
+
 export interface FishingFilterOptions {
   regions: string[];
   ports: string[];
   ships: string[];
   tides: string[];
-  shipsByPort: { [key: string]: string[] };
-  shipsByRegion: { [key: string]: string[] };
+  shipsByPort: FishingFilterOptionsShipsByPort;
+  shipsByRegion: FishingFilterOptionsShipsByRegion;
+}
+
+export interface FishingSourceVessel {
+  id: number;
+  name: string;
+  departurePort: string;
+  address: string;
 }
 
 export interface FishingSource {
@@ -58,15 +74,19 @@ export interface FishingSource {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
-  vessels: string[];
+  vessels: FishingSourceVessel[];
+}
+
+export interface FishingSourceVesselInput {
+  /** @minLength 1 */
+  name: string;
+  departurePort: string;
+  address: string;
 }
 
 export interface FishingSourceVesselsInput {
-  /**
-     * @minItems 1
-     * @items.minLength 1
-     */
-  vessels: string[];
+  /** @minItems 1 */
+  vessels: FishingSourceVesselInput[];
 }
 
 export interface FishingSourceInput {

@@ -8,10 +8,14 @@
 
 export * from './errorResponse';
 export * from './fishingFilterOptions';
+export * from './fishingFilterOptionsShipsByPort';
+export * from './fishingFilterOptionsShipsByRegion';
 export * from './fishingSchedule';
 export * from './fishingScheduleSearchResponse';
 export * from './fishingSource';
 export * from './fishingSourceInput';
+export * from './fishingSourceVessel';
+export * from './fishingSourceVesselInput';
 export * from './fishingSourceVesselsInput';
 export * from './healthStatus';
 export * from './searchFishingSchedulesParams';

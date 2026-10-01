@@ -13,6 +13,11 @@ export interface FishingSchedule {
   region: string;
   port: string;
   tide: string;
+  /**
+     * 바다타임(badatime.com) 기준 조류 세기(%). 매핑되지 않은 항구이거나 조회에 실패하면 null.
+     * @nullable
+     */
+  tideStrengthPercent: number | null;
   genre: string;
   operator: string;
   vessel: string;

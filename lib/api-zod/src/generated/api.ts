@@ -38,6 +38,7 @@ export const SearchFishingSchedulesResponse = zod.object({
   "region": zod.string(),
   "port": zod.string(),
   "tide": zod.string(),
+  "tideStrengthPercent": zod.number().int().nullable().describe('바다타임(badatime.com) 기준 조류 세기(%). 매핑되지 않은 항구이거나 조회에 실패하면 null.'),
   "genre": zod.string(),
   "operator": zod.string(),
   "vessel": zod.string(),
@@ -63,8 +64,8 @@ export const GetFishingFilterOptionsResponse = zod.object({
   "ports": zod.array(zod.string()),
   "ships": zod.array(zod.string()),
   "tides": zod.array(zod.string()),
-  "shipsByPort": zod.record(zod.array(zod.string())),
-  "shipsByRegion": zod.record(zod.array(zod.string()))
+  "shipsByPort": zod.record(zod.string(), zod.array(zod.string())),
+  "shipsByRegion": zod.record(zod.string(), zod.array(zod.string()))
 })
 
 
@@ -80,7 +81,12 @@ export const ListFishingSourcesResponseItem = zod.object({
   "enabled": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
-  "vessels": zod.array(zod.string())
+  "vessels": zod.array(zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "departurePort": zod.string(),
+  "address": zod.string()
+}))
 })
 export const ListFishingSourcesResponse = zod.array(ListFishingSourcesResponseItem)
 
@@ -110,7 +116,12 @@ export const CreateFishingSourceResponse = zod.object({
   "enabled": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
-  "vessels": zod.array(zod.string())
+  "vessels": zod.array(zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "departurePort": zod.string(),
+  "address": zod.string()
+}))
 })
 
 
@@ -143,7 +154,12 @@ export const UpdateFishingSourceResponse = zod.object({
   "enabled": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
-  "vessels": zod.array(zod.string())
+  "vessels": zod.array(zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "departurePort": zod.string(),
+  "address": zod.string()
+}))
 })
 
 
@@ -169,7 +185,11 @@ export const AddFishingSourceVesselsParams = zod.object({
 
 
 export const AddFishingSourceVesselsBody = zod.object({
-  "vessels": zod.array(zod.string().min(1)).min(1)
+  "vessels": zod.array(zod.object({
+  "name": zod.string().min(1),
+  "departurePort": zod.string(),
+  "address": zod.string()
+})).min(1)
 })
 
 export const AddFishingSourceVesselsResponse = zod.object({
@@ -181,7 +201,12 @@ export const AddFishingSourceVesselsResponse = zod.object({
   "enabled": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
-  "vessels": zod.array(zod.string())
+  "vessels": zod.array(zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "departurePort": zod.string(),
+  "address": zod.string()
+}))
 })
 
 
