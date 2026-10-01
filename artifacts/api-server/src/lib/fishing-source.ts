@@ -541,7 +541,10 @@ async function attachTideStrength(items: FishingSchedule[]): Promise<void> {
 
   await Promise.all(
     Array.from(byPort.entries()).map(async ([port, portItems]) => {
-      const locationId = BADATIME_LOCATION_IDS[port];
+      const locationId =
+        BADATIME_LOCATION_IDS[port] ??
+        BADATIME_LOCATION_IDS[port.replace(/항$/, "")] ??
+        BADATIME_LOCATION_IDS[`${port}항`];
       if (!locationId) return;
 
       const months = new Set(portItems.map((item) => item.departureDate.slice(0, 7)));
