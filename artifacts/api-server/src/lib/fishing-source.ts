@@ -15,6 +15,9 @@ export type FishingSchedule = {
   region: string;
   port: string;
   tide: string;
+  // 바다타임(badatime.com) 기준 조류 세기(%). 매핑되지 않은 항구이거나 조회
+  // 실패 시 null — 이 부가 정보 하나 때문에 검색 전체가 실패하지는 않는다.
+  tideStrengthPercent: number | null;
   genre: string;
   operator: string;
   vessel: string;
@@ -42,10 +45,43 @@ type SourceConfig = {
   vessels: string[];
 };
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// 출항 일정은 자주 바뀌는 데이터가 아니라서, 5분보다 넉넉하게 잡아도 체감
+// 정확도는 거의 떨어지지 않으면서 반복 검색(날짜만 살짝 바꿔 다시 찾기 등)의
+// 캐시 적중률은 크게 올라간다.
+const CACHE_TTL_MS = 20 * 60 * 1000;
 // 예약처별로 이미 조회한 '연-월'은 캐시해서, 겹치는 기간을 다시 조회할 때
 // 네트워크 스크래핑 없이 재사용한다. 키 형태: `${sourceId}:${year}-${month}`
 const monthCache = new Map<string, { expiresAt: number; items: FishingSchedule[] }>();
+
+// 예약처를 전부 동시에 조회하면(현재 15곳, 계속 느는 중) 무료 인스턴스의
+// 제한된 CPU/네트워크 자원을 한꺼번에 놓고 경합하게 되어, 코드는 병렬이어도
+// 실제로는 예약처가 늘수록 체감 속도가 계속 느려진다. 한 번에 이 개수만큼만
+// 동시에 조회해서 전체 소요 시간이 예약처 개수에 비례해 늘어나지 않게 한다.
+const SOURCE_FETCH_CONCURRENCY = 6;
+
+// Promise.allSettled와 동일한 형태({status, value|reason}[])를 반환하되, 한
+// 번에 최대 `limit`개까지만 동시에 실행한다. 커서를 공유하는 워커 몇 개가
+// 배열을 나눠 처리하는 단순한 방식이라 별도 패키지 없이도 충분하다.
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (cursor < items.length) {
+      const index = cursor++;
+      try {
+        results[index] = { status: "fulfilled", value: await mapper(items[index], index) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 /**
  * 예약처가 20곳 이상이고 각각 여러 달을 조회하다 보니, 한 번에 수십~백 개의
@@ -119,7 +155,7 @@ export function resetSourceHealth(): void {
 
 export type FishingSourceWithVessels = FishingSourceRecord & { vessels: FishingSourceVesselRecord[] };
 
-function toSourceConfig(source: FishingSourceWithVessels): SourceConfig {
+export function toSourceConfig(source: FishingSourceWithVessels): SourceConfig {
   return {
     id: source.id,
     name: source.name,
@@ -233,6 +269,7 @@ function parseDayBlock(
       region: config.region,
       port: config.port,
       tide,
+      tideStrengthPercent: null,
       genre: genre || "선상 낚시",
       operator,
       vessel,
@@ -249,7 +286,7 @@ function parseDayBlock(
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-function browserHeaders(referer: string): HeadersInit {
+function browserHeaders(referer: string): Record<string, string> {
   return {
     "User-Agent": BROWSER_USER_AGENT,
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -350,6 +387,7 @@ function parseSunsangDayBlock(
       region: config.region,
       port: config.port,
       tide,
+      tideStrengthPercent: null,
       genre,
       operator: cleanText(config.name),
       vessel,
@@ -428,6 +466,95 @@ export type FishingScheduleSearch = {
   failedSources: string[];
 };
 
+// 우리 항구 이름 → 바다타임(badatime.com) 지역 ID. 바다타임 사이트에서 해당
+// 항구를 검색해 URL의 숫자 ID를 직접 확인해 채워 넣었다. 여기 없는 항구는
+// tideStrengthPercent가 그냥 null로 남는다 (검색 자체는 계속 정상 동작).
+const BADATIME_LOCATION_IDS: Record<string, number> = {
+  대천항: 126,
+  삼길포: 144,
+  신진도: 132,
+  오천항: 355,
+  마검포: 1400,
+};
+
+// 바다타임의 "날짜별물때" 표에서 한 줄당 한 번씩 나오는 "물흐름 **80%**
+// [상세보기 >](.../그래프/YYYY-M-D)" 패턴. 상세보기 링크에 정확한 날짜가
+// 박혀있어서, 표 구조를 따로 안 풀어도 (percent, 날짜)를 바로 뽑아낼 수 있다.
+// 주기상 극값인 날은 숫자 대신 "최소"/"최대"로 표기된다.
+const BADATIME_ROW_RE =
+  /물흐름\s+\*\*(\d{1,3}%|최소|최대)\*\*\s+\[상세보기[^\]]*\]\(https:\/\/www\.badatime\.com\/\d+\/graph\/(\d{4})-(\d{1,2})-(\d{1,2})\)/g;
+
+function parseBadatimePercent(value: string): number {
+  if (value === "최소") return 0;
+  if (value === "최대") return 100;
+  return Number(value.replace("%", ""));
+}
+
+// 날짜별 조류 세기는 천문 데이터라 자주 바뀌지 않으므로, 예약 일정 캐시보다
+// 훨씬 길게(하루) 잡아도 정확도 손해가 없다.
+const TIDE_STRENGTH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const tideStrengthMonthCache = new Map<string, { expiresAt: number; days: Map<string, number> }>();
+
+async function fetchTideStrengthMonth(locationId: number, year: number, month: number): Promise<Map<string, number>> {
+  const cacheKey = `${locationId}:${year}-${month}`;
+  const cached = tideStrengthMonthCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.days;
+
+  const url = `https://www.badatime.com/${locationId}/daily/${year}-${String(month).padStart(2, "0")}`;
+  const response = await fetch(url, { headers: browserHeaders(url), signal: AbortSignal.timeout(15_000) });
+  if (!response.ok) {
+    throw new Error(`바다타임 조류 세기 조회 실패 (${response.status})`);
+  }
+  const html = await response.text();
+  const $ = cheerio.load(html);
+  const bodyText = $("body").text();
+
+  const days = new Map<string, number>();
+  for (const match of bodyText.matchAll(BADATIME_ROW_RE)) {
+    const [, percentText, y, m, d] = match;
+    days.set(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`, parseBadatimePercent(percentText));
+  }
+  tideStrengthMonthCache.set(cacheKey, { expiresAt: Date.now() + TIDE_STRENGTH_CACHE_TTL_MS, days });
+  return days;
+}
+
+// 검색 결과에 등장하는 (항구, 연-월) 조합별로 바다타임 조류 세기를 가져와 각
+// 일정에 실제 수치를 붙여준다. 매핑 없는 항구나 조회 실패는 조용히 null로
+// 남겨서, 이 부가 정보 하나 때문에 전체 검색이 실패하는 일은 없게 한다.
+async function attachTideStrength(items: FishingSchedule[]): Promise<void> {
+  const byPort = new Map<string, FishingSchedule[]>();
+  for (const item of items) {
+    const list = byPort.get(item.port) ?? [];
+    list.push(item);
+    byPort.set(item.port, list);
+  }
+
+  await Promise.all(
+    Array.from(byPort.entries()).map(async ([port, portItems]) => {
+      const locationId = BADATIME_LOCATION_IDS[port];
+      if (!locationId) return;
+
+      const months = new Set(portItems.map((item) => item.departureDate.slice(0, 7)));
+      const merged = new Map<string, number>();
+      await Promise.all(
+        Array.from(months).map(async (yearMonth) => {
+          const [year, month] = yearMonth.split("-").map(Number);
+          try {
+            const monthDays = await fetchTideStrengthMonth(locationId, year, month);
+            for (const [date, percent] of monthDays) merged.set(date, percent);
+          } catch {
+            // 이 달만 못 가져온 것으로 취급하고 넘어간다 — 나머지 결과에는 영향 없음.
+          }
+        }),
+      );
+
+      for (const item of portItems) {
+        item.tideStrengthPercent = merged.get(item.departureDate) ?? null;
+      }
+    }),
+  );
+}
+
 export async function getSchedules(
   startDate: string,
   endDate: string,
@@ -451,22 +578,20 @@ export async function getSchedules(
   }
 
   const months = monthCursor(startDate, endDate);
-  const sourceResults = await Promise.allSettled(
-    sources.map(async (source) => {
-      const skipped = isSkipped(source.id);
-      if (skipped) {
-        throw new Error(`최근 반복 실패로 건너뜀 (${skipped.consecutiveFailures}회 연속 실패, 이전 오류: ${skipped.lastError ?? "알 수 없음"})`);
-      }
-      try {
-        const result = await fetchSourceMonths(months, source);
-        recordSuccess(source.id);
-        return result;
-      } catch (error) {
-        recordFailure(source.id, error);
-        throw error;
-      }
-    }),
-  );
+  const sourceResults = await mapWithConcurrency(sources, SOURCE_FETCH_CONCURRENCY, async (source) => {
+    const skipped = isSkipped(source.id);
+    if (skipped) {
+      throw new Error(`최근 반복 실패로 건너뜀 (${skipped.consecutiveFailures}회 연속 실패, 이전 오류: ${skipped.lastError ?? "알 수 없음"})`);
+    }
+    try {
+      const result = await fetchSourceMonths(months, source);
+      recordSuccess(source.id);
+      return result;
+    } catch (error) {
+      recordFailure(source.id, error);
+      throw error;
+    }
+  });
   // fetchSourceMonths는 해당 월 전체 데이터를 돌려주므로, 실제 요청한
   // 날짜 범위(startDate~endDate)에 맞게 여기서 다시 걸러낸다.
   const items = sourceResults
@@ -477,6 +602,11 @@ export async function getSchedules(
   );
   if (items.length === 0 && failedSources.length === sources.length) {
     throw new Error("모든 예약처를 불러오지 못했습니다.");
+  }
+  try {
+    await attachTideStrength(items);
+  } catch {
+    // 조류 세기는 부가 정보라, 여기서 뭔가 잘못돼도 검색 결과 자체는 그대로 돌려준다.
   }
   return { items, sources, failedSources };
 }

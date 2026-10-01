@@ -508,27 +508,16 @@ function SearchForm({
   );
 }
 
-// 표준 7물때식(서해) 15일 주기를 기준으로 물때 이름을 조류 세기(%)로 근사한다.
-// 조금·무시가 가장 약하고, 사리 절정(6~7물 부근)에서 가장 강하다. 실측 조류
-// 데이터가 아니라 물때 주기상의 상대적 위치를 사인 곡선으로 근사한 값이다.
-const TIDE_CYCLE_ORDER = ['조금', '무시', '1물', '2물', '3물', '4물', '5물', '6물', '7물', '8물', '9물', '10물', '11물', '12물', '13물'];
-
-function getTideStrength(tide: string): number | null {
-  const index = TIDE_CYCLE_ORDER.indexOf(tide.trim());
-  if (index === -1) return null;
-  const radians = (2 * Math.PI * index) / TIDE_CYCLE_ORDER.length;
-  return Math.round(50 - 50 * Math.cos(radians));
-}
-
-function TideStrength({ tide }: { tide: string }) {
-  const percent = getTideStrength(tide);
+// 바다타임(badatime.com)에서 가져온 실측 조류 세기(%). 백엔드가 항구+날짜로
+// badatime을 조회해 채워주며, 매핑 안 된 항구이거나 조회 실패 시 null이다.
+function TideStrength({ percent }: { percent: number | null }) {
   if (percent === null) return null;
   // 세기가 강해질수록 primary(teal) → accent(amber) 색조로 자연스럽게 이어지도록 보간.
   const hue = 174 + ((37 - 174) * percent) / 100;
   return (
     <span
       className="inline-flex items-center gap-1.5"
-      title={`조류 세기 약 ${percent}% (물때 주기 기준 근사치)`}
+      title={`조류 세기 ${percent}% (바다타임 기준)`}
       data-testid="indicator-tide-strength"
     >
       <span className="h-1.5 w-8 overflow-hidden rounded-full bg-muted">
@@ -555,7 +544,7 @@ function ScheduleRow({ schedule }: { schedule: FishingSchedule }) {
       <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">선박</span><span className="font-semibold">{schedule.vessel}</span></div>
       <div className="flex min-w-0 items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">운영사</span>{schedule.operatorUrl ? <a href={schedule.operatorUrl} target="_blank" rel="noreferrer" className="truncate font-medium hover:text-primary hover:underline">{schedule.operator}</a> : <span className="truncate">{schedule.operator}</span>}</div>
       <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">장르</span><span className="rounded-md bg-secondary px-2 py-1 text-xs font-semibold text-secondary-foreground">{schedule.genre}</span></div>
-      <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">물때</span><span>{schedule.tide}</span><TideStrength tide={schedule.tide} /></div>
+      <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">물때</span><span>{schedule.tide}</span><TideStrength percent={schedule.tideStrengthPercent} /></div>
       <div className="flex items-center justify-between gap-2 pt-2 md:justify-end md:pt-0">
         <span className={`hidden rounded-full px-2.5 py-1 text-xs font-bold md:inline-flex ${seatClass}`}>{seatState}</span>
         {schedule.bookingUrl && schedule.remainingSeats !== 0 ? (

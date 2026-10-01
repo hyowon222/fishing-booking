@@ -21,6 +21,7 @@ import {
   getSourceLabel,
   listConfiguredSources,
   resetSourceHealth,
+  toSourceConfig,
 } from "../lib/fishing-source";
 
 const router: IRouter = Router();
@@ -147,7 +148,7 @@ router.get("/fishing/options", async (_req, res) => {
     } catch {
       // 타임아웃에 걸리면, 텅 빈 값 대신 직전에 성공했던 온전한 필터 목록을
       // 먼저 보여준다 (없으면 예약처 설정에 저장된 지역/항구/업로드 선박만으로 대체).
-      options = lastGoodOptions ?? getFilterOptions([], configuredSources);
+      options = lastGoodOptions ?? getFilterOptions([], configuredSources.map(toSourceConfig));
     }
     const parsedOptions = GetFishingFilterOptionsResponse.parse(options);
     res.json(parsedOptions);
