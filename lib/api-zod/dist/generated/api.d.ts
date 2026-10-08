@@ -574,17 +574,23 @@ export declare const DetectFishingSourceBody: zod.ZodObject<{
 export declare const DetectFishingSourceResponse: zod.ZodObject<{
     platform: zod.ZodString;
     suggestedName: zod.ZodNullable<zod.ZodString>;
+    suggestedPort: zod.ZodNullable<zod.ZodString>;
+    suggestedRegion: zod.ZodNullable<zod.ZodString>;
     vessels: zod.ZodArray<zod.ZodString, "many">;
     workingUrl: zod.ZodNullable<zod.ZodString>;
 }, "strip", zod.ZodTypeAny, {
     vessels: string[];
     platform: string;
     suggestedName: string | null;
+    suggestedPort: string | null;
+    suggestedRegion: string | null;
     workingUrl: string | null;
 }, {
     vessels: string[];
     platform: string;
     suggestedName: string | null;
+    suggestedPort: string | null;
+    suggestedRegion: string | null;
     workingUrl: string | null;
 }>;
 //# sourceMappingURL=api.d.ts.map

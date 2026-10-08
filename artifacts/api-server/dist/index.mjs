@@ -22153,7 +22153,7 @@ var require_request = __commonJS({
     defineGetter(req, "path", function path() {
       return parse10(this).pathname;
     });
-    defineGetter(req, "host", function host() {
+    defineGetter(req, "host", function host2() {
       var trust = this.app.get("trust proxy fn");
       var val2 = this.get("X-Forwarded-Host");
       if (!val2 || !trust(this.socket.remoteAddress, 0)) {
@@ -22164,11 +22164,11 @@ var require_request = __commonJS({
       return val2 || void 0;
     });
     defineGetter(req, "hostname", function hostname2() {
-      var host = this.host;
-      if (!host) return;
-      var offset = host[0] === "[" ? host.indexOf("]") + 1 : 0;
-      var index2 = host.indexOf(":", offset);
-      return index2 !== -1 ? host.substring(0, index2) : host;
+      var host2 = this.host;
+      if (!host2) return;
+      var offset = host2[0] === "[" ? host2.indexOf("]") + 1 : 0;
+      var index2 = host2.indexOf(":", offset);
+      return index2 !== -1 ? host2.substring(0, index2) : host2;
     });
     defineGetter(req, "fresh", function() {
       var method = this.method;
@@ -31767,11 +31767,11 @@ var require_connection = __commonJS({
           }
         });
       }
-      connect(port2, host) {
+      connect(port2, host2) {
         const self = this;
         this._connecting = true;
         this.stream.setNoDelay(true);
-        this.stream.connect(port2, host);
+        this.stream.connect(port2, host2);
         this.stream.once("connect", function() {
           if (self._keepAlive) {
             self.stream.setKeepAlive(true, self._keepAliveInitialDelayMillis);
@@ -31793,7 +31793,7 @@ var require_connection = __commonJS({
         }
         if (this.sslNegotiation === "direct") {
           return this.stream.once("connect", function() {
-            self.upgradeToSSL(host, reportStreamError);
+            self.upgradeToSSL(host2, reportStreamError);
           });
         }
         this.stream.once("data", function(buffer) {
@@ -31808,10 +31808,10 @@ var require_connection = __commonJS({
               self.stream.end();
               return self.emit("error", new Error("There was an error establishing an SSL connection"));
           }
-          self.upgradeToSSL(host, reportStreamError);
+          self.upgradeToSSL(host2, reportStreamError);
         });
       }
-      upgradeToSSL(host, reportStreamError) {
+      upgradeToSSL(host2, reportStreamError) {
         const self = this;
         const options = {
           socket: self.stream
@@ -31826,8 +31826,8 @@ var require_connection = __commonJS({
           options.ALPNProtocols = ["postgresql"];
         }
         const net = __require("net");
-        if (net.isIP && net.isIP(host) === 0) {
-          options.servername = host;
+        if (net.isIP && net.isIP(host2) === 0) {
+          options.servername = host2;
         }
         try {
           self.stream = stream.getSecureStream(options);
@@ -39471,22 +39471,22 @@ var require_util = __commonJS({
       }
       return url2;
     }
-    function getHostname(host) {
-      if (host[0] === "[") {
-        const idx2 = host.indexOf("]");
+    function getHostname(host2) {
+      if (host2[0] === "[") {
+        const idx2 = host2.indexOf("]");
         assert2(idx2 !== -1);
-        return host.substring(1, idx2);
+        return host2.substring(1, idx2);
       }
-      const idx = host.indexOf(":");
-      if (idx === -1) return host;
-      return host.substring(0, idx);
+      const idx = host2.indexOf(":");
+      if (idx === -1) return host2;
+      return host2.substring(0, idx);
     }
-    function getServerName(host) {
-      if (!host) {
+    function getServerName(host2) {
+      if (!host2) {
         return null;
       }
-      assert2(typeof host === "string");
-      const servername = getHostname(host);
+      assert2(typeof host2 === "string");
+      const servername = getHostname(host2);
       if (net.isIP(servername)) {
         return "";
       }
@@ -40231,11 +40231,11 @@ var require_diagnostics = __commonJS({
         "undici:client:beforeConnect",
         (evt) => {
           const {
-            connectParams: { version: version3, protocol, port: port2, host }
+            connectParams: { version: version3, protocol, port: port2, host: host2 }
           } = evt;
           debugLog(
             "connecting to %s%s using %s%s",
-            host,
+            host2,
             port2 ? `:${port2}` : "",
             protocol,
             version3
@@ -40246,11 +40246,11 @@ var require_diagnostics = __commonJS({
         "undici:client:connected",
         (evt) => {
           const {
-            connectParams: { version: version3, protocol, port: port2, host }
+            connectParams: { version: version3, protocol, port: port2, host: host2 }
           } = evt;
           debugLog(
             "connected to %s%s using %s%s",
-            host,
+            host2,
             port2 ? `:${port2}` : "",
             protocol,
             version3
@@ -40261,12 +40261,12 @@ var require_diagnostics = __commonJS({
         "undici:client:connectError",
         (evt) => {
           const {
-            connectParams: { version: version3, protocol, port: port2, host },
+            connectParams: { version: version3, protocol, port: port2, host: host2 },
             error: error40
           } = evt;
           debugLog(
             "connection to %s%s using %s%s errored - %s",
-            host,
+            host2,
             port2 ? `:${port2}` : "",
             protocol,
             version3,
@@ -41203,13 +41203,13 @@ var require_connect = __commonJS({
       const sessionCache = new SessionCache(maxCachedSessions == null ? 100 : maxCachedSessions);
       timeout = timeout == null ? 1e4 : timeout;
       allowH2 = allowH2 != null ? allowH2 : false;
-      return function connect({ hostname: hostname2, host, protocol, port: port2, servername, localAddress, httpSocket }, callback) {
+      return function connect({ hostname: hostname2, host: host2, protocol, port: port2, servername, localAddress, httpSocket }, callback) {
         let socket;
         if (protocol === "https:") {
           if (!tls) {
             tls = __require("node:tls");
           }
-          servername = servername || options.servername || util2.getServerName(host) || null;
+          servername = servername || options.servername || util2.getServerName(host2) || null;
           const sessionKey = servername || hostname2;
           assert2(sessionKey);
           const session = customSession || sessionCache.get(sessionKey) || null;
@@ -45723,7 +45723,7 @@ var require_client_h1 = __commonJS({
       return method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && method !== "TRACE" && method !== "CONNECT";
     }
     function writeH1(client, request) {
-      const { method, path, host, upgrade, blocking, reset } = request;
+      const { method, path, host: host2, upgrade, blocking, reset } = request;
       let { body, headers, contentLength } = request;
       const expectsPayload = method === "PUT" || method === "POST" || method === "PATCH" || method === "QUERY" || method === "PROPFIND" || method === "PROPPATCH";
       if (util2.isFormDataLike(body)) {
@@ -45803,8 +45803,8 @@ var require_client_h1 = __commonJS({
       }
       let header = `${method} ${path} HTTP/1.1\r
 `;
-      if (typeof host === "string") {
-        header += `host: ${host}\r
+      if (typeof host2 === "string") {
+        header += `host: ${host2}\r
 `;
       } else {
         header += client[kHostHeader];
@@ -46480,7 +46480,7 @@ var require_client_h2 = __commonJS({
       const headersTimeout = request.headersTimeout ?? client[kHeadersTimeout];
       const bodyTimeout = request.bodyTimeout ?? client[kBodyTimeout];
       const session = client[kHTTP2Session];
-      const { method, path, host, upgrade, expectContinue, signal, protocol, headers: reqHeaders } = request;
+      const { method, path, host: host2, upgrade, expectContinue, signal, protocol, headers: reqHeaders } = request;
       let { body } = request;
       if (upgrade != null && upgrade !== "websocket") {
         util2.errorRequest(client, request, new InvalidArgumentError(`Custom upgrade "${upgrade}" not supported over HTTP/2`));
@@ -46514,7 +46514,7 @@ var require_client_h2 = __commonJS({
       }
       let stream = null;
       const { hostname: hostname2, port: port2 } = client[kUrl];
-      headers[HTTP2_HEADER_AUTHORITY] = host || `${hostname2}${port2 ? `:${port2}` : ""}`;
+      headers[HTTP2_HEADER_AUTHORITY] = host2 || `${hostname2}${port2 ? `:${port2}` : ""}`;
       headers[HTTP2_HEADER_METHOD] = method;
       const abort = (err) => {
         if (request.aborted || request.completed) {
@@ -47240,7 +47240,7 @@ var require_client3 = __commonJS({
     function connect(client) {
       assert2(!client[kConnecting]);
       assert2(!client[kHTTPContext]);
-      let { host, hostname: hostname2, protocol, port: port2 } = client[kUrl];
+      let { host: host2, hostname: hostname2, protocol, port: port2 } = client[kUrl];
       if (hostname2[0] === "[") {
         const idx = hostname2.indexOf("]");
         assert2(idx !== -1);
@@ -47252,7 +47252,7 @@ var require_client3 = __commonJS({
       if (channels.beforeConnect.hasSubscribers) {
         channels.beforeConnect.publish({
           connectParams: {
-            host,
+            host: host2,
             hostname: hostname2,
             protocol,
             port: port2,
@@ -47265,7 +47265,7 @@ var require_client3 = __commonJS({
       }
       try {
         client[kConnector]({
-          host,
+          host: host2,
           hostname: hostname2,
           protocol,
           port: port2,
@@ -47273,7 +47273,7 @@ var require_client3 = __commonJS({
           localAddress: client[kLocalAddress]
         }, (err, socket) => {
           if (err) {
-            handleConnectError(client, err, { host, hostname: hostname2, protocol, port: port2 });
+            handleConnectError(client, err, { host: host2, hostname: hostname2, protocol, port: port2 });
             client[kResume]();
             return;
           }
@@ -47287,7 +47287,7 @@ var require_client3 = __commonJS({
             client[kHTTPContext] = socket.alpnProtocol === "h2" ? connectH2(client, socket) : connectH1(client, socket);
           } catch (err2) {
             socket.destroy().on("error", noop);
-            handleConnectError(client, err2, { host, hostname: hostname2, protocol, port: port2 });
+            handleConnectError(client, err2, { host: host2, hostname: hostname2, protocol, port: port2 });
             client[kResume]();
             return;
           }
@@ -47299,7 +47299,7 @@ var require_client3 = __commonJS({
           if (channels.connected.hasSubscribers) {
             channels.connected.publish({
               connectParams: {
-                host,
+                host: host2,
                 hostname: hostname2,
                 protocol,
                 port: port2,
@@ -47315,11 +47315,11 @@ var require_client3 = __commonJS({
           client[kResume]();
         });
       } catch (err) {
-        handleConnectError(client, err, { host, hostname: hostname2, protocol, port: port2 });
+        handleConnectError(client, err, { host: host2, hostname: hostname2, protocol, port: port2 });
         client[kResume]();
       }
     }
-    function handleConnectError(client, err, { host, hostname: hostname2, protocol, port: port2 }) {
+    function handleConnectError(client, err, { host: host2, hostname: hostname2, protocol, port: port2 }) {
       if (client.destroyed) {
         return;
       }
@@ -47327,7 +47327,7 @@ var require_client3 = __commonJS({
       if (channels.connectError.hasSubscribers) {
         channels.connectError.publish({
           connectParams: {
-            host,
+            host: host2,
             hostname: hostname2,
             protocol,
             port: port2,
@@ -48948,8 +48948,8 @@ var require_proxy_agent = __commonJS({
         } = opts;
         opts.path = origin + path;
         if (!("host" in headers) && !("Host" in headers)) {
-          const { host } = new URL(origin);
-          headers.host = host;
+          const { host: host2 } = new URL(origin);
+          headers.host = host2;
         }
         opts.headers = { ...this[kProxyHeaders], ...headers };
         return this.#client[kDispatch](opts, handler);
@@ -49080,8 +49080,8 @@ var require_proxy_agent = __commonJS({
         const headers = buildHeaders(opts.headers);
         throwIfProxyAuthIsSent(headers);
         if (headers && !("host" in headers) && !("Host" in headers)) {
-          const { host } = new URL(opts.origin);
-          headers.host = host;
+          const { host: host2 } = new URL(opts.origin);
+          headers.host = host2;
         }
         return this[kAgent].dispatch(
           {
@@ -53332,21 +53332,21 @@ var require_dns = __commonJS({
       }
       return false;
     }
-    function withHostHeader(host, headers) {
+    function withHostHeader(host2, headers) {
       const normalizedHeaders = normalizeHeaders(headers);
       if (hasHostHeader(normalizedHeaders)) {
         return normalizedHeaders;
       }
       if (Array.isArray(normalizedHeaders)) {
-        return ["host", host, ...normalizedHeaders];
+        return ["host", host2, ...normalizedHeaders];
       }
       if (normalizedHeaders && typeof normalizedHeaders === "object") {
         return {
-          host,
+          host: host2,
           ...normalizedHeaders
         };
       }
-      return { host };
+      return { host: host2 };
     }
     var DNSStorage = class {
       #maxItems = 0;
@@ -68449,6 +68449,7 @@ var SearchFishingSchedulesResponse = objectType({
     "region": stringType(),
     "port": stringType(),
     "tide": stringType(),
+    "tideStrengthPercent": numberType().int().nullable().describe("\uBC14\uB2E4\uD0C0\uC784(badatime.com) \uAE30\uC900 \uC870\uB958 \uC138\uAE30(%). \uB9E4\uD551\uB418\uC9C0 \uC54A\uC740 \uD56D\uAD6C\uC774\uAC70\uB098 \uC870\uD68C\uC5D0 \uC2E4\uD328\uD558\uBA74 null."),
     "genre": stringType(),
     "operator": stringType(),
     "vessel": stringType(),
@@ -68467,7 +68468,9 @@ var GetFishingFilterOptionsResponse = objectType({
   "regions": arrayType(stringType()),
   "ports": arrayType(stringType()),
   "ships": arrayType(stringType()),
-  "tides": arrayType(stringType())
+  "tides": arrayType(stringType()),
+  "shipsByPort": recordType(stringType(), arrayType(stringType())),
+  "shipsByRegion": recordType(stringType(), arrayType(stringType()))
 });
 var ListFishingSourcesResponseItem = objectType({
   "id": numberType().int(),
@@ -68478,7 +68481,12 @@ var ListFishingSourcesResponseItem = objectType({
   "enabled": booleanType(),
   "createdAt": coerce.date(),
   "updatedAt": coerce.date(),
-  "vessels": arrayType(stringType())
+  "vessels": arrayType(objectType({
+    "id": numberType().int(),
+    "name": stringType(),
+    "departurePort": stringType(),
+    "address": stringType()
+  }))
 });
 var ListFishingSourcesResponse = arrayType(ListFishingSourcesResponseItem);
 var createFishingSourceBodyEnabledDefault = true;
@@ -68498,7 +68506,12 @@ var CreateFishingSourceResponse = objectType({
   "enabled": booleanType(),
   "createdAt": coerce.date(),
   "updatedAt": coerce.date(),
-  "vessels": arrayType(stringType())
+  "vessels": arrayType(objectType({
+    "id": numberType().int(),
+    "name": stringType(),
+    "departurePort": stringType(),
+    "address": stringType()
+  }))
 });
 var UpdateFishingSourceParams = objectType({
   "id": coerce.number().int()
@@ -68520,7 +68533,12 @@ var UpdateFishingSourceResponse = objectType({
   "enabled": booleanType(),
   "createdAt": coerce.date(),
   "updatedAt": coerce.date(),
-  "vessels": arrayType(stringType())
+  "vessels": arrayType(objectType({
+    "id": numberType().int(),
+    "name": stringType(),
+    "departurePort": stringType(),
+    "address": stringType()
+  }))
 });
 var DeleteFishingSourceParams = objectType({
   "id": coerce.number().int()
@@ -68530,7 +68548,11 @@ var AddFishingSourceVesselsParams = objectType({
   "id": coerce.number().int()
 });
 var AddFishingSourceVesselsBody = objectType({
-  "vessels": arrayType(stringType().min(1)).min(1)
+  "vessels": arrayType(objectType({
+    "name": stringType().min(1),
+    "departurePort": stringType(),
+    "address": stringType()
+  })).min(1)
 });
 var AddFishingSourceVesselsResponse = objectType({
   "id": numberType().int(),
@@ -68541,12 +68563,28 @@ var AddFishingSourceVesselsResponse = objectType({
   "enabled": booleanType(),
   "createdAt": coerce.date(),
   "updatedAt": coerce.date(),
-  "vessels": arrayType(stringType())
+  "vessels": arrayType(objectType({
+    "id": numberType().int(),
+    "name": stringType(),
+    "departurePort": stringType(),
+    "address": stringType()
+  }))
 });
 var ClearFishingSourceVesselsParams = objectType({
   "id": coerce.number().int()
 });
 var ClearFishingSourceVesselsResponse = voidType();
+var DetectFishingSourceBody = objectType({
+  "url": stringType()
+});
+var DetectFishingSourceResponse = objectType({
+  "platform": stringType().describe('"thefishing" | "sunsang24" | "unknown" \uC911 \uD558\uB098. \uB354\uD53C\uC2F1(index.php?mid=bk) \uB610\uB294 SUNSANG24(/ship/schedule_fleet) \uD328\uD134 \uC911 \uC2E4\uC81C\uB85C \uC120\uBC15\uC774 \uAE01\uD78C \uCABD\uC774\uACE0, \uB458 \uB2E4 \uC548 \uB418\uBA74 unknown.'),
+  "suggestedName": stringType().nullable().describe("\uC0AC\uC774\uD2B8 <title> \uD0DC\uADF8\uC5D0\uC11C \uBF51\uC544\uBCF8 \uC774\uB984 \uCD94\uCC9C\uAC12. \uCC38\uACE0\uC6A9\uC774\uB77C \uADF8\uB300\uB85C \uC548 \uC368\uB3C4 \uB428."),
+  "suggestedPort": stringType().nullable().describe("\uC0AC\uC774\uD2B8 \uC81C\uBAA9\xB7\uBCF8\uBB38\xB7\uC8FC\uC18C\uC5D0\uC11C \uAE30\uC874 \uC608\uC57D\uCC98\uC5D0 \uB4F1\uB85D\uB41C \uD56D\uAD6C \uC774\uB984 \uD558\uB098\uB9CC \uD655\uC778\uB41C \uACBD\uC6B0\uC758 \uD56D\uAD6C \uAC12."),
+  "suggestedRegion": stringType().nullable().describe("\uD655\uC778\uB41C \uD56D\uAD6C\uB85C \uB4F1\uB85D\uB41C \uAE30\uC874 \uC608\uC57D\uCC98\uC758 \uC9C0\uC5ED \uAC12. \uD56D\uAD6C\uAC00 \uBD88\uBA85\uD655\uD558\uAC70\uB098 \uAE30\uC874 \uC9C0\uC5ED \uAC12\uC774 \uC77C\uCE58\uD558\uC9C0 \uC54A\uC73C\uBA74 null."),
+  "vessels": arrayType(stringType()).describe("\uC774\uBC88 \uB2EC(\uB610\uB294 \uBE44\uC5B4\uC788\uC73C\uBA74 \uB2E4\uC74C \uB2EC) \uC870\uD68C\uC5D0\uC11C \uC2E4\uC81C\uB85C \uBC1C\uACAC\uB41C \uC120\uBC15 \uC774\uB984\uB4E4."),
+  "workingUrl": stringType().nullable().describe("\uC815\uC0C1 \uC778\uC2DD\uB41C \uACBD\uC6B0\uC758 \uAE30\uC900 URL. platform\uC774 unknown\uC774\uBA74 null.")
+});
 
 // src/routes/health.ts
 var router = (0, import_express.Router)();
@@ -86967,6 +87005,32 @@ if (!process.env.DATABASE_URL) {
 var pool = new Pool3({ connectionString: process.env.DATABASE_URL });
 var db = drizzle(pool, { schema: schema_exports });
 
+// src/lib/harbor-detection.ts
+function normalizedHarborName(value) {
+  return value.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/\s+/g, "").replace(/항$/, "");
+}
+function resolveDetectedHarbor(evidence, registeredSources) {
+  const normalizedEvidence = evidence.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/[\s\p{P}\p{S}]/gu, "");
+  const harbors = /* @__PURE__ */ new Map();
+  for (const source of registeredSources) {
+    const key = normalizedHarborName(source.port);
+    if (!key) continue;
+    const rows = harbors.get(key) ?? [];
+    rows.push(source);
+    harbors.set(key, rows);
+  }
+  const matches = [...harbors.entries()].filter(([key]) => normalizedEvidence.includes(key));
+  if (matches.length !== 1) return { port: null, region: null };
+  const [, sources] = matches[0];
+  const ports = [...new Set(sources.map((source) => source.port.trim()).filter(Boolean))];
+  const port2 = ports.find((value) => value.replace(/\s+/g, "").endsWith("\uD56D")) ?? ports[0] ?? null;
+  const regions = [...new Set(sources.map((source) => source.region.trim()).filter(Boolean))];
+  return {
+    port: port2,
+    region: regions.length === 1 ? regions[0] : null
+  };
+}
+
 // ../../node_modules/.pnpm/cheerio@1.2.0/node_modules/cheerio/dist/esm/options.js
 var defaultOpts = {
   _useHtmlParser2: false
@@ -101410,8 +101474,65 @@ var undici = __toESM(require_undici(), 1);
 var import_whatwg_mimetype = __toESM(require_mime_type(), 1);
 
 // src/lib/fishing-source.ts
-var CACHE_TTL_MS = 5 * 60 * 1e3;
-var sourceCache = /* @__PURE__ */ new Map();
+var CACHE_TTL_MS = 20 * 60 * 1e3;
+var monthCache = /* @__PURE__ */ new Map();
+var SOURCE_FETCH_CONCURRENCY = 6;
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const index2 = cursor++;
+      try {
+        results[index2] = { status: "fulfilled", value: await mapper(items[index2], index2) };
+      } catch (reason) {
+        results[index2] = { status: "rejected", reason };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+var MAX_CONCURRENT_FETCHES = 6;
+var activeFetches = 0;
+var fetchQueue = [];
+async function withFetchLimit(task) {
+  if (activeFetches >= MAX_CONCURRENT_FETCHES) {
+    await new Promise((resolve) => fetchQueue.push(resolve));
+  }
+  activeFetches += 1;
+  try {
+    return await task();
+  } finally {
+    activeFetches -= 1;
+    const next2 = fetchQueue.shift();
+    if (next2) next2();
+  }
+}
+var FAILURE_THRESHOLD = 3;
+var COOLDOWN_MS = 10 * 60 * 1e3;
+var sourceHealth = /* @__PURE__ */ new Map();
+function isSkipped(sourceId) {
+  const health = sourceHealth.get(sourceId);
+  if (health && health.skipUntil > Date.now()) return health;
+  return void 0;
+}
+function recordSuccess(sourceId) {
+  sourceHealth.delete(sourceId);
+}
+function recordFailure(sourceId, error40) {
+  const prev2 = sourceHealth.get(sourceId);
+  const consecutiveFailures = (prev2?.consecutiveFailures ?? 0) + 1;
+  const skipUntil = consecutiveFailures >= FAILURE_THRESHOLD ? Date.now() + COOLDOWN_MS : 0;
+  sourceHealth.set(sourceId, {
+    consecutiveFailures,
+    skipUntil,
+    lastError: error40 instanceof Error ? error40.message : String(error40)
+  });
+}
+function resetSourceHealth() {
+  sourceHealth.clear();
+}
 function toSourceConfig(source) {
   return {
     id: source.id,
@@ -101439,10 +101560,16 @@ async function listConfiguredSources() {
   }));
 }
 function clearSourceCache() {
-  sourceCache.clear();
+  monthCache.clear();
+  knownShips.clear();
+  knownShipsByPort.clear();
+  knownShipsByRegion.clear();
 }
 function cleanText(value) {
   return value.replace(/\s+/g, " ").trim();
+}
+function isExcludedVessel(vessel) {
+  return vessel.includes("\uC88C\uB300");
 }
 function parseSeatCount(value) {
   const match = value.match(/남은자리\s*(\d+)\s*명/);
@@ -101450,9 +101577,14 @@ function parseSeatCount(value) {
 }
 function parseDateFromDayBlock(id, text4) {
   const idMatch = id.match(/new-div-(\d{8})/);
-  const dateValue2 = idMatch?.[1] ?? text4.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/)?.slice(1).join("");
-  if (!dateValue2 || dateValue2.length !== 8) return null;
-  return `${dateValue2.slice(0, 4)}-${dateValue2.slice(4, 6)}-${dateValue2.slice(6, 8)}`;
+  if (idMatch?.[1]) {
+    const digits = idMatch[1];
+    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  }
+  const textMatch = text4.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
+  if (!textMatch) return null;
+  const [, year, month, day] = textMatch;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 function extractBookingUrl(onclick, baseUrl) {
   const match = onclick.match(/f_popup\('([^']+)'/);
@@ -101475,7 +101607,7 @@ function parseDayBlock(block, config2) {
     const vessel = cleanText(cells.eq(0).find("span").first().text() || cells.eq(0).text());
     const seatAlt = cells.eq(2).find("img").first().attr("alt") || "";
     const remainingSeats = parseSeatCount(seatAlt);
-    if (!vessel || remainingSeats === null || remainingSeats <= 0) return;
+    if (!vessel || isExcludedVessel(vessel) || remainingSeats === null || remainingSeats <= 0) return;
     const genre = cleanText(
       cells.eq(1).find('img[alt="\uB09A\uC2DC\uC885\uB958"]').closest("tr").find("td").last().text() || cells.eq(1).text()
     );
@@ -101488,6 +101620,7 @@ function parseDayBlock(block, config2) {
       region: config2.region,
       port: config2.port,
       tide,
+      tideStrengthPercent: null,
       genre: genre || "\uC120\uC0C1 \uB09A\uC2DC",
       operator,
       vessel,
@@ -101499,16 +101632,28 @@ function parseDayBlock(block, config2) {
   });
   return items;
 }
+var BROWSER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+function browserHeaders(referer) {
+  return {
+    "User-Agent": BROWSER_USER_AGENT,
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+    Referer: referer
+  };
+}
 async function fetchMonth(year, month, config2) {
   const monthValue = String(month).padStart(2, "0");
   const url2 = new URL("/index.php", config2.baseUrl);
   url2.searchParams.set("mid", "bk");
   url2.searchParams.set("year", String(year));
   url2.searchParams.set("month", monthValue);
-  const response = await fetch(url2, {
-    headers: { "User-Agent": "BoatFishingLookup/1.0 (+reservation lookup)" },
-    signal: AbortSignal.timeout(15e3)
-  });
+  url2.searchParams.set("day", "01");
+  const response = await withFetchLimit(
+    () => fetch(url2, {
+      headers: browserHeaders(config2.baseUrl),
+      signal: AbortSignal.timeout(15e3)
+    })
+  );
   if (!response.ok) {
     throw new Error(`\uC608\uC57D \uC6D0\uBCF8\uC774 ${response.status} \uC0C1\uD0DC\uB97C \uBC18\uD658\uD588\uC2B5\uB2C8\uB2E4.`);
   }
@@ -101519,6 +101664,177 @@ async function fetchMonth(year, month, config2) {
     sourceItems.push(...parseDayBlock($2(element), config2));
   });
   return sourceItems;
+}
+var WEEKDAY_KO = ["\uC77C\uC694\uC77C", "\uC6D4\uC694\uC77C", "\uD654\uC694\uC77C", "\uC218\uC694\uC77C", "\uBAA9\uC694\uC77C", "\uAE08\uC694\uC77C", "\uD1A0\uC694\uC77C"];
+function isSunsang24(baseUrl) {
+  try {
+    return new URL(baseUrl).hostname.endsWith("sunsang24.com");
+  } catch {
+    return false;
+  }
+}
+function parseSunsangDayBlock($2, dayTable, config2) {
+  const idMatch = (dayTable.attr("id") || "").match(/^d(\d{4}-\d{2}-\d{2})$/);
+  const departureDate = idMatch?.[1];
+  if (!departureDate) return [];
+  const weekday = WEEKDAY_KO[(/* @__PURE__ */ new Date(`${departureDate}T00:00:00Z`)).getUTCDay()];
+  const tide = cleanText(dayTable.find(".date_info2").first().text()) || "\uBBF8\uC815";
+  const items = [];
+  dayTable.find(".ship_unit").each((_index, element) => {
+    const unit = $2(element);
+    const vessel = cleanText(unit.find(".ship_info .title").first().text());
+    if (!vessel || isExcludedVessel(vessel)) return;
+    const remainCell = unit.find(".ship_info2 .remain").first();
+    const isClosed = remainCell.find(".shipping_status").attr("data-status_code") === "END";
+    let remainingSeats = null;
+    if (isClosed) {
+      remainingSeats = 0;
+    } else {
+      const numberText = cleanText(remainCell.find(".number").first().text());
+      const match = numberText.match(/(\d+)/);
+      remainingSeats = match ? Number(match[1]) : null;
+    }
+    if (remainingSeats === null || remainingSeats <= 0) return;
+    const genre = cleanText(unit.find("#fish").first().text()) || "\uC120\uC0C1 \uB09A\uC2DC";
+    const scheduleNo = unit.find("[data-schedule_no]").first().attr("data-schedule_no") || "";
+    const monthPath = departureDate.slice(0, 4) + departureDate.slice(5, 7);
+    const bookingUrl = `${config2.baseUrl}/ship/schedule_fleet/${monthPath}`;
+    const id = `${departureDate}-${vessel}-${scheduleNo || "schedule"}`.replace(/[^0-9A-Za-z가-힣-]+/g, "-").toLowerCase();
+    items.push({
+      id,
+      departureDate,
+      weekday,
+      region: config2.region,
+      port: config2.port,
+      tide,
+      tideStrengthPercent: null,
+      genre,
+      operator: cleanText(config2.name),
+      vessel,
+      remainingSeats,
+      operatorUrl: config2.baseUrl,
+      bookingUrl,
+      source: bookingUrl
+    });
+  });
+  return items;
+}
+async function fetchSunsangMonth(year, month, config2) {
+  const monthValue = `${year}${String(month).padStart(2, "0")}`;
+  const url2 = new URL(`/ship/schedule_fleet/${monthValue}`, config2.baseUrl);
+  const response = await withFetchLimit(
+    () => fetch(url2, {
+      headers: browserHeaders(config2.baseUrl),
+      signal: AbortSignal.timeout(15e3)
+    })
+  );
+  if (!response.ok) {
+    throw new Error(`\uC608\uC57D \uC6D0\uBCF8\uC774 ${response.status} \uC0C1\uD0DC\uB97C \uBC18\uD658\uD588\uC2B5\uB2C8\uB2E4.`);
+  }
+  const html3 = await response.text();
+  const $2 = load(html3);
+  const sourceItems = [];
+  $2(".shipsinfo_daywarp").each((_index, element) => {
+    sourceItems.push(...parseSunsangDayBlock($2, $2(element), config2));
+  });
+  return sourceItems;
+}
+async function fetchMonthForConfig(year, month, config2) {
+  return isSunsang24(config2.baseUrl) ? fetchSunsangMonth(year, month, config2) : fetchMonth(year, month, config2);
+}
+async function fetchPageEvidence(baseUrl) {
+  try {
+    const response = await fetch(baseUrl, { headers: browserHeaders(baseUrl), signal: AbortSignal.timeout(1e4) });
+    if (!response.ok) return { title: null, text: "" };
+    const $2 = load(await response.text());
+    const title = cleanText($2("title").first().text()) || null;
+    const bodyText = cleanText($2("body").text() || $2.root().text()).slice(0, 1e5);
+    return { title, text: [title, bodyText].filter(Boolean).join("\n") };
+  } catch {
+    return { title: null, text: "" };
+  }
+}
+function isPrivateHost(hostname2) {
+  const host2 = hostname2.toLowerCase();
+  if (host2 === "localhost" || host2.endsWith(".localhost") || host2.endsWith(".local") || host2.endsWith(".internal")) {
+    return true;
+  }
+  if (host2 === "::1" || host2 === "[::1]") return true;
+  const octets = host2.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (octets) {
+    const a = Number(octets[1]);
+    const b = Number(octets[2]);
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+  }
+  return false;
+}
+function normalizeProbeUrl(rawUrl) {
+  let value = rawUrl.trim();
+  if (!value) return null;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = `http://${value}`;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (isPrivateHost(parsed.hostname)) return null;
+  } catch {
+    return null;
+  }
+  return value.replace(/\/+$/, "");
+}
+async function detectSource(rawUrl) {
+  const baseUrl = normalizeProbeUrl(rawUrl);
+  if (!baseUrl) return null;
+  const now = /* @__PURE__ */ new Date();
+  const platforms = isSunsang24(baseUrl) ? ["sunsang24", "thefishing"] : ["thefishing", "sunsang24"];
+  for (const platform of platforms) {
+    const probeConfig = { id: 0, name: baseUrl, baseUrl, region: "", port: "", vessels: [] };
+    const fetcher = platform === "sunsang24" ? fetchSunsangMonth : fetchMonth;
+    try {
+      let items = await fetcher(now.getUTCFullYear(), now.getUTCMonth() + 1, probeConfig);
+      if (items.length === 0) {
+        const next2 = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+        items = await fetcher(next2.getUTCFullYear(), next2.getUTCMonth() + 1, probeConfig);
+      }
+      const vessels = [...new Set(items.map((item) => item.vessel).filter(Boolean))];
+      if (vessels.length > 0) {
+        const pageEvidence2 = await fetchPageEvidence(baseUrl);
+        return {
+          platform,
+          suggestedName: pageEvidence2.title,
+          vessels,
+          workingUrl: baseUrl,
+          evidenceText: pageEvidence2.text
+        };
+      }
+    } catch {
+    }
+  }
+  const pageEvidence = await fetchPageEvidence(baseUrl);
+  return {
+    platform: "unknown",
+    suggestedName: pageEvidence.title,
+    vessels: [],
+    workingUrl: null,
+    evidenceText: pageEvidence.text
+  };
+}
+async function fetchSourceMonths(months, config2) {
+  const results = await Promise.all(
+    months.map(async ({ year, month }) => {
+      const cacheKey = `${config2.id}:${year}-${month}`;
+      const cached2 = monthCache.get(cacheKey);
+      if (cached2 && cached2.expiresAt > Date.now()) {
+        return cached2.items;
+      }
+      const monthItems = await fetchMonthForConfig(year, month, config2);
+      monthCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items: monthItems });
+      return monthItems;
+    })
+  );
+  return results.flat();
 }
 function monthCursor(startDate, endDate) {
   const start = /* @__PURE__ */ new Date(`${startDate}T00:00:00Z`);
@@ -101532,62 +101848,152 @@ function monthCursor(startDate, endDate) {
   }
   return months;
 }
-async function getSchedules(startDate, endDate) {
+var BADATIME_LOCATION_IDS = {
+  \uB300\uCC9C\uD56D: 126,
+  \uC0BC\uAE38\uD3EC: 144,
+  \uC2E0\uC9C4\uB3C4: 132,
+  \uC624\uCC9C\uD56D: 355,
+  \uB9C8\uAC80\uD3EC: 1400
+};
+var TIDE_STRENGTH_CACHE_TTL_MS = 24 * 60 * 60 * 1e3;
+var tideStrengthMonthCache = /* @__PURE__ */ new Map();
+async function fetchTideStrengthMonth(locationId, year, month) {
+  const cacheKey = `${locationId}:${year}-${month}`;
+  const cached2 = tideStrengthMonthCache.get(cacheKey);
+  if (cached2 && cached2.expiresAt > Date.now()) return cached2.days;
+  const url2 = `https://www.badatime.com/${locationId}/daily/${year}-${String(month).padStart(2, "0")}`;
+  const response = await fetch(url2, { headers: browserHeaders(url2), signal: AbortSignal.timeout(15e3) });
+  if (!response.ok) {
+    throw new Error(`\uBC14\uB2E4\uD0C0\uC784 \uC870\uB958 \uC138\uAE30 \uC870\uD68C \uC2E4\uD328 (${response.status})`);
+  }
+  const html3 = await response.text();
+  const $2 = load(html3);
+  const days = /* @__PURE__ */ new Map();
+  $2("tr.mo-row-only").each((_, row) => {
+    const value = $2(row).find(".progress-bar").first().attr("data-value");
+    const href = $2(row).find('a[href*="/graph/"]').first().attr("href") ?? "";
+    const dateMatch = href.match(/\/graph\/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (value === void 0 || !dateMatch) return;
+    const percent = Number(value);
+    if (!Number.isFinite(percent)) return;
+    const [, y, m, d] = dateMatch;
+    days.set(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`, percent);
+  });
+  if (days.size === 0) {
+    console.warn(`[tide] \uBC14\uB2E4\uD0C0\uC784 \uD30C\uC2F1 \uACB0\uACFC 0\uAC74: ${url2} (HTML \uAD6C\uC870\uAC00 \uBC14\uB00C\uC5C8\uC744 \uC218 \uC788\uC74C)`);
+  }
+  tideStrengthMonthCache.set(cacheKey, { expiresAt: Date.now() + TIDE_STRENGTH_CACHE_TTL_MS, days });
+  return days;
+}
+async function attachTideStrength(items) {
+  const byPort = /* @__PURE__ */ new Map();
+  for (const item of items) {
+    const list = byPort.get(item.port) ?? [];
+    list.push(item);
+    byPort.set(item.port, list);
+  }
+  await Promise.all(
+    Array.from(byPort.entries()).map(async ([port2, portItems]) => {
+      const locationId = BADATIME_LOCATION_IDS[port2] ?? BADATIME_LOCATION_IDS[port2.replace(/항$/, "")] ?? BADATIME_LOCATION_IDS[`${port2}\uD56D`];
+      if (!locationId) return;
+      const months = new Set(portItems.map((item) => item.departureDate.slice(0, 7)));
+      const merged = /* @__PURE__ */ new Map();
+      await Promise.all(
+        Array.from(months).map(async (yearMonth) => {
+          const [year, month] = yearMonth.split("-").map(Number);
+          try {
+            const monthDays = await fetchTideStrengthMonth(locationId, year, month);
+            for (const [date6, percent] of monthDays) merged.set(date6, percent);
+          } catch (err) {
+            console.warn(`[tide] ${port2} ${yearMonth} \uC870\uD68C \uC2E4\uD328:`, err);
+          }
+        })
+      );
+      for (const item of portItems) {
+        item.tideStrengthPercent = merged.get(item.departureDate) ?? null;
+      }
+    })
+  );
+}
+async function getSchedules(startDate, endDate, filter4) {
   const sourceRecords = await listConfiguredSources();
-  const sources = sourceRecords.filter((source) => source.enabled).map(toSourceConfig);
-  const cacheKey = `${sources.map((source) => source.id).join(",")}:${startDate}:${endDate}`;
-  const cached2 = sourceCache.get(cacheKey);
-  if (cached2 && cached2.expiresAt > Date.now()) {
-    return { items: cached2.items, sources, failedSources: [] };
+  let sources = sourceRecords.filter((source) => source.enabled).map(toSourceConfig);
+  if (filter4?.region?.length) {
+    sources = sources.filter((source) => filter4.region.includes(source.region));
+  }
+  if (filter4?.port) {
+    sources = sources.filter((source) => source.port === filter4.port);
   }
   if (sources.length === 0) {
     return { items: [], sources, failedSources: [] };
   }
   const months = monthCursor(startDate, endDate);
-  const sourceResults = await Promise.allSettled(
-    sources.map(
-      (source) => Promise.all(months.map(({ year, month }) => fetchMonth(year, month, source))).then((results) => results.flat())
-    )
-  );
-  const items = sourceResults.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  const sourceResults = await mapWithConcurrency(sources, SOURCE_FETCH_CONCURRENCY, async (source) => {
+    const skipped = isSkipped(source.id);
+    if (skipped) {
+      throw new Error(`\uCD5C\uADFC \uBC18\uBCF5 \uC2E4\uD328\uB85C \uAC74\uB108\uB700 (${skipped.consecutiveFailures}\uD68C \uC5F0\uC18D \uC2E4\uD328, \uC774\uC804 \uC624\uB958: ${skipped.lastError ?? "\uC54C \uC218 \uC5C6\uC74C"})`);
+    }
+    try {
+      const result = await fetchSourceMonths(months, source);
+      recordSuccess(source.id);
+      return result;
+    } catch (error40) {
+      recordFailure(source.id, error40);
+      throw error40;
+    }
+  });
+  const items = sourceResults.flatMap((result) => result.status === "fulfilled" ? result.value : []).filter((item) => item.departureDate >= startDate && item.departureDate <= endDate);
   const failedSources = sourceResults.flatMap(
     (result, index2) => result.status === "rejected" ? [sources[index2]?.name || "\uC608\uC57D\uCC98"] : []
   );
   if (items.length === 0 && failedSources.length === sources.length) {
     throw new Error("\uBAA8\uB4E0 \uC608\uC57D\uCC98\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
   }
-  sourceCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items });
+  try {
+    await attachTideStrength(items);
+  } catch {
+  }
   return { items, sources, failedSources };
 }
+var knownTides = /* @__PURE__ */ new Set();
+["1\uBB3C", "2\uBB3C", "3\uBB3C", "4\uBB3C", "5\uBB3C", "6\uBB3C", "7\uBB3C", "8\uBB3C", "9\uBB3C", "10\uBB3C", "11\uBB3C", "12\uBB3C", "13\uBB3C", "\uC870\uAE08", "\uBB34\uC2DC"].forEach(
+  (tide) => knownTides.add(tide)
+);
+var knownShips = /* @__PURE__ */ new Set();
+var knownShipsByPort = /* @__PURE__ */ new Map();
+var knownShipsByRegion = /* @__PURE__ */ new Map();
+function addToKnownMap(map3, key, vessel) {
+  if (!key || !vessel) return;
+  const values = map3.get(key) ?? /* @__PURE__ */ new Set();
+  values.add(vessel);
+  map3.set(key, values);
+}
 function getFilterOptions(items, sources = []) {
-  const values = (selector) => [...new Set(items.map(selector).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
-  const sourceValues = (selector) => sources.map(selector).filter(Boolean);
-  const shipsByPort = /* @__PURE__ */ new Map();
-  const shipsByRegion = /* @__PURE__ */ new Map();
-  const addToMap = (map3, key, vessel) => {
-    if (!key || !vessel) return;
-    const values2 = map3.get(key) ?? /* @__PURE__ */ new Set();
-    values2.add(vessel);
-    map3.set(key, values2);
-  };
   for (const item of items) {
-    addToMap(shipsByPort, item.port, item.vessel);
-    addToMap(shipsByRegion, item.region, item.vessel);
+    if (item.tide) knownTides.add(item.tide);
+    if (item.vessel && !isExcludedVessel(item.vessel)) knownShips.add(item.vessel);
+    if (!isExcludedVessel(item.vessel)) {
+      addToKnownMap(knownShipsByPort, item.port, item.vessel);
+      addToKnownMap(knownShipsByRegion, item.region, item.vessel);
+    }
   }
   for (const source of sources) {
     for (const vessel of source.vessels) {
-      addToMap(shipsByPort, source.port, vessel);
-      addToMap(shipsByRegion, source.region, vessel);
+      if (isExcludedVessel(vessel)) continue;
+      knownShips.add(vessel);
+      addToKnownMap(knownShipsByPort, source.port, vessel);
+      addToKnownMap(knownShipsByRegion, source.region, vessel);
     }
   }
-  const serializeMap = (map3) => Object.fromEntries([...map3.entries()].map(([key, values2]) => [key, [...values2].sort((a, b) => a.localeCompare(b, "ko"))]));
+  const sourceValues = (selector) => sources.map(selector).filter(Boolean);
+  const serializeMap = (map3) => Object.fromEntries([...map3.entries()].map(([key, values]) => [key, [...values].sort((a, b) => a.localeCompare(b, "ko"))]));
   return {
     regions: [...new Set([...items.map((item) => item.region), ...sourceValues((source) => source.region)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
     ports: [...new Set([...items.map((item) => item.port), ...sourceValues((source) => source.port)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
-    ships: [...new Set([...items.map((item) => item.vessel), ...sources.flatMap((source) => source.vessels)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")),
-    tides: values((item) => item.tide),
-    shipsByPort: serializeMap(shipsByPort),
-    shipsByRegion: serializeMap(shipsByRegion)
+    ships: [...knownShips].sort((a, b) => a.localeCompare(b, "ko")),
+    tides: [...knownTides].sort((a, b) => a.localeCompare(b, "ko")),
+    shipsByPort: serializeMap(knownShipsByPort),
+    shipsByRegion: serializeMap(knownShipsByRegion)
   };
 }
 function getSourceLabel(sources) {
@@ -101596,6 +102002,7 @@ function getSourceLabel(sources) {
 
 // src/routes/fishing.ts
 var router2 = (0, import_express2.Router)();
+var lastGoodOptions = null;
 function queryValues(value) {
   if (value === void 0) return void 0;
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
@@ -101603,6 +102010,16 @@ function queryValues(value) {
 }
 function dateValue(value) {
   return /* @__PURE__ */ new Date(`${String(value)}T00:00:00.000Z`);
+}
+function getPgErrorCode(error40) {
+  if (!error40 || typeof error40 !== "object") return void 0;
+  if ("code" in error40 && typeof error40.code === "string") {
+    return error40.code;
+  }
+  if ("cause" in error40) {
+    return getPgErrorCode(error40.cause);
+  }
+  return void 0;
 }
 router2.get("/fishing/schedules", async (req, res) => {
   const parsed = SearchFishingSchedulesQueryParams.safeParse({
@@ -101628,6 +102045,10 @@ router2.get("/fishing/schedules", async (req, res) => {
   }
   try {
     const search = await getSchedules(startDate, endDate);
+    const warmedOptions = getFilterOptions(search.items, search.sources);
+    if (search.items.length > 0) {
+      lastGoodOptions = warmedOptions;
+    }
     const region = parsed.data.region || [];
     const ship = parsed.data.ship || [];
     const items = search.items.filter((item) => {
@@ -101638,6 +102059,7 @@ router2.get("/fishing/schedules", async (req, res) => {
       const tideMatches = !parsed.data.tide || parsed.data.tide === item.tide;
       return departureMatches && regionMatches && portMatches && shipMatches && tideMatches;
     });
+    items.sort((a, b) => a.departureDate.localeCompare(b.departureDate) || a.vessel.localeCompare(b.vessel, "ko"));
     const response = SearchFishingSchedulesResponse.parse({
       items,
       total: items.length,
@@ -101652,6 +102074,12 @@ router2.get("/fishing/schedules", async (req, res) => {
     res.status(502).json({ error: "\uC608\uC57D \uC6D0\uBCF8\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694." });
   }
 });
+router2.post("/fishing/cache/refresh", (_req, res) => {
+  clearSourceCache();
+  resetSourceHealth();
+  lastGoodOptions = null;
+  res.json({ ok: true });
+});
 router2.get("/fishing/options", async (_req, res) => {
   try {
     const today = /* @__PURE__ */ new Date();
@@ -101662,10 +102090,16 @@ router2.get("/fishing/options", async (_req, res) => {
     const configuredSources = (await listConfiguredSources()).filter((source) => source.enabled);
     let options;
     try {
-      const search = await getSchedules(startDate, endDate);
+      const search = await Promise.race([
+        getSchedules(startDate, endDate),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("filter-options-timeout")), 12e3))
+      ]);
       options = getFilterOptions(search.items, search.sources);
+      if (search.items.length > 0) {
+        lastGoodOptions = options;
+      }
     } catch {
-      options = getFilterOptions([], configuredSources);
+      options = lastGoodOptions ?? getFilterOptions([], configuredSources.map(toSourceConfig));
     }
     const parsedOptions = GetFishingFilterOptionsResponse.parse(options);
     res.json(parsedOptions);
@@ -101692,7 +102126,7 @@ router2.post("/fishing/sources", async (req, res) => {
     clearSourceCache();
     res.status(201).json(source);
   } catch (error40) {
-    if (error40 && typeof error40 === "object" && "code" in error40 && error40.code === "23505") {
+    if (getPgErrorCode(error40) === "23505") {
       res.status(409).json({ error: "\uC774\uBBF8 \uB4F1\uB85D\uB41C \uC608\uC57D\uCC98 URL\uC785\uB2C8\uB2E4." });
       return;
     }
@@ -101717,7 +102151,7 @@ router2.patch("/fishing/sources/:id", async (req, res) => {
     clearSourceCache();
     res.json(source);
   } catch (error40) {
-    if (error40 && typeof error40 === "object" && "code" in error40 && error40.code === "23505") {
+    if (getPgErrorCode(error40) === "23505") {
       res.status(409).json({ error: "\uC774\uBBF8 \uB4F1\uB85D\uB41C \uC608\uC57D\uCC98 URL\uC785\uB2C8\uB2E4." });
       return;
     }
@@ -101781,6 +102215,43 @@ router2.delete("/fishing/sources/:id/vessels", async (req, res) => {
   await db.delete(fishingSourceVesselsTable).where(eq(fishingSourceVesselsTable.sourceId, source.id));
   clearSourceCache();
   res.status(204).send();
+});
+router2.post("/fishing/sources/detect", async (req, res) => {
+  const parsed = DetectFishingSourceBody.safeParse(req.body);
+  if (!parsed.success || !parsed.data.url.trim()) {
+    res.status(400).json({ error: "URL\uC744 \uC785\uB825\uD574\uC8FC\uC138\uC694." });
+    return;
+  }
+  const result = await detectSource(parsed.data.url);
+  if (!result) {
+    res.status(400).json({ error: "\uC62C\uBC14\uB978 \uC608\uC57D\uCC98 URL\uC774 \uC544\uB2D9\uB2C8\uB2E4. http:// \uB610\uB294 https://\uB85C \uC2DC\uC791\uD558\uB294 \uC8FC\uC18C\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694." });
+    return;
+  }
+  const { evidenceText, ...detection } = result;
+  let registeredSources = [];
+  try {
+    registeredSources = await db.select({ port: fishingSourcesTable.port, region: fishingSourcesTable.region }).from(fishingSourcesTable);
+  } catch (error40) {
+    req.log.warn({ err: error40 }, "Could not load registered harbors for source detection");
+  }
+  const decodedAddress = (() => {
+    try {
+      return decodeURIComponent(parsed.data.url);
+    } catch {
+      return parsed.data.url;
+    }
+  })();
+  const location = resolveDetectedHarbor(
+    `${evidenceText}
+${parsed.data.url}
+${decodedAddress}`,
+    registeredSources
+  );
+  res.json(DetectFishingSourceResponse.parse({
+    ...detection,
+    suggestedPort: location.port,
+    suggestedRegion: location.region
+  }));
 });
 var fishing_default = router2;
 
@@ -101846,12 +102317,13 @@ var port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
-app_default.listen(port, (err) => {
+var host = process.env["HOST"] ?? "127.0.0.1";
+app_default.listen(port, host, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   }
-  logger.info({ port }, "Server listening");
+  logger.info({ port, host }, "Server listening");
 });
 /*! Bundled license information:
 

@@ -433,16 +433,19 @@ export type DetectedSource = {
   suggestedName: string | null;
   vessels: string[];
   workingUrl: string | null;
+  evidenceText: string;
 };
 
-async function fetchPageTitle(baseUrl: string): Promise<string | null> {
+async function fetchPageEvidence(baseUrl: string): Promise<{ title: string | null; text: string }> {
   try {
     const response = await fetch(baseUrl, { headers: browserHeaders(baseUrl), signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) return null;
+    if (!response.ok) return { title: null, text: "" };
     const $ = cheerio.load(await response.text());
-    return cleanText($("title").first().text()) || null;
+    const title = cleanText($("title").first().text()) || null;
+    const bodyText = cleanText($("body").text() || $.root().text()).slice(0, 100_000);
+    return { title, text: [title, bodyText].filter(Boolean).join("\n") };
   } catch {
-    return null;
+    return { title: null, text: "" };
   }
 }
 
@@ -507,13 +510,27 @@ export async function detectSource(rawUrl: string): Promise<DetectedSource | nul
       }
       const vessels = [...new Set(items.map((item) => item.vessel).filter(Boolean))];
       if (vessels.length > 0) {
-        return { platform, suggestedName: await fetchPageTitle(baseUrl), vessels, workingUrl: baseUrl };
+        const pageEvidence = await fetchPageEvidence(baseUrl);
+        return {
+          platform,
+          suggestedName: pageEvidence.title,
+          vessels,
+          workingUrl: baseUrl,
+          evidenceText: pageEvidence.text,
+        };
       }
     } catch {
       // 이 플랫폼 패턴으로는 안 맞는 것으로 보고 다음 후보를 시도한다.
     }
   }
-  return { platform: "unknown", suggestedName: await fetchPageTitle(baseUrl), vessels: [], workingUrl: null };
+  const pageEvidence = await fetchPageEvidence(baseUrl);
+  return {
+    platform: "unknown",
+    suggestedName: pageEvidence.title,
+    vessels: [],
+    workingUrl: null,
+    evidenceText: pageEvidence.text,
+  };
 }
 
 async function fetchSourceMonths(

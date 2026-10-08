@@ -94,6 +94,16 @@ export interface DetectFishingSourceResponse {
        * @nullable
        */
     suggestedName: string | null;
+    /**
+       * 사이트 제목·본문·주소에서 기존 예약처에 등록된 항구 이름 하나만 확인된 경우의 항구 값.
+       * @nullable
+       */
+    suggestedPort: string | null;
+    /**
+       * 확인된 항구로 등록된 기존 예약처의 지역 값. 항구가 불명확하거나 기존 지역 값이 일치하지 않으면 null.
+       * @nullable
+       */
+    suggestedRegion: string | null;
     /** 이번 달(또는 비어있으면 다음 달) 조회에서 실제로 발견된 선박 이름들. */
     vessels: string[];
     /**

@@ -16,6 +16,7 @@ import {
 } from "@workspace/api-zod";
 import { db, fishingSourcesTable } from "@workspace/db";
 import { fishingSourceVesselsTable } from "@workspace/db";
+import { resolveDetectedHarbor, type RegisteredHarbor } from "../lib/harbor-detection";
 import {
   clearSourceCache,
   detectSource,
@@ -307,7 +308,31 @@ router.post("/fishing/sources/detect", async (req, res) => {
     res.status(400).json({ error: "올바른 예약처 URL이 아닙니다. http:// 또는 https://로 시작하는 주소를 입력해주세요." });
     return;
   }
-  res.json(DetectFishingSourceResponse.parse(result));
+  const { evidenceText, ...detection } = result;
+  let registeredSources: RegisteredHarbor[] = [];
+  try {
+    registeredSources = await db
+      .select({ port: fishingSourcesTable.port, region: fishingSourcesTable.region })
+      .from(fishingSourcesTable);
+  } catch (error) {
+    req.log.warn({ err: error }, "Could not load registered harbors for source detection");
+  }
+  const decodedAddress = (() => {
+    try {
+      return decodeURIComponent(parsed.data.url);
+    } catch {
+      return parsed.data.url;
+    }
+  })();
+  const location = resolveDetectedHarbor(
+    `${evidenceText}\n${parsed.data.url}\n${decodedAddress}`,
+    registeredSources,
+  );
+  res.json(DetectFishingSourceResponse.parse({
+    ...detection,
+    suggestedPort: location.port,
+    suggestedRegion: location.region,
+  }));
 });
 
 export default router;
