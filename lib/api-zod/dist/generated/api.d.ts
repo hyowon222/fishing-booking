@@ -51,6 +51,7 @@ export declare const SearchFishingSchedulesResponse: zod.ZodObject<{
         region: zod.ZodString;
         port: zod.ZodString;
         tide: zod.ZodString;
+        tideStrengthPercent: zod.ZodNullable<zod.ZodNumber>;
         genre: zod.ZodString;
         operator: zod.ZodString;
         vessel: zod.ZodString;
@@ -65,6 +66,7 @@ export declare const SearchFishingSchedulesResponse: zod.ZodObject<{
         id: string;
         departureDate: Date;
         weekday: string;
+        tideStrengthPercent: number | null;
         genre: string;
         operator: string;
         vessel: string;
@@ -79,6 +81,7 @@ export declare const SearchFishingSchedulesResponse: zod.ZodObject<{
         id: string;
         departureDate: Date;
         weekday: string;
+        tideStrengthPercent: number | null;
         genre: string;
         operator: string;
         vessel: string;
@@ -100,6 +103,7 @@ export declare const SearchFishingSchedulesResponse: zod.ZodObject<{
         id: string;
         departureDate: Date;
         weekday: string;
+        tideStrengthPercent: number | null;
         genre: string;
         operator: string;
         vessel: string;
@@ -121,6 +125,7 @@ export declare const SearchFishingSchedulesResponse: zod.ZodObject<{
         id: string;
         departureDate: Date;
         weekday: string;
+        tideStrengthPercent: number | null;
         genre: string;
         operator: string;
         vessel: string;
@@ -144,16 +149,22 @@ export declare const GetFishingFilterOptionsResponse: zod.ZodObject<{
     ports: zod.ZodArray<zod.ZodString, "many">;
     ships: zod.ZodArray<zod.ZodString, "many">;
     tides: zod.ZodArray<zod.ZodString, "many">;
+    shipsByPort: zod.ZodRecord<zod.ZodString, zod.ZodArray<zod.ZodString, "many">>;
+    shipsByRegion: zod.ZodRecord<zod.ZodString, zod.ZodArray<zod.ZodString, "many">>;
 }, "strip", zod.ZodTypeAny, {
     regions: string[];
     ports: string[];
     ships: string[];
     tides: string[];
+    shipsByPort: Record<string, string[]>;
+    shipsByRegion: Record<string, string[]>;
 }, {
     regions: string[];
     ports: string[];
     ships: string[];
     tides: string[];
+    shipsByPort: Record<string, string[]>;
+    shipsByRegion: Record<string, string[]>;
 }>;
 /**
  * @summary List configured fishing reservation sources
@@ -167,7 +178,22 @@ export declare const ListFishingSourcesResponseItem: zod.ZodObject<{
     enabled: zod.ZodBoolean;
     createdAt: zod.ZodDate;
     updatedAt: zod.ZodDate;
-    vessels: zod.ZodArray<zod.ZodString, "many">;
+    vessels: zod.ZodArray<zod.ZodObject<{
+        id: zod.ZodNumber;
+        name: zod.ZodString;
+        departurePort: zod.ZodString;
+        address: zod.ZodString;
+    }, "strip", zod.ZodTypeAny, {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }, {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }>, "many">;
 }, "strip", zod.ZodTypeAny, {
     region: string;
     port: string;
@@ -177,7 +203,12 @@ export declare const ListFishingSourcesResponseItem: zod.ZodObject<{
     enabled: boolean;
     createdAt: Date;
     updatedAt: Date;
-    vessels: string[];
+    vessels: {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }, {
     region: string;
     port: string;
@@ -187,7 +218,12 @@ export declare const ListFishingSourcesResponseItem: zod.ZodObject<{
     enabled: boolean;
     createdAt: Date;
     updatedAt: Date;
-    vessels: string[];
+    vessels: {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }>;
 export declare const ListFishingSourcesResponse: zod.ZodArray<zod.ZodObject<{
     id: zod.ZodNumber;
@@ -198,7 +234,22 @@ export declare const ListFishingSourcesResponse: zod.ZodArray<zod.ZodObject<{
     enabled: zod.ZodBoolean;
     createdAt: zod.ZodDate;
     updatedAt: zod.ZodDate;
-    vessels: zod.ZodArray<zod.ZodString, "many">;
+    vessels: zod.ZodArray<zod.ZodObject<{
+        id: zod.ZodNumber;
+        name: zod.ZodString;
+        departurePort: zod.ZodString;
+        address: zod.ZodString;
+    }, "strip", zod.ZodTypeAny, {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }, {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }>, "many">;
 }, "strip", zod.ZodTypeAny, {
     region: string;
     port: string;
@@ -208,7 +259,12 @@ export declare const ListFishingSourcesResponse: zod.ZodArray<zod.ZodObject<{
     enabled: boolean;
     createdAt: Date;
     updatedAt: Date;
-    vessels: string[];
+    vessels: {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }, {
     region: string;
     port: string;
@@ -218,7 +274,12 @@ export declare const ListFishingSourcesResponse: zod.ZodArray<zod.ZodObject<{
     enabled: boolean;
     createdAt: Date;
     updatedAt: Date;
-    vessels: string[];
+    vessels: {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }>, "many">;
 /**
  * @summary Add a fishing reservation source
@@ -252,7 +313,22 @@ export declare const CreateFishingSourceResponse: zod.ZodObject<{
     enabled: zod.ZodBoolean;
     createdAt: zod.ZodDate;
     updatedAt: zod.ZodDate;
-    vessels: zod.ZodArray<zod.ZodString, "many">;
+    vessels: zod.ZodArray<zod.ZodObject<{
+        id: zod.ZodNumber;
+        name: zod.ZodString;
+        departurePort: zod.ZodString;
+        address: zod.ZodString;
+    }, "strip", zod.ZodTypeAny, {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }, {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }>, "many">;
 }, "strip", zod.ZodTypeAny, {
     region: string;
     port: string;
@@ -262,7 +338,12 @@ export declare const CreateFishingSourceResponse: zod.ZodObject<{
     enabled: boolean;
     createdAt: Date;
     updatedAt: Date;
-    vessels: string[];
+    vessels: {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }, {
     region: string;
     port: string;
@@ -272,7 +353,12 @@ export declare const CreateFishingSourceResponse: zod.ZodObject<{
     enabled: boolean;
     createdAt: Date;
     updatedAt: Date;
-    vessels: string[];
+    vessels: {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }>;
 /**
  * @summary Update a fishing reservation source
@@ -313,7 +399,22 @@ export declare const UpdateFishingSourceResponse: zod.ZodObject<{
     enabled: zod.ZodBoolean;
     createdAt: zod.ZodDate;
     updatedAt: zod.ZodDate;
-    vessels: zod.ZodArray<zod.ZodString, "many">;
+    vessels: zod.ZodArray<zod.ZodObject<{
+        id: zod.ZodNumber;
+        name: zod.ZodString;
+        departurePort: zod.ZodString;
+        address: zod.ZodString;
+    }, "strip", zod.ZodTypeAny, {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }, {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }>, "many">;
 }, "strip", zod.ZodTypeAny, {
     region: string;
     port: string;
@@ -323,7 +424,12 @@ export declare const UpdateFishingSourceResponse: zod.ZodObject<{
     enabled: boolean;
     createdAt: Date;
     updatedAt: Date;
-    vessels: string[];
+    vessels: {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }, {
     region: string;
     port: string;
@@ -333,7 +439,12 @@ export declare const UpdateFishingSourceResponse: zod.ZodObject<{
     enabled: boolean;
     createdAt: Date;
     updatedAt: Date;
-    vessels: string[];
+    vessels: {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }>;
 /**
  * @summary Delete a fishing reservation source
@@ -357,11 +468,31 @@ export declare const AddFishingSourceVesselsParams: zod.ZodObject<{
     id: number;
 }>;
 export declare const AddFishingSourceVesselsBody: zod.ZodObject<{
-    vessels: zod.ZodArray<zod.ZodString, "many">;
+    vessels: zod.ZodArray<zod.ZodObject<{
+        name: zod.ZodString;
+        departurePort: zod.ZodString;
+        address: zod.ZodString;
+    }, "strip", zod.ZodTypeAny, {
+        name: string;
+        departurePort: string;
+        address: string;
+    }, {
+        name: string;
+        departurePort: string;
+        address: string;
+    }>, "many">;
 }, "strip", zod.ZodTypeAny, {
-    vessels: string[];
+    vessels: {
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }, {
-    vessels: string[];
+    vessels: {
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }>;
 export declare const AddFishingSourceVesselsResponse: zod.ZodObject<{
     id: zod.ZodNumber;
@@ -372,7 +503,22 @@ export declare const AddFishingSourceVesselsResponse: zod.ZodObject<{
     enabled: zod.ZodBoolean;
     createdAt: zod.ZodDate;
     updatedAt: zod.ZodDate;
-    vessels: zod.ZodArray<zod.ZodString, "many">;
+    vessels: zod.ZodArray<zod.ZodObject<{
+        id: zod.ZodNumber;
+        name: zod.ZodString;
+        departurePort: zod.ZodString;
+        address: zod.ZodString;
+    }, "strip", zod.ZodTypeAny, {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }, {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }>, "many">;
 }, "strip", zod.ZodTypeAny, {
     region: string;
     port: string;
@@ -382,7 +528,12 @@ export declare const AddFishingSourceVesselsResponse: zod.ZodObject<{
     enabled: boolean;
     createdAt: Date;
     updatedAt: Date;
-    vessels: string[];
+    vessels: {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }, {
     region: string;
     port: string;
@@ -392,7 +543,12 @@ export declare const AddFishingSourceVesselsResponse: zod.ZodObject<{
     enabled: boolean;
     createdAt: Date;
     updatedAt: Date;
-    vessels: string[];
+    vessels: {
+        id: number;
+        name: string;
+        departurePort: string;
+        address: string;
+    }[];
 }>;
 /**
  * @summary Clear manually registered vessels for a source
@@ -405,4 +561,30 @@ export declare const ClearFishingSourceVesselsParams: zod.ZodObject<{
     id: number;
 }>;
 export declare const ClearFishingSourceVesselsResponse: zod.ZodVoid;
+/**
+ * @summary Probe a URL to guess its reservation platform, name, and vessel list before registering it as a source
+ */
+export declare const DetectFishingSourceBody: zod.ZodObject<{
+    url: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    url: string;
+}, {
+    url: string;
+}>;
+export declare const DetectFishingSourceResponse: zod.ZodObject<{
+    platform: zod.ZodString;
+    suggestedName: zod.ZodNullable<zod.ZodString>;
+    vessels: zod.ZodArray<zod.ZodString, "many">;
+    workingUrl: zod.ZodNullable<zod.ZodString>;
+}, "strip", zod.ZodTypeAny, {
+    vessels: string[];
+    platform: string;
+    suggestedName: string | null;
+    workingUrl: string | null;
+}, {
+    vessels: string[];
+    platform: string;
+    suggestedName: string | null;
+    workingUrl: string | null;
+}>;
 //# sourceMappingURL=api.d.ts.map

@@ -15,6 +15,11 @@ export interface FishingSchedule {
     region: string;
     port: string;
     tide: string;
+    /**
+       * 바다타임(badatime.com) 기준 조류 세기(%). 매핑되지 않은 항구이거나 조회에 실패하면 null.
+       * @nullable
+       */
+    tideStrengthPercent: number | null;
     genre: string;
     operator: string;
     vessel: string;
@@ -37,11 +42,25 @@ export interface FishingScheduleSearchResponse {
     /** @nullable */
     warning: string | null;
 }
+export type FishingFilterOptionsShipsByPort = {
+    [key: string]: string[];
+};
+export type FishingFilterOptionsShipsByRegion = {
+    [key: string]: string[];
+};
 export interface FishingFilterOptions {
     regions: string[];
     ports: string[];
     ships: string[];
     tides: string[];
+    shipsByPort: FishingFilterOptionsShipsByPort;
+    shipsByRegion: FishingFilterOptionsShipsByRegion;
+}
+export interface FishingSourceVessel {
+    id: number;
+    name: string;
+    departurePort: string;
+    address: string;
 }
 export interface FishingSource {
     id: number;
@@ -52,14 +71,36 @@ export interface FishingSource {
     enabled: boolean;
     createdAt: string;
     updatedAt: string;
-    vessels: string[];
+    vessels: FishingSourceVessel[];
+}
+export interface FishingSourceVesselInput {
+    /** @minLength 1 */
+    name: string;
+    departurePort: string;
+    address: string;
 }
 export interface FishingSourceVesselsInput {
+    /** @minItems 1 */
+    vessels: FishingSourceVesselInput[];
+}
+export interface DetectFishingSourceBody {
+    url: string;
+}
+export interface DetectFishingSourceResponse {
+    /** "thefishing" | "sunsang24" | "unknown" 중 하나. 더피싱(index.php?mid=bk) 또는 SUNSANG24(/ship/schedule_fleet) 패턴 중 실제로 선박이 긁힌 쪽이고, 둘 다 안 되면 unknown. */
+    platform: string;
     /**
-       * @minItems 1
-       * @items.minLength 1
+       * 사이트 <title> 태그에서 뽑아본 이름 추천값. 참고용이라 그대로 안 써도 됨.
+       * @nullable
        */
+    suggestedName: string | null;
+    /** 이번 달(또는 비어있으면 다음 달) 조회에서 실제로 발견된 선박 이름들. */
     vessels: string[];
+    /**
+       * 정상 인식된 경우의 기준 URL. platform이 unknown이면 null.
+       * @nullable
+       */
+    workingUrl: string | null;
 }
 export interface FishingSourceInput {
     /** @minLength 1 */

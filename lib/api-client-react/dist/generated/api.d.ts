@@ -1,5 +1,5 @@
 import type { QueryKey, UseMutationOptions, UseMutationResult, UseQueryOptions, UseQueryResult } from '@tanstack/react-query';
-import type { ErrorResponse, FishingFilterOptions, FishingScheduleSearchResponse, FishingSource, FishingSourceInput, FishingSourceVesselsInput, HealthStatus, SearchFishingSchedulesParams } from './api.schemas';
+import type { DetectFishingSourceBody, DetectFishingSourceResponse, ErrorResponse, FishingFilterOptions, FishingScheduleSearchResponse, FishingSource, FishingSourceInput, FishingSourceVesselsInput, HealthStatus, SearchFishingSchedulesParams } from './api.schemas';
 import { customFetch } from '../custom-fetch';
 import type { ErrorType, BodyType } from '../custom-fetch';
 type AwaitedInput<T> = PromiseLike<T> | T;
@@ -215,5 +215,28 @@ export declare const useClearFishingSourceVessels: <TError = ErrorType<ErrorResp
     mutation?: UseMutationOptions<Awaited<ReturnType<typeof clearFishingSourceVessels>>, TError, ClearFishingSourceVesselsMutationVariables, TContext>;
     request?: SecondParameter<typeof customFetch>;
 }) => UseMutationResult<Awaited<ReturnType<typeof clearFishingSourceVessels>>, TError, ClearFishingSourceVesselsMutationVariables, TContext>;
+export declare const getDetectFishingSourceUrl: () => string;
+/**
+ * @summary Probe a URL to guess its reservation platform, name, and vessel list before registering it as a source
+ */
+export declare const detectFishingSource: (detectFishingSourceBody: DetectFishingSourceBody, options?: Parameters<typeof customFetch>[1]) => Promise<DetectFishingSourceResponse>;
+export declare const getDetectFishingSourceMutationKey: () => readonly ["detectFishingSource"];
+export declare const getDetectFishingSourceMutationOptions: <TError = ErrorType<ErrorResponse>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof detectFishingSource>>, TError, DetectFishingSourceMutationVariables, TContext>;
+    request?: SecondParameter<typeof customFetch>;
+}) => UseMutationOptions<Awaited<ReturnType<typeof detectFishingSource>>, TError, DetectFishingSourceMutationVariables, TContext>;
+export type DetectFishingSourceMutationResult = NonNullable<Awaited<ReturnType<typeof detectFishingSource>>>;
+export type DetectFishingSourceMutationBody = BodyType<DetectFishingSourceBody>;
+export type DetectFishingSourceMutationError = ErrorType<ErrorResponse>;
+export type DetectFishingSourceMutationVariables = {
+    data: BodyType<DetectFishingSourceBody>;
+};
+/**
+* @summary Probe a URL to guess its reservation platform, name, and vessel list before registering it as a source
+*/
+export declare const useDetectFishingSource: <TError = ErrorType<ErrorResponse>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof detectFishingSource>>, TError, DetectFishingSourceMutationVariables, TContext>;
+    request?: SecondParameter<typeof customFetch>;
+}) => UseMutationResult<Awaited<ReturnType<typeof detectFishingSource>>, TError, DetectFishingSourceMutationVariables, TContext>;
 export {};
 //# sourceMappingURL=api.d.ts.map
