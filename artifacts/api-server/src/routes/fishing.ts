@@ -6,6 +6,8 @@ import {
   ClearFishingSourceVesselsParams,
   CreateFishingSourceBody,
   DeleteFishingSourceParams,
+  DetectFishingSourceBody,
+  DetectFishingSourceResponse,
   GetFishingFilterOptionsResponse,
   SearchFishingSchedulesQueryParams,
   SearchFishingSchedulesResponse,
@@ -16,6 +18,7 @@ import { db, fishingSourcesTable } from "@workspace/db";
 import { fishingSourceVesselsTable } from "@workspace/db";
 import {
   clearSourceCache,
+  detectSource,
   getFilterOptions,
   getSchedules,
   getSourceLabel,
@@ -291,6 +294,20 @@ router.delete("/fishing/sources/:id/vessels", async (req, res) => {
   await db.delete(fishingSourceVesselsTable).where(eq(fishingSourceVesselsTable.sourceId, source.id));
   clearSourceCache();
   res.status(204).send();
+});
+
+router.post("/fishing/sources/detect", async (req, res) => {
+  const parsed = DetectFishingSourceBody.safeParse(req.body);
+  if (!parsed.success || !parsed.data.url.trim()) {
+    res.status(400).json({ error: "URL을 입력해주세요." });
+    return;
+  }
+  const result = await detectSource(parsed.data.url);
+  if (!result) {
+    res.status(400).json({ error: "올바른 예약처 URL이 아닙니다. http:// 또는 https://로 시작하는 주소를 입력해주세요." });
+    return;
+  }
+  res.json(DetectFishingSourceResponse.parse(result));
 });
 
 export default router;

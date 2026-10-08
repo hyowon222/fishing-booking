@@ -270,6 +270,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /fishing/sources/detect:
+    post:
+      operationId: detectFishingSource
+      tags: [fishing]
+      summary: Probe a URL to guess its reservation platform, name, and vessel list before registering it as a source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DetectFishingSourceBody"
+      responses:
+        "200":
+          description: Detection result (platform may be "unknown" if nothing recognizable was found)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetectFishingSourceResponse"
+        "400":
+          description: Invalid URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -470,6 +494,35 @@ components:
           type: string
         address:
           type: string
+    DetectFishingSourceBody:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+    DetectFishingSourceResponse:
+      type: object
+      required:
+        - platform
+        - suggestedName
+        - vessels
+        - workingUrl
+      properties:
+        platform:
+          description: '"thefishing" | "sunsang24" | "unknown" 중 하나. 더피싱(index.php?mid=bk) 또는 SUNSANG24(/ship/schedule_fleet) 패턴 중 실제로 선박이 긁힌 쪽이고, 둘 다 안 되면 unknown.'
+          type: string
+        suggestedName:
+          description: 사이트 <title> 태그에서 뽑아본 이름 추천값. 참고용이라 그대로 안 써도 됨.
+          type: ["string", "null"]
+        vessels:
+          description: 이번 달(또는 비어있으면 다음 달) 조회에서 실제로 발견된 선박 이름들.
+          type: array
+          items:
+            type: string
+        workingUrl:
+          description: 정상 인식된 경우의 기준 URL. platform이 unknown이면 null.
+          type: ["string", "null"]
     FishingSourceInput:
       type: object
       required:

@@ -428,6 +428,94 @@ async function fetchMonthForConfig(year: number, month: number, config: SourceCo
   return isSunsang24(config.baseUrl) ? fetchSunsangMonth(year, month, config) : fetchMonth(year, month, config);
 }
 
+export type DetectedSource = {
+  platform: "thefishing" | "sunsang24" | "unknown";
+  suggestedName: string | null;
+  vessels: string[];
+  workingUrl: string | null;
+};
+
+async function fetchPageTitle(baseUrl: string): Promise<string | null> {
+  try {
+    const response = await fetch(baseUrl, { headers: browserHeaders(baseUrl), signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) return null;
+    const $ = cheerio.load(await response.text());
+    return cleanText($("title").first().text()) || null;
+  } catch {
+    return null;
+  }
+}
+
+// 이 앱은 로그인이 없어서 누구나 /detect를 호출할 수 있으므로, 서버가 내부망/로컬
+// 주소를 대신 열어보는 일은 막아둔다 (http/https만 허용, 사설·루프백 주소 거부).
+// 스킴 없이 "gaiaho.com"처럼 붙여넣은 경우는 http://를 붙여서 처리한다.
+function isPrivateHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {
+    return true;
+  }
+  if (host === "::1" || host === "[::1]") return true;
+  const octets = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (octets) {
+    const a = Number(octets[1]);
+    const b = Number(octets[2]);
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+  }
+  return false;
+}
+
+function normalizeProbeUrl(rawUrl: string): string | null {
+  let value = rawUrl.trim();
+  if (!value) return null;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = `http://${value}`;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (isPrivateHost(parsed.hostname)) return null;
+  } catch {
+    return null;
+  }
+  return value.replace(/\/+$/, "");
+}
+
+/**
+ * 등록 전에 URL 하나만으로 "이 사이트가 우리가 아는 플랫폼(더피싱/SUNSANG24) 중
+ * 어느 쪽이고, 실제로 선박이 몇 척 잡히는지"를 미리 확인한다. 더미 SourceConfig로
+ * 이번 달 조회를 실제로 한 번 돌려보고, 비어있으면 다음 달도 한 번 더 시도한다
+ * (이번 달 일정이 이미 다 지났거나 아직 안 열렸을 수 있어서). 호스트명이
+ * sunsang24.com이면 그쪽을 먼저, 아니면 더피싱을 먼저 시도한다.
+ */
+export async function detectSource(rawUrl: string): Promise<DetectedSource | null> {
+  const baseUrl = normalizeProbeUrl(rawUrl);
+  if (!baseUrl) return null;
+  const now = new Date();
+  const platforms: DetectedSource["platform"][] = isSunsang24(baseUrl)
+    ? ["sunsang24", "thefishing"]
+    : ["thefishing", "sunsang24"];
+
+  for (const platform of platforms) {
+    const probeConfig: SourceConfig = { id: 0, name: baseUrl, baseUrl, region: "", port: "", vessels: [] };
+    const fetcher = platform === "sunsang24" ? fetchSunsangMonth : fetchMonth;
+    try {
+      let items = await fetcher(now.getUTCFullYear(), now.getUTCMonth() + 1, probeConfig);
+      if (items.length === 0) {
+        const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+        items = await fetcher(next.getUTCFullYear(), next.getUTCMonth() + 1, probeConfig);
+      }
+      const vessels = [...new Set(items.map((item) => item.vessel).filter(Boolean))];
+      if (vessels.length > 0) {
+        return { platform, suggestedName: await fetchPageTitle(baseUrl), vessels, workingUrl: baseUrl };
+      }
+    } catch {
+      // 이 플랫폼 패턴으로는 안 맞는 것으로 보고 다음 후보를 시도한다.
+    }
+  }
+  return { platform: "unknown", suggestedName: await fetchPageTitle(baseUrl), vessels: [], workingUrl: null };
+}
+
 async function fetchSourceMonths(
   months: Array<{ year: number; month: number }>,
   config: SourceConfig,

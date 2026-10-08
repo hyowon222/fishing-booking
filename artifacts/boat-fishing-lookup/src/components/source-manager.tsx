@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react';
-import { ArrowLeft, Check, Download, FileSpreadsheet, Pencil, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { ArrowLeft, Check, Download, FileSpreadsheet, LoaderCircle, Pencil, Plus, Save, Trash2, Upload, Wand2, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
 import {
   useAddFishingSourceVessels,
   useClearFishingSourceVessels,
+  useDetectFishingSource,
   getGetFishingFilterOptionsQueryKey,
   getListFishingSourcesQueryKey,
   getSearchFishingSchedulesQueryKey,
@@ -96,6 +97,7 @@ function SourceForm({
   onCancel,
   isSaving,
   error,
+  onDetectedVessels,
 }: {
   editing: FishingSource | null;
   form: FishingSourceInput;
@@ -104,7 +106,37 @@ function SourceForm({
   onCancel: () => void;
   isSaving: boolean;
   error: string;
+  onDetectedVessels: (vessels: string[]) => void;
 }) {
+  const [detectMessage, setDetectMessage] = useState('');
+  const detectMutation = useDetectFishingSource({
+    mutation: {
+      onSuccess: (result) => {
+        // 수정 중에는 선박을 자동 등록하지 않으니(신규 등록할 때만 이어서 등록) 위로 올리지 않는다.
+        if (!editing) onDetectedVessels(result.vessels);
+        if (result.platform === 'unknown') {
+          setDetectMessage('인식하지 못했어요 — 아래 항목을 직접 입력해주세요.');
+          return;
+        }
+        const platformLabel = result.platform === 'sunsang24' ? 'SUNSANG24' : '더피싱';
+        if (!form.name.trim() && result.suggestedName) {
+          setForm({ ...form, name: result.suggestedName });
+        }
+        setDetectMessage(
+          editing
+            ? `${platformLabel} 방식으로 정상 인식됐어요. (선박 ${result.vessels.length}척 확인)`
+            : result.vessels.length > 0
+              ? `${platformLabel} 방식으로 인식됐어요. 선박 ${result.vessels.length}척 발견: ${result.vessels.join(', ')} — 저장하면 이 선박들도 같이 등록돼요.`
+              : `${platformLabel} 방식으로 보이는데, 지금은 선박을 못 찾았어요. 선박 등록은 저장 후 따로 해주세요.`,
+        );
+      },
+      onError: () => {
+        onDetectedVessels([]);
+        setDetectMessage('확인 중 오류가 났어요 — URL이 맞는지 확인해주세요.');
+      },
+    },
+  });
+
   return (
     <form onSubmit={onSubmit} className="rounded-2xl border border-border bg-card p-5 shadow-[0_8px_30px_hsl(214_42%_18%_/_0.04)]">
       <div className="mb-5 flex items-start justify-between gap-4">
@@ -125,7 +157,26 @@ function SourceForm({
         <Field label="예약처 이름" value={form.name} onChange={(name) => setForm({ ...form, name })} placeholder="예: 삼길포 헤르메스" />
         <Field label="지역" value={form.region} onChange={(region) => setForm({ ...form, region })} placeholder="예: 충남" />
         <Field label="출항 항구" value={form.port} onChange={(port) => setForm({ ...form, port })} placeholder="예: 삼길포" />
-        <Field label="예약처 URL" value={form.sourceUrl} onChange={(sourceUrl) => setForm({ ...form, sourceUrl })} placeholder="https://example.com" type="url" />
+        <div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Field label="예약처 URL" value={form.sourceUrl} onChange={(sourceUrl) => { setForm({ ...form, sourceUrl }); setDetectMessage(''); onDetectedVessels([]); }} placeholder="https://example.com" type="url" />
+            </div>
+            <button
+              type="button"
+              disabled={!form.sourceUrl.trim() || detectMutation.isPending}
+              onClick={() => {
+                setDetectMessage('');
+                detectMutation.mutate({ data: { url: form.sourceUrl.trim() } });
+              }}
+              className="flex h-[42px] items-center gap-1.5 rounded-lg border border-input px-3 text-xs font-bold text-primary hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {detectMutation.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <Wand2 size={14} />}
+              자동 감지
+            </button>
+          </div>
+          {detectMessage && <p className="mt-1.5 text-[11px] leading-5 text-muted-foreground">{detectMessage}</p>}
+        </div>
       </div>
       <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
         <input
@@ -437,15 +488,26 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
   const [formError, setFormError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [selectedSourceId, setSelectedSourceId] = useState<number>();
+  const [detectedVessels, setDetectedVessels] = useState<string[]>([]);
 
   const refreshData = () => {
     queryClient.invalidateQueries({ queryKey: getListFishingSourcesQueryKey() });
     queryClient.invalidateQueries({ queryKey: getGetFishingFilterOptionsQueryKey() });
     queryClient.invalidateQueries({ queryKey: getSearchFishingSchedulesQueryKey() });
   };
+  const addDetectedVesselsMutation = useAddFishingSourceVessels({ mutation: { onSuccess: refreshData } });
   const createMutation = useCreateFishingSource({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (created) => {
+        // 자동 감지로 찾아둔 선박이 있으면, 새로 만든 예약처에 이어서 등록해준다.
+        // (선박 이름만 알 수 있으니 출항항구/주소는 방금 입력한 항구값으로 채움 —
+        // 필요하면 나중에 선박 관리에서 따로 수정하면 된다.)
+        if (detectedVessels.length > 0) {
+          addDetectedVesselsMutation.mutate({
+            id: created.id,
+            data: { vessels: detectedVessels.map((name) => ({ name, departurePort: form.port, address: '' })) },
+          });
+        }
         refreshData();
         closeForm();
       },
@@ -473,15 +535,18 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
     setEditing(null);
     setForm(blankForm);
     setFormError('');
+    setDetectedVessels([]);
     setShowForm(false);
   }
   function startCreate() {
     setEditing(null);
     setForm(blankForm);
     setFormError('');
+    setDetectedVessels([]);
     setShowForm(true);
   }
   function startEdit(source: FishingSource) {
+    setDetectedVessels([]);
     setEditing(source);
     setForm({
       name: source.name,
@@ -592,6 +657,7 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
             onCancel={closeForm}
             isSaving={isSaving}
             error={formError}
+            onDetectedVessels={setDetectedVessels}
           />
         )}
       </div>

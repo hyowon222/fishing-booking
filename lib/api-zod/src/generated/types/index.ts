@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './detectFishingSourceBody';
+export * from './detectFishingSourceResponse';
 export * from './errorResponse';
 export * from './fishingFilterOptions';
 export * from './fishingFilterOptionsShipsByPort';
