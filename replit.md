@@ -23,15 +23,26 @@
 ## Where things live
 
 - `artifacts/boat-fishing-lookup` — responsive React/Vite lookup interface
-- `artifacts/api-server/src/lib/fishing-source.ts` — public reservation source fetch, parsing, and five-minute cache
-- `artifacts/api-server/src/routes/fishing.ts` — schedule and filter-options endpoints
+- `artifacts/api-server/src/lib/fishing-source.ts` — public reservation source fetch and parsing (더피싱-style and SUNSANG24), 20-minute per-source month cache with in-flight de-duplication, failure cooldown, and badatime tide strength
+- `artifacts/api-server/src/lib/fetch-scheduler.ts` — priority-aware fetch limiter (`high` = a user's search, `low` = background filter-options warm-up) and soft-deadline helpers
+- `artifacts/api-server/src/routes/fishing.ts` — schedule, filter-options, source CRUD/detect, and `/fishing/diagnostics` endpoints
+- `artifacts/boat-fishing-lookup/src/hooks/use-auto-retry-pending.ts` — re-queries automatically (max 2×) while the server reports slow sources
 - `lib/api-spec/openapi.yaml` — source of truth for the generated API client and Zod response schemas
 
 ## Architecture decisions
 
 - The lookup reads the configured public source directly instead of copying schedules into the database, so seat counts stay close to the operator's page.
 - Source URL, region, port, and operator name can be changed through `FISHING_SOURCE_URL`, `FISHING_SOURCE_REGION`, `FISHING_SOURCE_PORT`, and `FISHING_SOURCE_NAME`.
-- Search responses are cached in memory for five minutes to reduce load on the public reservation source while keeping the UI responsive.
+- Each source's month page is cached in memory for 20 minutes (`CACHE_TTL_MS`); concurrent requests for the same source-month share a single fetch.
+
+## Search performance
+
+- A search (`high` priority) never queues behind the page-load filter-options scan (`low` priority): `low` work can only start while total in-flight fetches are below `FISHING_FETCH_CONCURRENCY − FISHING_FETCH_RESERVED`, and a queued `low` fetch that a search also needs is promoted.
+- `/fishing/schedules` answers after `FISHING_SEARCH_SOFT_DEADLINE_MS` with whatever sources have responded. Slower sources keep loading in the background and are listed in `warning` ("응답이 늦은 예약처는 …"); the web UI recognises that exact phrase and re-queries automatically (max 2×). Keep the server message and `PENDING_SOURCES_NOTICE` in `use-auto-retry-pending.ts` in sync.
+- `/fishing/options` only scans the current and next month, at `low` priority, and never waits for tide data (it just warms the badatime cache).
+- Tide strength is prefetched in parallel with the scrape; a search waits at most 2 s for it after scraping, and badatime failures are not retried for 5 minutes.
+- Tunable env vars (Render): `FISHING_FETCH_CONCURRENCY` (default 10), `FISHING_FETCH_RESERVED` (default 4), `FISHING_SEARCH_SOFT_DEADLINE_MS` (default 6000; `0` = wait for every source).
+- Diagnostics: `GET /api/fishing/diagnostics` shows per source-month queue / response / body / parse times; each search also logs one `[검색] …` line. "서버 바쁨" near 100% means CPU-bound, near 0% means waiting on the reservation sites.
 
 ## Product
 

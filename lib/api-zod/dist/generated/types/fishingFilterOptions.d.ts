@@ -5,10 +5,16 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { FishingFilterOptionsShipsByPort } from './fishingFilterOptionsShipsByPort';
+import type { FishingFilterOptionsShipsByRegion } from './fishingFilterOptionsShipsByRegion';
 export interface FishingFilterOptions {
     regions: string[];
     ports: string[];
     ships: string[];
     tides: string[];
+    shipsByPort: FishingFilterOptionsShipsByPort;
+    shipsByRegion: FishingFilterOptionsShipsByRegion;
+    /** Whether discovered filter values are currently being refreshed. */
+    refreshing: boolean;
 }
 //# sourceMappingURL=fishingFilterOptions.d.ts.map

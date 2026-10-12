@@ -15,4 +15,6 @@ export interface FishingFilterOptions {
   tides: string[];
   shipsByPort: FishingFilterOptionsShipsByPort;
   shipsByRegion: FishingFilterOptionsShipsByRegion;
+  /** Whether discovered filter values are currently being refreshed. */
+  refreshing: boolean;
 }

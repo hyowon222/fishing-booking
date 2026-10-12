@@ -17,8 +17,10 @@ import {
 import { db, fishingSourcesTable } from "@workspace/db";
 import { fishingSourceVesselsTable } from "@workspace/db";
 import {
+  CACHE_TTL_MS,
   clearSourceCache,
   detectSource,
+  getFetchDiagnostics,
   getFilterOptions,
   getSchedules,
   getSourceLabel,
@@ -26,12 +28,59 @@ import {
   resetSourceHealth,
   toSourceConfig,
 } from "../lib/fishing-source";
+import { readIntEnv } from "../lib/fetch-scheduler";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-// 필터 옵션(지역/항구/선박/물때) 계산이 타임아웃에 걸렸을 때, 텅 빈 값 대신
-// 직전에 온전히 성공했던 결과를 대신 보여주기 위한 메모리 캐시.
-let lastGoodOptions: ReturnType<typeof getFilterOptions> | null = null;
+// "자리 찾기" 검색은 느린 예약처 한 곳 때문에 전체가 오래 멈추지 않도록, 이 시간(ms)이 지나면
+// 그때까지 응답한 예약처의 결과를 먼저 보여준다. 못 끝낸 곳은 경고 문구로 알리고 백그라운드에서
+// 계속 받아 캐시에 채우며, 화면(App.tsx)이 잠시 뒤 자동으로 한 번 더 조회해서 채워 넣는다.
+// 0으로 두면 끝까지 기다리는 예전 방식. Render 환경변수 FISHING_SEARCH_SOFT_DEADLINE_MS로 조절.
+const SEARCH_SOFT_DEADLINE_MS = readIntEnv("FISHING_SEARCH_SOFT_DEADLINE_MS", 6_000, 0);
+const FILTER_OPTIONS_REFRESH_FAILURE_BACKOFF_MS = 60_000;
+let filterOptionsRefreshPromise: Promise<void> | null = null;
+let filterOptionsRefreshNextAt = 0;
+let filterOptionsRefreshGeneration = 0;
+
+function resetFilterOptionsRefresh(): void {
+  filterOptionsRefreshGeneration += 1;
+  filterOptionsRefreshNextAt = 0;
+}
+
+function clearFishingSourceCache(): void {
+  clearSourceCache();
+  resetFilterOptionsRefresh();
+}
+
+function refreshFilterOptionsInBackground(startDate: string, endDate: string): void {
+  if (filterOptionsRefreshPromise || Date.now() < filterOptionsRefreshNextAt) return;
+
+  const generation = filterOptionsRefreshGeneration;
+  filterOptionsRefreshNextAt = Date.now() + CACHE_TTL_MS;
+  let refreshPromise: Promise<void>;
+  refreshPromise = getSchedules(startDate, endDate, {
+    priority: "low",
+    withTide: false,
+  })
+    .then((search) => {
+      if (generation === filterOptionsRefreshGeneration) {
+        getFilterOptions(search.items, search.sources);
+      }
+    })
+    .catch((error: unknown) => {
+      if (generation === filterOptionsRefreshGeneration) {
+        filterOptionsRefreshNextAt = Date.now() + FILTER_OPTIONS_REFRESH_FAILURE_BACKOFF_MS;
+      }
+      logger.warn({ err: error }, "Background fishing filter refresh failed");
+    })
+    .finally(() => {
+      if (filterOptionsRefreshPromise === refreshPromise) {
+        filterOptionsRefreshPromise = null;
+      }
+    });
+  filterOptionsRefreshPromise = refreshPromise;
+}
 
 function queryValues(value: unknown): string[] | undefined {
   if (value === undefined) return undefined;
@@ -83,16 +132,18 @@ router.get("/fishing/schedules", async (req, res) => {
   }
 
   try {
-    const search = await getSchedules(startDate, endDate);
-    // 검색이 실제로 성공할 때마다, 그 결과에 담긴 선박/물때 정보를 필터 목록에도
-    // 반영해둔다. 이렇게 하면 /fishing/options 쪽이 어쩌다 타임아웃에 걸려도,
-    // 사용자가 직접 조회에 성공한 결과만으로도 선박 필터가 계속 채워진다.
-    const warmedOptions = getFilterOptions(search.items, search.sources);
-    if (search.items.length > 0) {
-      lastGoodOptions = warmedOptions;
-    }
     const region = parsed.data.region || [];
     const ship = parsed.data.ship || [];
+    const regionOrPortSelected = region.length > 0 || Boolean(parsed.data.port);
+    const search = await getSchedules(startDate, endDate, {
+      // 지역/항구를 골랐다면 그쪽 예약처만 조회한다. 고르지 않은("전체") 검색은 모든 예약처를 조회한다.
+      filter: regionOrPortSelected ? { region, port: parsed.data.port } : undefined,
+      // 사용자가 직접 누른 검색은 필터 목록용 백그라운드 조회보다 항상 먼저 처리한다.
+      priority: "high",
+      softDeadlineMs: SEARCH_SOFT_DEADLINE_MS > 0 ? SEARCH_SOFT_DEADLINE_MS : undefined,
+    });
+    // 검색 결과에서 발견한 선박/물때도 메모리에 반영해, 다음 필터 옵션 응답에 포함한다.
+    getFilterOptions(search.items, search.sources);
     const items = search.items.filter((item) => {
       const departureMatches = item.departureDate >= startDate && item.departureDate <= endDate;
       const regionMatches = region.length === 0 || region.includes(item.region);
@@ -103,15 +154,24 @@ router.get("/fishing/schedules", async (req, res) => {
     });
     // 출항일이 빠른 순서대로, 같은 날짜 안에서는 선박명 가나다순으로 정렬한다.
     items.sort((a, b) => a.departureDate.localeCompare(b.departureDate) || a.vessel.localeCompare(b.vessel, "ko"));
+    const warnings: string[] = [];
+    if (search.failedSources.length) {
+      warnings.push(`일부 예약처를 불러오지 못했습니다: ${search.failedSources.join(", ")}`);
+    }
+    if (search.pendingSources.length) {
+      // 주의: App.tsx가 이 문구의 "응답이 늦은 예약처"로 이 상황을 알아보고 자동 재조회한다.
+      // 앞부분 문구를 바꿀 때는 App.tsx의 PENDING_SOURCES_NOTICE도 함께 바꿔야 한다.
+      warnings.push(
+        `응답이 늦은 예약처는 우선 빼고 먼저 보여드려요. 자동으로 다시 불러오고, 계속 안 나오면 '자리 찾기'를 다시 눌러 주세요: ${search.pendingSources.join(", ")}`,
+      );
+    }
     const response = SearchFishingSchedulesResponse.parse({
       items,
       total: items.length,
       searchedAt: new Date(),
       source: getSourceLabel(search.sources),
-      cachedUntil: new Date(Date.now() + 5 * 60 * 1000),
-      warning: search.failedSources.length
-        ? `일부 예약처를 불러오지 못했습니다: ${search.failedSources.join(", ")}`
-        : null,
+      cachedUntil: new Date(Date.now() + CACHE_TTL_MS),
+      warning: warnings.length ? warnings.join(" / ") : null,
     });
     res.json(response);
   } catch (error) {
@@ -121,43 +181,52 @@ router.get("/fishing/schedules", async (req, res) => {
 });
 
 router.post("/fishing/cache/refresh", (_req, res) => {
-  clearSourceCache();
+  clearFishingSourceCache();
   resetSourceHealth();
-  lastGoodOptions = null;
   res.json({ ok: true });
 });
 
-router.get("/fishing/options", async (_req, res) => {
+router.get("/fishing/options", async (req, res) => {
   try {
+    // DB에 등록된 값을 먼저 반환하고, 공개 예약처에서 새로 발견되는 값은
+    // 별도 작업으로 갱신한다. 같은 프로세스에서 동시에 여러 번 긁지 않도록 합친다.
     const today = new Date();
-    const end = new Date(today);
-    end.setUTCDate(end.getUTCDate() + 90);
     const startDate = today.toISOString().slice(0, 10);
-    const endDate = end.toISOString().slice(0, 10);
+    const endDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 2, 0))
+      .toISOString()
+      .slice(0, 10);
     const configuredSources = (await listConfiguredSources()).filter((source) => source.enabled);
-    let options;
-    try {
-      // 느린/막힌 예약처 때문에 화면이 오래 멈춰있지 않도록 최대 12초만 기다린다.
-      // 시간 안에 못 끝나도 getSchedules 자체는 백그라운드에서 계속 진행되어
-      // 캐시를 채우므로, 다음 요청(검색/재조회)부터는 더 빨라진다.
-      const search = await Promise.race([
-        getSchedules(startDate, endDate),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("filter-options-timeout")), 12_000)),
-      ]);
-      options = getFilterOptions(search.items, search.sources);
-      if (search.items.length > 0) {
-        lastGoodOptions = options;
-      }
-    } catch {
-      // 타임아웃에 걸리면, 텅 빈 값 대신 직전에 성공했던 온전한 필터 목록을
-      // 먼저 보여준다 (없으면 예약처 설정에 저장된 지역/항구/업로드 선박만으로 대체).
-      options = lastGoodOptions ?? getFilterOptions([], configuredSources.map(toSourceConfig));
+    if (configuredSources.length > 0) {
+      refreshFilterOptionsInBackground(startDate, endDate);
     }
-    const parsedOptions = GetFishingFilterOptionsResponse.parse(options);
+    const options = getFilterOptions([], configuredSources.map(toSourceConfig));
+    const parsedOptions = GetFishingFilterOptionsResponse.parse({
+      ...options,
+      refreshing: Boolean(filterOptionsRefreshPromise),
+    });
     res.json(parsedOptions);
   } catch (error) {
+    req.log.error({ err: error }, "Fishing filter options failed to load");
     res.status(502).json({ error: "필터 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." });
   }
+});
+
+// 검색이 느릴 때 원인을 눈으로 확인하기 위한 읽기 전용 현황. 브라우저에서
+// /api/fishing/diagnostics 를 열면 예약처별로 "줄 서서 기다린 시간 / 사이트 응답 / 본문 / 파싱"이 나온다.
+router.get("/fishing/diagnostics", async (_req, res) => {
+  const diagnostics = getFetchDiagnostics();
+  let names = new Map<number, string>();
+  try {
+    names = new Map((await listConfiguredSources()).map((source) => [source.id, source.name] as const));
+  } catch {
+    // 이름만 못 붙일 뿐, 나머지 현황은 그대로 보여준다.
+  }
+  res.json({
+    now: new Date().toISOString(),
+    uptimeSeconds: Math.round(process.uptime()),
+    ...diagnostics,
+    sourceHealth: diagnostics.sourceHealth.map((health) => ({ ...health, name: names.get(health.id) ?? null })),
+  });
 });
 
 router.get("/fishing/sources", async (_req, res) => {
@@ -181,7 +250,7 @@ router.post("/fishing/sources", async (req, res) => {
       .values({ ...parsed.data, enabled: parsed.data.enabled ?? true })
       .returning();
     const source = (await listConfiguredSources()).find((item) => item.id === created.id);
-    clearSourceCache();
+    clearFishingSourceCache();
     res.status(201).json(source);
   } catch (error: unknown) {
     if (getPgErrorCode(error) === "23505") {
@@ -212,7 +281,7 @@ router.patch("/fishing/sources/:id", async (req, res) => {
       return;
     }
     const source = (await listConfiguredSources()).find((item) => item.id === updated.id);
-    clearSourceCache();
+    clearFishingSourceCache();
     res.json(source);
   } catch (error: unknown) {
     if (getPgErrorCode(error) === "23505") {
@@ -239,7 +308,7 @@ router.delete("/fishing/sources/:id", async (req, res) => {
     res.status(404).json({ error: "예약처를 찾을 수 없습니다." });
     return;
   }
-  clearSourceCache();
+  clearFishingSourceCache();
   res.status(204).send();
 });
 
@@ -275,7 +344,7 @@ router.post("/fishing/sources/:id/vessels", async (req, res) => {
     .insert(fishingSourceVesselsTable)
     .values(vessels.map((vessel) => ({ sourceId: source.id, ...vessel })))
     .onConflictDoNothing();
-  clearSourceCache();
+  clearFishingSourceCache();
   const updated = (await listConfiguredSources()).find((item) => item.id === source.id);
   res.json(updated);
 });
@@ -292,7 +361,7 @@ router.delete("/fishing/sources/:id/vessels", async (req, res) => {
     return;
   }
   await db.delete(fishingSourceVesselsTable).where(eq(fishingSourceVesselsTable.sourceId, source.id));
-  clearSourceCache();
+  clearFishingSourceCache();
   res.status(204).send();
 });
 

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import { ArrowLeft, Check, Download, FileSpreadsheet, LoaderCircle, Pencil, Plus, Save, Trash2, Upload, Wand2, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
@@ -67,16 +67,21 @@ function Field({
   onChange,
   placeholder,
   type = 'text',
+  autoFilled = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   type?: string;
+  autoFilled?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-bold text-foreground">{label}</span>
+      <span className="mb-1.5 flex items-center gap-2 text-xs font-bold text-foreground">
+        {label}
+        {autoFilled && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">자동 입력됨</span>}
+      </span>
       <input
         type={type}
         value={value}
@@ -101,7 +106,7 @@ function SourceForm({
 }: {
   editing: FishingSource | null;
   form: FishingSourceInput;
-  setForm: (form: FishingSourceInput) => void;
+  setForm: Dispatch<SetStateAction<FishingSourceInput>>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
   isSaving: boolean;
@@ -109,19 +114,43 @@ function SourceForm({
   onDetectedVessels: (vessels: string[]) => void;
 }) {
   const [detectMessage, setDetectMessage] = useState('');
+  const [autoFilledFields, setAutoFilledFields] = useState({ name: false, region: false, port: false });
+  const latestForm = useRef(form);
+  latestForm.current = form;
+
+  function updateDetectedField(field: 'name' | 'region' | 'port', value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setAutoFilledFields((current) => ({ ...current, [field]: false }));
+  }
+
   const detectMutation = useDetectFishingSource({
     mutation: {
       onSuccess: (result) => {
         // 수정 중에는 선박을 자동 등록하지 않으니(신규 등록할 때만 이어서 등록) 위로 올리지 않는다.
         if (!editing) onDetectedVessels(result.vessels);
+        const current = latestForm.current;
+        const fillName = !current.name.trim() && Boolean(result.suggestedName);
+        const fillRegion = !current.region.trim() && Boolean(result.suggestedRegion);
+        const fillPort = !current.port.trim() && Boolean(result.suggestedPort);
+        if (fillName || fillRegion || fillPort) {
+          setForm((previous) => ({
+            ...previous,
+            ...(fillName && !previous.name.trim() ? { name: result.suggestedName! } : {}),
+            ...(fillRegion && !previous.region.trim() ? { region: result.suggestedRegion! } : {}),
+            ...(fillPort && !previous.port.trim() ? { port: result.suggestedPort! } : {}),
+          }));
+          setAutoFilledFields((previous) => ({
+            ...previous,
+            ...(fillName ? { name: true } : {}),
+            ...(fillRegion ? { region: true } : {}),
+            ...(fillPort ? { port: true } : {}),
+          }));
+        }
         if (result.platform === 'unknown') {
           setDetectMessage('인식하지 못했어요 — 아래 항목을 직접 입력해주세요.');
           return;
         }
         const platformLabel = result.platform === 'sunsang24' ? 'SUNSANG24' : '더피싱';
-        if (!form.name.trim() && result.suggestedName) {
-          setForm({ ...form, name: result.suggestedName });
-        }
         setDetectMessage(
           editing
             ? `${platformLabel} 방식으로 정상 인식됐어요. (선박 ${result.vessels.length}척 확인)`
@@ -154,13 +183,13 @@ function SourceForm({
         </button>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="예약처 이름" value={form.name} onChange={(name) => setForm({ ...form, name })} placeholder="예: 삼길포 헤르메스" />
-        <Field label="지역" value={form.region} onChange={(region) => setForm({ ...form, region })} placeholder="예: 충남" />
-        <Field label="출항 항구" value={form.port} onChange={(port) => setForm({ ...form, port })} placeholder="예: 삼길포" />
+        <Field label="예약처 이름" value={form.name} onChange={(name) => updateDetectedField('name', name)} placeholder="예: 삼길포 헤르메스" autoFilled={autoFilledFields.name} />
+        <Field label="지역" value={form.region} onChange={(region) => updateDetectedField('region', region)} placeholder="예: 충남" autoFilled={autoFilledFields.region} />
+        <Field label="출항 항구" value={form.port} onChange={(port) => updateDetectedField('port', port)} placeholder="예: 삼길포" autoFilled={autoFilledFields.port} />
         <div>
           <div className="flex items-end gap-2">
             <div className="flex-1">
-              <Field label="예약처 URL" value={form.sourceUrl} onChange={(sourceUrl) => { setForm({ ...form, sourceUrl }); setDetectMessage(''); onDetectedVessels([]); }} placeholder="https://example.com" type="url" />
+              <Field label="예약처 URL" value={form.sourceUrl} onChange={(sourceUrl) => { setForm((current) => ({ ...current, sourceUrl })); setDetectMessage(''); onDetectedVessels([]); }} placeholder="https://example.com" type="url" />
             </div>
             <button
               type="button"

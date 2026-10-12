@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import * as cheerio from "cheerio";
 import { asc } from "drizzle-orm";
 import {
@@ -7,6 +8,14 @@ import {
   type FishingSource as FishingSourceRecord,
   type FishingSourceVessel as FishingSourceVesselRecord,
 } from "@workspace/db";
+import {
+  createPriorityLimiter,
+  readIntEnv,
+  settleWithSoftDeadline,
+  waitAtMost,
+  type FetchPriority,
+} from "./fetch-scheduler";
+import { logger } from "./logger";
 
 export type FishingSchedule = {
   id: string;
@@ -48,66 +57,62 @@ type SourceConfig = {
 // 출항 일정은 자주 바뀌는 데이터가 아니라서, 5분보다 넉넉하게 잡아도 체감
 // 정확도는 거의 떨어지지 않으면서 반복 검색(날짜만 살짝 바꿔 다시 찾기 등)의
 // 캐시 적중률은 크게 올라간다.
-const CACHE_TTL_MS = 20 * 60 * 1000;
+export const CACHE_TTL_MS = 20 * 60 * 1000;
 // 예약처별로 이미 조회한 '연-월'은 캐시해서, 겹치는 기간을 다시 조회할 때
 // 네트워크 스크래핑 없이 재사용한다. 키 형태: `${sourceId}:${year}-${month}`
 const monthCache = new Map<string, { expiresAt: number; items: FishingSchedule[] }>();
 
-// 예약처를 전부 동시에 조회하면(현재 15곳, 계속 느는 중) 무료 인스턴스의
-// 제한된 CPU/네트워크 자원을 한꺼번에 놓고 경합하게 되어, 코드는 병렬이어도
-// 실제로는 예약처가 늘수록 체감 속도가 계속 느려진다. 한 번에 이 개수만큼만
-// 동시에 조회해서 전체 소요 시간이 예약처 개수에 비례해 늘어나지 않게 한다.
-const SOURCE_FETCH_CONCURRENCY = 6;
-
-// Promise.allSettled와 동일한 형태({status, value|reason}[])를 반환하되, 한
-// 번에 최대 `limit`개까지만 동시에 실행한다. 커서를 공유하는 워커 몇 개가
-// 배열을 나눠 처리하는 단순한 방식이라 별도 패키지 없이도 충분하다.
-async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  limit: number,
-  mapper: (item: T, index: number) => Promise<R>,
-): Promise<PromiseSettledResult<R>[]> {
-  const results: PromiseSettledResult<R>[] = new Array(items.length);
-  let cursor = 0;
-  async function worker(): Promise<void> {
-    while (cursor < items.length) {
-      const index = cursor++;
-      try {
-        results[index] = { status: "fulfilled", value: await mapper(items[index], index) };
-      } catch (reason) {
-        results[index] = { status: "rejected", reason };
-      }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
+// 지금 이 순간 네트워크로 가져오는 중인 '예약처-월' 요청. 같은 키를 또 요청하는 쪽
+// (예: 필터 목록 조회가 먼저 시작해 둔 요청을 사용자의 검색이 이어서 필요로 할 때)은
+// 새 요청을 만들지 않고 이미 진행 중인 것에 합류한다. 예전에는 합류 없이 같은 페이지를
+// 두 번 받아서, 느린 서버/작은 인스턴스에서 대기 줄만 길어졌다.
+type InflightMonth = { promise: Promise<FishingSchedule[]>; priority: FetchPriority };
+const inflightMonths = new Map<string, InflightMonth>();
+// clearSourceCache() 때 올린다. 캐시를 비우기 전에 시작된 요청이 (예약처 설정이 바뀌기
+// 전 기준의) 낡은 결과를 새 캐시에 써넣지 못하게 막는 용도.
+let cacheEpoch = 0;
 
 /**
- * 예약처가 20곳 이상이고 각각 여러 달을 조회하다 보니, 한 번에 수십~백 개의
- * 요청이 동시에 나갈 수 있다(사용자 검색과 백그라운드 캐시 워머가 겹치는
- * 경우 더 심함). 서버가 그걸 한꺼번에 처리하려다 스스로 느려지면, 실제로는
- * 살아있는 예약처들도 타임아웃으로 "실패"처리되고 그게 다시 반복 실패 건너뛰기
- * 로 이어져 한꺼번에 많은 예약처가 실패로 뜨는 악순환이 생긴다. 이를 막기 위해
- * 서버 전체에서 동시에 진행 중인 예약처 조회 요청 수를 제한한다.
+ * 서버 전체에서 동시에 진행하는 예약처 조회 수를 제한한다. 수십~백 개를 한꺼번에 보내면
+ * 무료 인스턴스(CPU 약 0.1)가 스스로 느려져서 멀쩡한 예약처까지 타임아웃으로 "실패"
+ * 처리되고, 그게 반복 실패 건너뛰기로 이어져 한꺼번에 많은 예약처가 실패로 뜨는
+ * 악순환이 생기기 때문이다.
+ *
+ * 다만 줄 세우는 방식을 바꿨다. 사용자가 직접 누른 검색은 "high", 페이지를 열 때 필터
+ * 목록을 채우려고 돌리는 조회는 "low"로 구분해서 high를 항상 먼저 처리하고, low가 전체
+ * 칸을 다 차지하지 못하게 일부(FETCH_RESERVED_FOR_SEARCH개)는 검색용으로 비워 둔다.
+ * 예전에는 하나의 줄(FIFO, 한도 6)만 써서 필터 목록용 조회 수십 건 뒤에 검색이 대기했다.
+ *
+ * 환경변수로 조절할 수 있다: FISHING_FETCH_CONCURRENCY(전체 한도, 기본 10),
+ * FISHING_FETCH_RESERVED(검색 전용으로 비워 두는 칸, 기본 4).
  */
-const MAX_CONCURRENT_FETCHES = 6;
-let activeFetches = 0;
-const fetchQueue: Array<() => void> = [];
+const FETCH_CONCURRENCY = readIntEnv("FISHING_FETCH_CONCURRENCY", 10);
+const FETCH_RESERVED_FOR_SEARCH = readIntEnv("FISHING_FETCH_RESERVED", 4, 0);
+const FETCH_TIMEOUT_MS = 15_000;
+const fetchLimiter = createPriorityLimiter({
+  maxConcurrent: FETCH_CONCURRENCY,
+  reservedForHigh: FETCH_RESERVED_FOR_SEARCH,
+});
 
-async function withFetchLimit<T>(task: () => Promise<T>): Promise<T> {
-  if (activeFetches >= MAX_CONCURRENT_FETCHES) {
-    await new Promise<void>((resolve) => fetchQueue.push(resolve));
-  }
-  activeFetches += 1;
-  try {
-    return await task();
-  } finally {
-    activeFetches -= 1;
-    const next = fetchQueue.shift();
-    if (next) next();
-  }
-}
+// 이 시간 이상 걸린 개별 조회는 검색 요약과 별도로 바로 로그에 남긴다.
+const SLOW_FETCH_LOG_MS = 4_000;
+
+// 한 번의 '예약처-월' 조회가 어디서 시간을 썼는지(대기/응답/본문 수신/파싱, ms) 기록해서
+// 로그로 원인을 확인할 수 있게 한다.
+type FetchTrace = { queueMs?: number; headersMs?: number; bodyMs?: number; parseMs?: number; bytes?: number };
+type FetchContext = { priority: FetchPriority; tag?: string; trace?: FetchTrace };
+const USER_FETCH_CONTEXT: FetchContext = { priority: "high" };
+
+type MonthTiming = FetchTrace & {
+  name: string;
+  year: number;
+  month: number;
+  totalMs: number;
+  ok: boolean;
+  error?: string;
+  finishedAt: number;
+};
+const monthTimings = new Map<string, MonthTiming>();
 
 /**
  * 반복적으로 실패하는 예약처(robots.txt 차단, 서버 다운 등)를 매 검색마다
@@ -116,7 +121,13 @@ async function withFetchLimit<T>(task: () => Promise<T>): Promise<T> {
  */
 const FAILURE_THRESHOLD = 3;
 const COOLDOWN_MS = 10 * 60 * 1000; // 10분
-type SourceHealth = { consecutiveFailures: number; skipUntil: number; lastError?: string };
+type SourceHealth = {
+  consecutiveFailures: number;
+  skipUntil: number;
+  lastError?: string;
+  // 마지막으로 센 오류 객체. 같은 조회 한 건의 실패를 여러 검색이 함께 받아도 한 번만 세려는 용도.
+  lastErrorRef?: unknown;
+};
 const sourceHealth = new Map<number, SourceHealth>();
 
 function isSkipped(sourceId: number): SourceHealth | undefined {
@@ -131,12 +142,16 @@ function recordSuccess(sourceId: number): void {
 
 function recordFailure(sourceId: number, error: unknown): void {
   const prev = sourceHealth.get(sourceId);
+  // 같은 조회 한 건이 실패한 것을 (진행 중인 요청에 합류한) 여러 검색이 함께 받는 경우가
+  // 있다. 실제 실패는 한 번이므로 중복해서 세지 않는다.
+  if (prev && prev.lastErrorRef !== undefined && prev.lastErrorRef === error) return;
   const consecutiveFailures = (prev?.consecutiveFailures ?? 0) + 1;
   const skipUntil = consecutiveFailures >= FAILURE_THRESHOLD ? Date.now() + COOLDOWN_MS : 0;
   sourceHealth.set(sourceId, {
     consecutiveFailures,
     skipUntil,
     lastError: error instanceof Error ? error.message : String(error),
+    lastErrorRef: error,
   });
 }
 
@@ -185,6 +200,11 @@ export async function listConfiguredSources(): Promise<FishingSourceWithVessels[
 
 export function clearSourceCache(): void {
   monthCache.clear();
+  // 진행 중이던 요청은 끝까지 가도록 두되(기다리던 쪽이 있을 수 있음), 새 캐시에는
+  // 결과를 쓰지 못하게 하고 이후 요청이 그 낡은 요청에 합류하지도 않게 한다.
+  inflightMonths.clear();
+  monthTimings.clear();
+  cacheEpoch += 1;
   // 물때 어휘는 날짜에 따른 보편적인 값이라 예약처 설정과 무관하게 계속 유지한다.
   // 반면 선박-항구/지역 매핑은 예약처의 항구·지역 설정이 바뀌면 낡은 값이 될 수
   // 있으므로, 예약처가 추가/수정/삭제되거나 수동으로 새로고침할 때 같이 비운다.
@@ -295,7 +315,47 @@ function browserHeaders(referer: string): Record<string, string> {
   };
 }
 
-async function fetchMonth(year: number, month: number, config: SourceConfig): Promise<FishingSchedule[]> {
+// 예약처 페이지 하나를 받아온다. 동시 조회 한도(fetchLimiter)에는 "응답 헤더가 올 때까지"만
+// 해당하고(예전과 동일), 15초 타임아웃은 줄 서서 기다린 시간이 아니라 실제로 요청을
+// 시작한 시점부터 잰다. 구간별 소요 시간은 ctx.trace에 남겨 로그로 확인할 수 있게 한다.
+async function fetchHtml(url: URL, referer: string, ctx: FetchContext): Promise<string> {
+  const queuedAt = performance.now();
+  const response = await fetchLimiter.run(
+    async () => {
+      const startedAt = performance.now();
+      if (ctx.trace) ctx.trace.queueMs = Math.round(startedAt - queuedAt);
+      try {
+        return await fetch(url, {
+          headers: browserHeaders(referer),
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+      } finally {
+        if (ctx.trace) ctx.trace.headersMs = Math.round(performance.now() - startedAt);
+      }
+    },
+    ctx.priority,
+    ctx.tag,
+  );
+  if (!response.ok) {
+    // 본문을 읽지 않고 그냥 버리면 연결이 풀리지 않은 채 남을 수 있어서 명시적으로 닫는다.
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.`);
+  }
+  const bodyStartedAt = performance.now();
+  const html = await response.text();
+  if (ctx.trace) {
+    ctx.trace.bodyMs = Math.round(performance.now() - bodyStartedAt);
+    ctx.trace.bytes = html.length;
+  }
+  return html;
+}
+
+async function fetchMonth(
+  year: number,
+  month: number,
+  config: SourceConfig,
+  ctx: FetchContext = USER_FETCH_CONTEXT,
+): Promise<FishingSchedule[]> {
   const monthValue = String(month).padStart(2, "0");
   const url = new URL("/index.php", config.baseUrl);
   url.searchParams.set("mid", "bk");
@@ -303,22 +363,14 @@ async function fetchMonth(year: number, month: number, config: SourceConfig): Pr
   url.searchParams.set("month", monthValue);
   url.searchParams.set("day", "01");
 
-  const response = await withFetchLimit(() =>
-    fetch(url, {
-      headers: browserHeaders(config.baseUrl),
-      signal: AbortSignal.timeout(15_000),
-    }),
-  );
-  if (!response.ok) {
-    throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.`);
-  }
-
-  const html = await response.text();
+  const html = await fetchHtml(url, config.baseUrl, ctx);
+  const parseStartedAt = performance.now();
   const $ = cheerio.load(html);
   const sourceItems: FishingSchedule[] = [];
   $(".new-divs").each((_index, element) => {
     sourceItems.push(...parseDayBlock($(element), config));
   });
+  if (ctx.trace) ctx.trace.parseMs = Math.round(performance.now() - parseStartedAt);
   return sourceItems;
 }
 
@@ -401,31 +453,35 @@ function parseSunsangDayBlock(
   return items;
 }
 
-async function fetchSunsangMonth(year: number, month: number, config: SourceConfig): Promise<FishingSchedule[]> {
+async function fetchSunsangMonth(
+  year: number,
+  month: number,
+  config: SourceConfig,
+  ctx: FetchContext = USER_FETCH_CONTEXT,
+): Promise<FishingSchedule[]> {
   const monthValue = `${year}${String(month).padStart(2, "0")}`;
   const url = new URL(`/ship/schedule_fleet/${monthValue}`, config.baseUrl);
 
-  const response = await withFetchLimit(() =>
-    fetch(url, {
-      headers: browserHeaders(config.baseUrl),
-      signal: AbortSignal.timeout(15_000),
-    }),
-  );
-  if (!response.ok) {
-    throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.`);
-  }
-
-  const html = await response.text();
+  const html = await fetchHtml(url, config.baseUrl, ctx);
+  const parseStartedAt = performance.now();
   const $ = cheerio.load(html);
   const sourceItems: FishingSchedule[] = [];
   $(".shipsinfo_daywarp").each((_index, element) => {
     sourceItems.push(...parseSunsangDayBlock($, $(element), config));
   });
+  if (ctx.trace) ctx.trace.parseMs = Math.round(performance.now() - parseStartedAt);
   return sourceItems;
 }
 
-async function fetchMonthForConfig(year: number, month: number, config: SourceConfig): Promise<FishingSchedule[]> {
-  return isSunsang24(config.baseUrl) ? fetchSunsangMonth(year, month, config) : fetchMonth(year, month, config);
+async function fetchMonthForConfig(
+  year: number,
+  month: number,
+  config: SourceConfig,
+  ctx: FetchContext = USER_FETCH_CONTEXT,
+): Promise<FishingSchedule[]> {
+  return isSunsang24(config.baseUrl)
+    ? fetchSunsangMonth(year, month, config, ctx)
+    : fetchMonth(year, month, config, ctx);
 }
 
 export type DetectedSource = {
@@ -516,23 +572,102 @@ export async function detectSource(rawUrl: string): Promise<DetectedSource | nul
   return { platform: "unknown", suggestedName: await fetchPageTitle(baseUrl), vessels: [], workingUrl: null };
 }
 
-async function fetchSourceMonths(
-  months: Array<{ year: number; month: number }>,
+function monthKey(sourceId: number, year: number, month: number): string {
+  return `${sourceId}:${year}-${month}`;
+}
+
+function peekMonthCache(key: string): FishingSchedule[] | undefined {
+  const cached = monthCache.get(key);
+  return cached && cached.expiresAt > Date.now() ? cached.items : undefined;
+}
+
+function describeTiming(timing: MonthTiming): string {
+  const parts = [
+    timing.queueMs !== undefined ? `대기 ${timing.queueMs}` : null,
+    timing.headersMs !== undefined ? `응답 ${timing.headersMs}` : null,
+    timing.bodyMs !== undefined ? `본문 ${timing.bodyMs}` : null,
+    timing.parseMs !== undefined ? `파싱 ${timing.parseMs}` : null,
+    timing.bytes !== undefined ? `${Math.round(timing.bytes / 1024)}KB` : null,
+  ].filter(Boolean);
+  const failure = timing.ok ? "" : ` 실패: ${timing.error ?? "알 수 없음"}`;
+  const label = `${timing.name} ${timing.year}-${String(timing.month).padStart(2, "0")}`;
+  return `${label} ${timing.totalMs}ms (${parts.join(" · ")})${failure}`;
+}
+
+function recordTiming(
+  key: string,
   config: SourceConfig,
+  year: number,
+  month: number,
+  startedAt: number,
+  trace: FetchTrace,
+  outcome: { ok: true } | { ok: false; error: unknown },
+): void {
+  const timing: MonthTiming = {
+    ...trace,
+    name: config.name,
+    year,
+    month,
+    totalMs: Math.round(performance.now() - startedAt),
+    ok: outcome.ok,
+    error: outcome.ok ? undefined : outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
+    finishedAt: Date.now(),
+  };
+  monthTimings.set(key, timing);
+  if (!timing.ok) {
+    logger.warn({ timing }, `[예약처 조회 실패] ${describeTiming(timing)}`);
+  } else if (timing.totalMs >= SLOW_FETCH_LOG_MS) {
+    logger.info({ timing }, `[예약처 조회 느림] ${describeTiming(timing)}`);
+  }
+}
+
+/**
+ * 예약처 한 곳의 한 달치 일정을 돌려준다. 캐시에 있으면 그대로, 이미 누군가 같은 걸 가져오는
+ * 중이면 그 요청에 합류, 둘 다 아니면 새로 가져온다. 합류한 쪽이 사용자 검색("high")이고
+ * 원래 요청이 백그라운드("low")였다면, 아직 줄 서 있는 경우 앞줄로 올려준다.
+ */
+function getMonthItems(
+  config: SourceConfig,
+  year: number,
+  month: number,
+  priority: FetchPriority,
 ): Promise<FishingSchedule[]> {
-  const results = await Promise.all(
-    months.map(async ({ year, month }) => {
-      const cacheKey = `${config.id}:${year}-${month}`;
-      const cached = monthCache.get(cacheKey);
-      if (cached && cached.expiresAt > Date.now()) {
-        return cached.items;
-      }
-      const monthItems = await fetchMonthForConfig(year, month, config);
-      monthCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items: monthItems });
-      return monthItems;
-    }),
-  );
-  return results.flat();
+  const key = monthKey(config.id, year, month);
+  const cached = peekMonthCache(key);
+  if (cached) return Promise.resolve(cached);
+
+  const running = inflightMonths.get(key);
+  if (running) {
+    if (priority === "high" && running.priority === "low") {
+      running.priority = "high";
+      fetchLimiter.promote(key);
+    }
+    return running.promise;
+  }
+
+  const epoch = cacheEpoch;
+  const trace: FetchTrace = {};
+  const startedAt = performance.now();
+  const entry: InflightMonth = {
+    priority,
+    promise: fetchMonthForConfig(year, month, config, { priority, tag: key, trace })
+      .then(
+        (items) => {
+          if (epoch === cacheEpoch) monthCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, items });
+          recordTiming(key, config, year, month, startedAt, trace, { ok: true });
+          return items;
+        },
+        (error: unknown) => {
+          recordTiming(key, config, year, month, startedAt, trace, { ok: false, error });
+          throw error;
+        },
+      )
+      .finally(() => {
+        if (inflightMonths.get(key) === entry) inflightMonths.delete(key);
+      }),
+  };
+  inflightMonths.set(key, entry);
+  return entry.promise;
 }
 
 function monthCursor(startDate: string, endDate: string): Array<{ year: number; month: number }> {
@@ -552,6 +687,9 @@ export type FishingScheduleSearch = {
   items: FishingSchedule[];
   sources: SourceConfig[];
   failedSources: string[];
+  // 마감 시간(softDeadlineMs) 안에 응답하지 못해 이번 결과에서 빠진 예약처. 실패가 아니라 아직
+  // 진행 중인 것이라, 백그라운드에서 계속 받아 캐시에 채우므로 잠시 뒤 다시 검색하면 나온다.
+  pendingSources: string[];
 };
 
 // 우리 항구 이름 → 바다타임(badatime.com) 지역 ID. 바다타임 사이트에서 해당
@@ -581,16 +719,24 @@ function parseBadatimePercent(value: string): number {
 // 날짜별 조류 세기는 천문 데이터라 자주 바뀌지 않으므로, 예약 일정 캐시보다
 // 훨씬 길게(하루) 잡아도 정확도 손해가 없다.
 const TIDE_STRENGTH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+// 바다타임이 느리거나 막혔을 때(또는 HTML 구조가 바뀌어 파싱 결과가 비었을 때), 같은 조회를
+// 검색할 때마다 되풀이하며 기다리지 않도록 실패 후 잠시 동안은 다시 시도하지 않는다.
+const TIDE_FAILURE_COOLDOWN_MS = 5 * 60 * 1000;
+const TIDE_FETCH_TIMEOUT_MS = 8_000;
+// 예약처 조회가 끝난 뒤 조류 세기를 더 기다려 줄 최대 시간. 조류 세기는 예약처 조회와
+// 동시에 미리 받아 두므로 보통은 기다릴 일이 없다.
+const TIDE_WAIT_AFTER_SCRAPE_MS = 2_000;
 const tideStrengthMonthCache = new Map<string, { expiresAt: number; days: Map<string, number> }>();
+const tideFailureUntil = new Map<string, number>();
+const tideInflight = new Map<string, Promise<Map<string, number> | null>>();
+// 같은 사이트(바다타임)에 요청이 한꺼번에 몰리지 않게 예약처 조회와는 따로 제한한다.
+const tideLimiter = createPriorityLimiter({ maxConcurrent: 4 });
 
-async function fetchTideStrengthMonth(locationId: number, year: number, month: number): Promise<Map<string, number>> {
-  const cacheKey = `${locationId}:${year}-${month}`;
-  const cached = tideStrengthMonthCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.days;
-
+async function loadTideStrengthMonth(locationId: number, year: number, month: number): Promise<Map<string, number>> {
   const url = `https://www.badatime.com/${locationId}/daily/${year}-${String(month).padStart(2, "0")}`;
-  const response = await fetch(url, { headers: browserHeaders(url), signal: AbortSignal.timeout(15_000) });
+  const response = await fetch(url, { headers: browserHeaders(url), signal: AbortSignal.timeout(TIDE_FETCH_TIMEOUT_MS) });
   if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
     throw new Error(`바다타임 조류 세기 조회 실패 (${response.status})`);
   }
   const html = await response.text();
@@ -610,64 +756,215 @@ async function fetchTideStrengthMonth(locationId: number, year: number, month: n
     days.set(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`, percent);
   });
   if (days.size === 0) {
-    console.warn(`[tide] 바다타임 파싱 결과 0건: ${url} (HTML 구조가 바뀌었을 수 있음)`);
+    throw new Error(`바다타임 파싱 결과 0건 (HTML 구조가 바뀌었을 수 있음): ${url}`);
   }
-  tideStrengthMonthCache.set(cacheKey, { expiresAt: Date.now() + TIDE_STRENGTH_CACHE_TTL_MS, days });
   return days;
 }
 
-// 검색 결과에 등장하는 (항구, 연-월) 조합별로 바다타임 조류 세기를 가져와 각
-// 일정에 실제 수치를 붙여준다. 매핑 없는 항구나 조회 실패는 조용히 null로
-// 남겨서, 이 부가 정보 하나 때문에 전체 검색이 실패하는 일은 없게 한다.
-async function attachTideStrength(items: FishingSchedule[]): Promise<void> {
-  const byPort = new Map<string, FishingSchedule[]>();
-  for (const item of items) {
-    const list = byPort.get(item.port) ?? [];
-    list.push(item);
-    byPort.set(item.port, list);
-  }
+// 한 (바다타임 지역, 연-월)의 날짜별 조류 세기. 캐시, 이미 진행 중인 요청에 합류, 실패 후
+// 쿨다운을 처리하고, 어떤 이유로든 못 가져오면 null을 돌려준다. 이 부가 정보 때문에 검색이
+// 실패하거나 오래 멈추는 일이 없도록 절대 throw하지 않는다.
+function fetchTideStrengthMonth(locationId: number, year: number, month: number): Promise<Map<string, number> | null> {
+  const key = `${locationId}:${year}-${month}`;
+  const cached = tideStrengthMonthCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.days);
+  if ((tideFailureUntil.get(key) ?? 0) > Date.now()) return Promise.resolve(null);
+  const running = tideInflight.get(key);
+  if (running) return running;
 
-  await Promise.all(
-    Array.from(byPort.entries()).map(async ([port, portItems]) => {
-      const locationId =
-        BADATIME_LOCATION_IDS[port] ??
-        BADATIME_LOCATION_IDS[port.replace(/항$/, "")] ??
-        BADATIME_LOCATION_IDS[`${port}항`];
-      if (!locationId) return;
+  const promise = tideLimiter
+    .run(() => loadTideStrengthMonth(locationId, year, month))
+    .then(
+      (days): Map<string, number> | null => {
+        tideStrengthMonthCache.set(key, { expiresAt: Date.now() + TIDE_STRENGTH_CACHE_TTL_MS, days });
+        tideFailureUntil.delete(key);
+        return days;
+      },
+      (err: unknown): Map<string, number> | null => {
+        tideFailureUntil.set(key, Date.now() + TIDE_FAILURE_COOLDOWN_MS);
+        logger.warn({ err }, `[tide] 바다타임 ${key} 조회 실패 — 5분간 다시 시도하지 않음`);
+        return null;
+      },
+    )
+    .finally(() => {
+      tideInflight.delete(key);
+    });
+  tideInflight.set(key, promise);
+  return promise;
+}
 
-      const months = new Set(portItems.map((item) => item.departureDate.slice(0, 7)));
-      const merged = new Map<string, number>();
-      await Promise.all(
-        Array.from(months).map(async (yearMonth) => {
-          const [year, month] = yearMonth.split("-").map(Number);
-          try {
-            const monthDays = await fetchTideStrengthMonth(locationId, year, month);
-            for (const [date, percent] of monthDays) merged.set(date, percent);
-          } catch (err) {
-            // 이 달만 못 가져온 것으로 취급하고 넘어간다 — 나머지 결과에는 영향 없음.
-            console.warn(`[tide] ${port} ${yearMonth} 조회 실패:`, err);
-          }
+function tideLocationIdFor(port: string): number | undefined {
+  return (
+    BADATIME_LOCATION_IDS[port] ??
+    BADATIME_LOCATION_IDS[port.replace(/항$/, "")] ??
+    BADATIME_LOCATION_IDS[`${port}항`]
+  );
+}
+
+// 항구 → (날짜 → 조류 세기 %)
+type TideByPort = Map<string, Map<string, number>>;
+
+// 조류 세기는 (항구, 연-월)만 알면 가져올 수 있어서, 예약처 조회가 끝나길 기다리지 않고 검색을
+// 시작하자마자 동시에 받아 둔다. byPort는 받는 대로 채워지고, done은 전부 끝나면 풀린다
+// (done은 절대 reject되지 않는다). 매핑이 없는 항구는 조회하지 않아 tideStrengthPercent가 null로 남는다.
+function prefetchTideStrength(
+  sources: SourceConfig[],
+  months: Array<{ year: number; month: number }>,
+): { byPort: TideByPort; done: Promise<void> } {
+  const byPort: TideByPort = new Map();
+  const jobs: Array<Promise<void>> = [];
+  for (const port of new Set(sources.map((source) => source.port))) {
+    const locationId = tideLocationIdFor(port);
+    if (!locationId) continue;
+    const merged = new Map<string, number>();
+    byPort.set(port, merged);
+    for (const { year, month } of months) {
+      jobs.push(
+        fetchTideStrengthMonth(locationId, year, month).then((days) => {
+          if (days) for (const [date, percent] of days) merged.set(date, percent);
         }),
       );
+    }
+  }
+  return { byPort, done: Promise.all(jobs).then(() => undefined) };
+}
 
-      for (const item of portItems) {
-        item.tideStrengthPercent = merged.get(item.departureDate) ?? null;
-      }
-    }),
+function applyTideStrength(items: FishingSchedule[], byPort: TideByPort): void {
+  for (const item of items) {
+    item.tideStrengthPercent = byPort.get(item.port)?.get(item.departureDate) ?? null;
+  }
+}
+
+export type GetSchedulesOptions = {
+  /** 지역/항구를 골라서 검색한 경우, 관련 없는 예약처는 처음부터 조회하지 않는다. */
+  filter?: { region?: string[]; port?: string };
+  /** "high"(기본): 사용자가 직접 누른 검색. "low": 필터 목록 채우기 같은 백그라운드 조회. */
+  priority?: FetchPriority;
+  /**
+   * 이 시간(ms)이 지나면 그때까지 응답한 예약처만으로 먼저 결과를 낸다. 못 끝낸 예약처는
+   * pendingSources로 알려 주고 백그라운드에서 계속 받아 캐시에 채운다. 생략하면 전부 기다린다.
+   */
+  softDeadlineMs?: number;
+  /** 바다타임 조류 세기를 붙일지 (필터 목록 용도에서는 필요 없음). 기본 true. */
+  withTide?: boolean;
+  /** 로그에 찍을 이름. */
+  label?: string;
+};
+
+function logSearchSummary(args: {
+  label: string;
+  priority: FetchPriority;
+  startedAt: number;
+  startedAtWall: number;
+  sources: SourceConfig[];
+  requestedKeys: string[];
+  cachedMonths: number;
+  failedSources: string[];
+  pendingSources: string[];
+  tideWaitMs: number | null;
+  // 조회하는 동안 서버 스레드가 일하느라 바빴던 비율(0~1). 1에 가까우면 서버 CPU가 병목,
+  // 0에 가까우면 예약처 사이트 응답을 기다리는 시간이 대부분이라는 뜻.
+  loopBusy: number;
+  resultCount: number;
+}): void {
+  const totalMs = Math.round(performance.now() - args.startedAt);
+  const fetchedMonths = args.requestedKeys.length - args.cachedMonths;
+  // 필터 목록용 백그라운드 조회가 전부 캐시로 끝난 경우까지 매번 로그를 남기지는 않는다.
+  if (args.priority === "low" && fetchedMonths === 0 && !args.failedSources.length && !args.pendingSources.length) {
+    return;
+  }
+  const slowest = args.requestedKeys
+    .map((key) => monthTimings.get(key))
+    .filter((timing): timing is MonthTiming => timing !== undefined && timing.finishedAt >= args.startedAtWall)
+    .sort((a, b) => b.totalMs - a.totalMs)
+    .slice(0, 5)
+    .map(describeTiming);
+  const okCount = args.sources.length - args.failedSources.length - args.pendingSources.length;
+  const parts = [
+    `[${args.label}] ${totalMs}ms`,
+    `예약처 ${args.sources.length}곳 (성공 ${okCount} · 실패 ${args.failedSources.length} · 지연 ${args.pendingSources.length})`,
+    `월 캐시 ${args.cachedMonths}/${args.requestedKeys.length}`,
+    `조류 대기 ${args.tideWaitMs === null ? "-" : `${args.tideWaitMs}ms`}`,
+    `서버 바쁨 ${Math.round(args.loopBusy * 100)}%`,
+    `결과 ${args.resultCount}건`,
+  ];
+  if (args.failedSources.length) parts.push(`실패: ${args.failedSources.join(", ")}`);
+  if (args.pendingSources.length) parts.push(`지연: ${args.pendingSources.join(", ")}`);
+  parts.push(`느린 순: ${slowest.length ? slowest.join(" ; ") : "없음(전부 캐시)"}`);
+  logger.info(
+    {
+      timing: {
+        label: args.label,
+        totalMs,
+        sources: args.sources.length,
+        failed: args.failedSources.length,
+        pending: args.pendingSources.length,
+        cachedMonths: args.cachedMonths,
+        requestedMonths: args.requestedKeys.length,
+        tideWaitMs: args.tideWaitMs,
+        loopBusy: Math.round(args.loopBusy * 100) / 100,
+        queue: fetchLimiter.stats(),
+      },
+    },
+    parts.join(" | "),
   );
+}
+
+/**
+ * 속도 문제를 실제 수치로 확인하기 위한 읽기 전용 현황 (GET /api/fishing/diagnostics).
+ * 최근 조회한 예약처-월마다 "줄 서서 기다린 시간 / 사이트 응답 시간 / 본문 받는 시간 / 파싱 시간"을
+ * 보여주기 때문에, 느린 원인이 예약처 사이트인지 서버 CPU인지 바로 구분된다.
+ */
+export function getFetchDiagnostics() {
+  const now = Date.now();
+  return {
+    settings: {
+      fetchConcurrency: FETCH_CONCURRENCY,
+      reservedForSearch: FETCH_RESERVED_FOR_SEARCH,
+      fetchTimeoutMs: FETCH_TIMEOUT_MS,
+      cacheTtlMinutes: CACHE_TTL_MS / 60_000,
+    },
+    queue: fetchLimiter.stats(),
+    cachedMonths: [...monthCache.values()].filter((entry) => entry.expiresAt > now).length,
+    inflightMonths: inflightMonths.size,
+    // 서버를 켠 뒤 지금까지 이벤트 루프가 일한 비율. 검색 한 번 동안의 값은 로그의 "서버 바쁨"을 본다.
+    eventLoopBusySinceBoot: Math.round(performance.eventLoopUtilization().utilization * 1000) / 1000,
+    recentFetches: [...monthTimings.values()]
+      .sort((a, b) => b.totalMs - a.totalMs)
+      .map((timing) => ({
+        source: timing.name,
+        month: `${timing.year}-${String(timing.month).padStart(2, "0")}`,
+        ok: timing.ok,
+        totalMs: timing.totalMs,
+        queueMs: timing.queueMs ?? null,
+        headersMs: timing.headersMs ?? null,
+        bodyMs: timing.bodyMs ?? null,
+        parseMs: timing.parseMs ?? null,
+        kb: timing.bytes === undefined ? null : Math.round(timing.bytes / 1024),
+        error: timing.error ?? null,
+        secondsAgo: Math.round((now - timing.finishedAt) / 1000),
+      })),
+    sourceHealth: getSourceHealthSnapshot(),
+  };
 }
 
 export async function getSchedules(
   startDate: string,
   endDate: string,
-  filter?: { region?: string[]; port?: string },
+  options: GetSchedulesOptions = {},
 ): Promise<FishingScheduleSearch> {
+  const { filter, priority = "high", softDeadlineMs, withTide = true } = options;
+  const label = options.label ?? (priority === "high" ? "검색" : "필터목록");
+  const startedAt = performance.now();
+  const startedAtWall = Date.now();
+  // 이 조회 동안 이벤트 루프(서버의 일하는 스레드)가 얼마나 바빴는지 재기 위한 기준점.
+  const loopStart = performance.eventLoopUtilization();
+
   const sourceRecords = await listConfiguredSources();
   let sources = sourceRecords.filter((source) => source.enabled).map(toSourceConfig);
   // 지역/항구를 선택해서 검색한 경우, 처음부터 관련 없는 예약처는 조회 대상에서
-  // 뺀다. 예전에는 항상 등록된 예약처 전체를 다 조회한 뒤 결과만 걸러냈어서,
-  // 관련 없는 지역까지 매번 스크래핑하느라 느렸고, "일부 예약처를 불러오지
-  // 못했습니다" 경고에도 선택한 지역과 무관한 예약처 이름까지 나열됐다.
+  // 뺀다. 관련 없는 지역까지 매번 스크래핑하면 느리고, "일부 예약처를 불러오지
+  // 못했습니다" 경고에도 선택한 지역과 무관한 예약처 이름까지 나열되기 때문이다.
   if (filter?.region?.length) {
     sources = sources.filter((source) => filter.region!.includes(source.region));
   }
@@ -676,41 +973,100 @@ export async function getSchedules(
   }
 
   if (sources.length === 0) {
-    return { items: [], sources, failedSources: [] };
+    return { items: [], sources, failedSources: [], pendingSources: [] };
   }
 
   const months = monthCursor(startDate, endDate);
-  const sourceResults = await mapWithConcurrency(sources, SOURCE_FETCH_CONCURRENCY, async (source) => {
-    const skipped = isSkipped(source.id);
-    if (skipped) {
-      throw new Error(`최근 반복 실패로 건너뜀 (${skipped.consecutiveFailures}회 연속 실패, 이전 오류: ${skipped.lastError ?? "알 수 없음"})`);
+  // 조류 세기는 (항구, 연-월)만 알면 받을 수 있어서 예약처 조회와 동시에 미리 받아 둔다.
+  // 필터 목록용 조회(withTide=false)는 결과에 붙이지도 기다리지도 않지만, 받아 두면 곧이어
+  // 누르는 첫 검색이 바다타임을 기다리지 않아도 된다.
+  const tide = prefetchTideStrength(sources, months);
+
+  // (예약처 × 월) 요청을 "월 순서대로" 만든다: 모든 예약처의 첫 달을 먼저, 그다음 달을 요청한다.
+  // 그래야 줄이 길어도 가까운 달 데이터부터 채워진다. 같은 키가 이미 캐시에 있거나 진행 중이면
+  // getMonthItems가 새 요청 없이 그걸 재사용한다.
+  const skipped = sources.map((source) => isSkipped(source.id));
+  const monthRequests: Array<Array<Promise<FishingSchedule[]>>> = sources.map(() => []);
+  const requestedKeys: string[] = [];
+  let cachedMonths = 0;
+  for (const { year, month } of months) {
+    sources.forEach((source, index) => {
+      if (skipped[index]) return;
+      const key = monthKey(source.id, year, month);
+      requestedKeys.push(key);
+      if (peekMonthCache(key)) cachedMonths += 1;
+      monthRequests[index].push(getMonthItems(source, year, month, priority));
+    });
+  }
+  const sourcePromises = sources.map((source, index): Promise<FishingSchedule[]> => {
+    const skippedHealth = skipped[index];
+    if (skippedHealth) {
+      return Promise.reject(
+        new Error(`최근 반복 실패로 건너뜀 (${skippedHealth.consecutiveFailures}회 연속 실패, 이전 오류: ${skippedHealth.lastError ?? "알 수 없음"})`),
+      );
     }
-    try {
-      const result = await fetchSourceMonths(months, source);
-      recordSuccess(source.id);
-      return result;
-    } catch (error) {
-      recordFailure(source.id, error);
-      throw error;
+    return Promise.all(monthRequests[index]).then(
+      (parts) => {
+        recordSuccess(source.id);
+        return parts.flat();
+      },
+      (error: unknown) => {
+        recordFailure(source.id, error);
+        throw error;
+      },
+    );
+  });
+
+  // 느린 예약처 한 곳이 전체 응답을 붙잡지 않도록, 마감 시간이 지나면 응답한 곳까지만으로
+  // 먼저 결과를 낸다. 못 끝낸 곳은 (실패 처리하지 않고) 백그라운드에서 계속 받아 캐시에 채운다.
+  const settled = await settleWithSoftDeadline(sourcePromises, softDeadlineMs);
+  const collected: FishingSchedule[] = [];
+  const failedSources: string[] = [];
+  const pendingSources: string[] = [];
+  settled.forEach((result, index) => {
+    const name = sources[index]?.name || "예약처";
+    if (!result) {
+      pendingSources.push(name);
+    } else if (result.status === "rejected") {
+      failedSources.push(name);
+    } else {
+      for (const item of result.value) collected.push(item);
     }
   });
-  // fetchSourceMonths는 해당 월 전체 데이터를 돌려주므로, 실제 요청한
-  // 날짜 범위(startDate~endDate)에 맞게 여기서 다시 걸러낸다.
-  const items = sourceResults
-    .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
-    .filter((item) => item.departureDate >= startDate && item.departureDate <= endDate);
-  const failedSources = sourceResults.flatMap((result, index) =>
-    result.status === "rejected" ? [sources[index]?.name || "예약처"] : [],
-  );
+  // 월 단위로 가져온 데이터라, 실제 요청한 날짜 범위(startDate~endDate)에 맞게 여기서 다시 거른다.
+  const items = collected.filter((item) => item.departureDate >= startDate && item.departureDate <= endDate);
   if (items.length === 0 && failedSources.length === sources.length) {
     throw new Error("모든 예약처를 불러오지 못했습니다.");
   }
-  try {
-    await attachTideStrength(items);
-  } catch {
-    // 조류 세기는 부가 정보라, 여기서 뭔가 잘못돼도 검색 결과 자체는 그대로 돌려준다.
+
+  let tideWaitMs: number | null = null;
+  if (withTide) {
+    // 조류 세기는 부가 정보라, 늦거나 실패해도 받은 데이터까지만 붙이고 검색 결과는 그대로 돌려준다.
+    const tideStartedAt = performance.now();
+    await waitAtMost(tide.done, TIDE_WAIT_AFTER_SCRAPE_MS);
+    tideWaitMs = Math.round(performance.now() - tideStartedAt);
+    try {
+      applyTideStrength(items, tide.byPort);
+    } catch {
+      // 무시
+    }
   }
-  return { items, sources, failedSources };
+
+  logSearchSummary({
+    label,
+    priority,
+    startedAt,
+    startedAtWall,
+    sources,
+    requestedKeys,
+    cachedMonths,
+    failedSources,
+    pendingSources,
+    tideWaitMs,
+    loopBusy: performance.eventLoopUtilization(loopStart).utilization,
+    resultCount: items.length,
+  });
+  return { items, sources, failedSources, pendingSources };
 }
 
 // 실제로 한 번이라도 스크래핑에서 관측된 물때 표기(예: "7물", "조금", "무시")를

@@ -56,7 +56,7 @@ export const SearchFishingSchedulesResponse = zod.object({
 
 
 /**
- * Returns filter values discovered from the configured public reservation source.
+ * Returns configured filter values immediately and refreshes discovered values in the background.
  * @summary Get available fishing filters
  */
 export const GetFishingFilterOptionsResponse = zod.object({
@@ -65,7 +65,8 @@ export const GetFishingFilterOptionsResponse = zod.object({
   "ships": zod.array(zod.string()),
   "tides": zod.array(zod.string()),
   "shipsByPort": zod.record(zod.string(), zod.array(zod.string())),
-  "shipsByRegion": zod.record(zod.string(), zod.array(zod.string()))
+  "shipsByRegion": zod.record(zod.string(), zod.array(zod.string())),
+  "refreshing": zod.boolean().describe('Whether discovered filter values are currently being refreshed.')
 })
 
 
@@ -230,6 +231,8 @@ export const DetectFishingSourceBody = zod.object({
 export const DetectFishingSourceResponse = zod.object({
   "platform": zod.string().describe('"thefishing" | "sunsang24" | "unknown" 중 하나. 더피싱(index.php?mid=bk) 또는 SUNSANG24(/ship/schedule_fleet) 패턴 중 실제로 선박이 긁힌 쪽이고, 둘 다 안 되면 unknown.'),
   "suggestedName": zod.string().nullable().describe('사이트 <title> 태그에서 뽑아본 이름 추천값. 참고용이라 그대로 안 써도 됨.'),
+  "suggestedPort": zod.string().nullable().describe('사이트 제목·본문·주소에서 기존 예약처에 등록된 항구 이름 하나만 확인된 경우의 항구 값.'),
+  "suggestedRegion": zod.string().nullable().describe('확인된 항구로 등록된 기존 예약처의 지역 값. 항구가 불명확하거나 기존 지역 값이 일치하지 않으면 null.'),
   "vessels": zod.array(zod.string()).describe('이번 달(또는 비어있으면 다음 달) 조회에서 실제로 발견된 선박 이름들.'),
   "workingUrl": zod.string().nullable().describe('정상 인식된 경우의 기준 URL. platform이 unknown이면 null.')
 })
