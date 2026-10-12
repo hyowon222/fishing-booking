@@ -1,3 +1,4 @@
 - [Fishing date contract](fishing-date-contract.md) — generated date responses arrive as ISO timestamps; normalize them before display.
 - [Fishing source lifecycle](fishing-source-lifecycle.md) — user-managed sources are seeded as setup data, never silently recreated after deletion.
 - [API codegen barrel](api-codegen-barrel.md) — after Orval, keep Zod barrel exports explicit to avoid duplicate request/response names.
+- [GitHub push authentication](github-push-auth.md) — a healthy or added GitHub connection may still fail authentication in the workspace Git CLI; verify the remote SHA.
