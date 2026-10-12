@@ -39,6 +39,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { useAutoRetryWhilePending } from '@/hooks/use-auto-retry-pending';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 
@@ -666,6 +667,17 @@ function Home() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery.dataUpdatedAt]);
+  // 응답이 늦은 예약처가 있어 일부만 먼저 받았다면, 잠시 뒤 자동으로 다시 조회해 나머지를 채운다.
+  // 다시 조회하는 동안에는 이미 받은 결과가 그대로 보이고, 버튼은 "찾는 중"으로 바뀐다.
+  useAutoRetryWhilePending({
+    enabled: hasSearched,
+    isFetching: searchQuery.isFetching,
+    warning: searchQuery.data?.warning,
+    dataUpdatedAt: searchQuery.dataUpdatedAt,
+    // "자리 찾기"를 누를 때마다(같은 조건이어도) appliedParams가 새 객체로 바뀐다.
+    resetKey: appliedParams,
+    refetch: searchQuery.refetch,
+  });
   const reset = () => {
     setCriteria(initialCriteria);
     setAppliedParams(initialCriteria);
@@ -673,7 +685,7 @@ function Home() {
     setAppliedWeekdays([]);
     setHasSearched(false);
   };
-  // 서버의 캐시(5분 유지)를 비우고, 모든 예약처를 처음부터 다시 스크래핑하도록 강제한다.
+  // 서버의 캐시(20분 유지)를 비우고, 모든 예약처를 처음부터 다시 스크래핑하도록 강제한다.
   const forceRefreshAll = async () => {
     setIsRefreshingAll(true);
     try {
