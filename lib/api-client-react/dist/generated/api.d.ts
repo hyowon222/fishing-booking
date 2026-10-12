@@ -55,7 +55,7 @@ export declare function useSearchFishingSchedules<TData = Awaited<ReturnType<typ
 };
 export declare const getGetFishingFilterOptionsUrl: () => string;
 /**
- * Returns filter values discovered from the configured public reservation source.
+ * Returns configured filter values immediately and refreshes discovered values in the background.
  * @summary Get available fishing filters
  */
 export declare const getFishingFilterOptions: (options?: Parameters<typeof customFetch>[1]) => Promise<FishingFilterOptions>;

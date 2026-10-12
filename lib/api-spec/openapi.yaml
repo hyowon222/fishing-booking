@@ -97,7 +97,7 @@ paths:
       operationId: getFishingFilterOptions
       tags: [fishing]
       summary: Get available fishing filters
-      description: Returns filter values discovered from the configured public reservation source.
+      description: Returns configured filter values immediately and refreshes discovered values in the background.
       responses:
         "200":
           description: Filter values
@@ -389,6 +389,7 @@ components:
         - tides
         - shipsByPort
         - shipsByRegion
+        - refreshing
       properties:
         regions:
           type: array
@@ -418,6 +419,9 @@ components:
             type: array
             items:
               type: string
+        refreshing:
+          type: boolean
+          description: Whether discovered filter values are currently being refreshed.
     FishingSource:
       type: object
       required:

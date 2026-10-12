@@ -56,7 +56,7 @@ export const SearchFishingSchedulesResponse = zod.object({
 
 
 /**
- * Returns filter values discovered from the configured public reservation source.
+ * Returns configured filter values immediately and refreshes discovered values in the background.
  * @summary Get available fishing filters
  */
 export const GetFishingFilterOptionsResponse = zod.object({
@@ -65,7 +65,8 @@ export const GetFishingFilterOptionsResponse = zod.object({
   "ships": zod.array(zod.string()),
   "tides": zod.array(zod.string()),
   "shipsByPort": zod.record(zod.string(), zod.array(zod.string())),
-  "shipsByRegion": zod.record(zod.string(), zod.array(zod.string()))
+  "shipsByRegion": zod.record(zod.string(), zod.array(zod.string())),
+  "refreshing": zod.boolean().describe('Whether discovered filter values are currently being refreshed.')
 })
 
 

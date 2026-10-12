@@ -141,7 +141,7 @@ export declare const SearchFishingSchedulesResponse: zod.ZodObject<{
     warning: string | null;
 }>;
 /**
- * Returns filter values discovered from the configured public reservation source.
+ * Returns configured filter values immediately and refreshes discovered values in the background.
  * @summary Get available fishing filters
  */
 export declare const GetFishingFilterOptionsResponse: zod.ZodObject<{
@@ -151,6 +151,7 @@ export declare const GetFishingFilterOptionsResponse: zod.ZodObject<{
     tides: zod.ZodArray<zod.ZodString, "many">;
     shipsByPort: zod.ZodRecord<zod.ZodString, zod.ZodArray<zod.ZodString, "many">>;
     shipsByRegion: zod.ZodRecord<zod.ZodString, zod.ZodArray<zod.ZodString, "many">>;
+    refreshing: zod.ZodBoolean;
 }, "strip", zod.ZodTypeAny, {
     regions: string[];
     ports: string[];
@@ -158,6 +159,7 @@ export declare const GetFishingFilterOptionsResponse: zod.ZodObject<{
     tides: string[];
     shipsByPort: Record<string, string[]>;
     shipsByRegion: Record<string, string[]>;
+    refreshing: boolean;
 }, {
     regions: string[];
     ports: string[];
@@ -165,6 +167,7 @@ export declare const GetFishingFilterOptionsResponse: zod.ZodObject<{
     tides: string[];
     shipsByPort: Record<string, string[]>;
     shipsByRegion: Record<string, string[]>;
+    refreshing: boolean;
 }>;
 /**
  * @summary List configured fishing reservation sources

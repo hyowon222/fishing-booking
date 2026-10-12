@@ -69,6 +69,7 @@ const initialCriteria: Criteria = {
 };
 
 const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+const FILTER_OPTIONS_POLL_INTERVAL_MS = 2_000;
 // getDay()와 동일한 인덱스(0=일요일)로, 백엔드가 원문 사이트에서 파싱해 주는
 // weekday 필드("일요일"~"토요일")와 그대로 비교하기 위한 매핑.
 const WEEKDAY_FULL_LABELS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
@@ -210,6 +211,7 @@ function SearchForm({
   setCriteria,
   options,
   isOptionsLoading,
+  isOptionsRefreshing,
   onSubmit,
   onReset,
   isFetching,
@@ -222,6 +224,7 @@ function SearchForm({
   setCriteria: (next: Criteria) => void;
   options?: FishingFilterOptions;
   isOptionsLoading: boolean;
+  isOptionsRefreshing: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onReset: () => void;
   isFetching: boolean;
@@ -316,15 +319,23 @@ function SearchForm({
             <h2 className="text-sm font-bold tracking-tight">검색 조건</h2>
             <span className="hidden rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary sm:inline">OPEN SEAT RADAR</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setMobileOpen((open) => !open)}
-            className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground sm:hidden"
-            data-testid="button-toggle-filters"
-          >
-            {mobileOpen ? '접기' : '필터 열기'}
-            <ChevronDown className={`transition-transform ${mobileOpen ? 'rotate-180' : ''}`} size={15} />
-          </button>
+          <div className="flex items-center gap-3">
+            {isOptionsRefreshing && (
+              <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground" role="status" aria-live="polite">
+                <RefreshCw size={12} className="animate-spin text-primary" />
+                선박 목록 업데이트 중
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setMobileOpen((open) => !open)}
+              className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground sm:hidden"
+              data-testid="button-toggle-filters"
+            >
+              {mobileOpen ? '접기' : '필터 열기'}
+              <ChevronDown className={`transition-transform ${mobileOpen ? 'rotate-180' : ''}`} size={15} />
+            </button>
+          </div>
         </div>
 
         <div className={`${mobileOpen ? 'block' : 'hidden'} space-y-5 p-4 sm:block sm:p-5`}>
@@ -620,7 +631,13 @@ function Home() {
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
   // 사이트 진입 시 자동으로 일정을 조회하지 않고, "자리 찾기"를 눌렀을 때만 조회합니다.
   const [hasSearched, setHasSearched] = useState(false);
-  const optionsQuery = useGetFishingFilterOptions({ query: { queryKey: getGetFishingFilterOptionsQueryKey() } });
+  const optionsQuery = useGetFishingFilterOptions({
+    query: {
+      queryKey: getGetFishingFilterOptionsQueryKey(),
+      refetchInterval: (query) => query.state.data?.refreshing ? FILTER_OPTIONS_POLL_INTERVAL_MS : false,
+      refetchIntervalInBackground: false,
+    },
+  });
   const searchQuery = useSearchFishingSchedules(appliedParams, {
     query: { queryKey: getSearchFishingSchedulesQueryKey(appliedParams), retry: 1, enabled: hasSearched },
   });
@@ -743,7 +760,7 @@ function Home() {
           </div>
         </section>
 
-        <SearchForm criteria={criteria} setCriteria={setCriteria} options={options} isOptionsLoading={optionsQuery.isLoading} onSubmit={submit} onReset={reset} isFetching={searchQuery.isFetching} weekdays={weekdays} setWeekdays={setWeekdays} onForceRefresh={forceRefreshAll} isRefreshingAll={isRefreshingAll} />
+        <SearchForm criteria={criteria} setCriteria={setCriteria} options={options} isOptionsLoading={optionsQuery.isLoading} isOptionsRefreshing={options?.refreshing ?? false} onSubmit={submit} onReset={reset} isFetching={searchQuery.isFetching} weekdays={weekdays} setWeekdays={setWeekdays} onForceRefresh={forceRefreshAll} isRefreshingAll={isRefreshingAll} />
 
         <section className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 lg:px-8">
           <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">

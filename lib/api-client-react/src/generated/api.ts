@@ -239,7 +239,7 @@ export const getGetFishingFilterOptionsUrl = () => {
 }
 
 /**
- * Returns filter values discovered from the configured public reservation source.
+ * Returns configured filter values immediately and refreshes discovered values in the background.
  * @summary Get available fishing filters
  */
 export const getFishingFilterOptions = async ( options?: Parameters<typeof customFetch>[1]): Promise<FishingFilterOptions> => {

@@ -43327,7 +43327,7 @@ var require_util2 = __commonJS({
     var { redirectStatusSet, referrerPolicyTokens, badPortsSet } = require_constants4();
     var { getGlobalOrigin } = require_global();
     var { collectAnHTTPQuotedString, parseMIMEType } = require_data_url();
-    var { performance: performance2 } = __require("node:perf_hooks");
+    var { performance: performance3 } = __require("node:perf_hooks");
     var { ReadableStreamFrom, isValidHTTPToken, normalizedMethodRecordsBase } = require_util();
     var assert2 = __require("node:assert");
     var { isUint8Array } = __require("node:util/types");
@@ -43482,7 +43482,7 @@ var require_util2 = __commonJS({
       };
     }
     function coarsenedSharedCurrentTime(crossOriginIsolatedCapability) {
-      return coarsenTime(performance2.now(), crossOriginIsolatedCapability);
+      return coarsenTime(performance3.now(), crossOriginIsolatedCapability);
     }
     function createOpaqueTimingInfo(timingInfo) {
       return {
@@ -68470,7 +68470,8 @@ var GetFishingFilterOptionsResponse = objectType({
   "ships": arrayType(stringType()),
   "tides": arrayType(stringType()),
   "shipsByPort": recordType(stringType(), arrayType(stringType())),
-  "shipsByRegion": recordType(stringType(), arrayType(stringType()))
+  "shipsByRegion": recordType(stringType(), arrayType(stringType())),
+  "refreshing": booleanType().describe("Whether discovered filter values are currently being refreshed.")
 });
 var ListFishingSourcesResponseItem = objectType({
   "id": numberType().int(),
@@ -87005,31 +87006,8 @@ if (!process.env.DATABASE_URL) {
 var pool = new Pool3({ connectionString: process.env.DATABASE_URL });
 var db = drizzle(pool, { schema: schema_exports });
 
-// src/lib/harbor-detection.ts
-function normalizedHarborName(value) {
-  return value.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/\s+/g, "").replace(/항$/, "");
-}
-function resolveDetectedHarbor(evidence, registeredSources) {
-  const normalizedEvidence = evidence.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/[\s\p{P}\p{S}]/gu, "");
-  const harbors = /* @__PURE__ */ new Map();
-  for (const source of registeredSources) {
-    const key = normalizedHarborName(source.port);
-    if (!key) continue;
-    const rows = harbors.get(key) ?? [];
-    rows.push(source);
-    harbors.set(key, rows);
-  }
-  const matches = [...harbors.entries()].filter(([key]) => normalizedEvidence.includes(key));
-  if (matches.length !== 1) return { port: null, region: null };
-  const [, sources] = matches[0];
-  const ports = [...new Set(sources.map((source) => source.port.trim()).filter(Boolean))];
-  const port2 = ports.find((value) => value.replace(/\s+/g, "").endsWith("\uD56D")) ?? ports[0] ?? null;
-  const regions = [...new Set(sources.map((source) => source.region.trim()).filter(Boolean))];
-  return {
-    port: port2,
-    region: regions.length === 1 ? regions[0] : null
-  };
-}
+// src/lib/fishing-source.ts
+import { performance as performance2 } from "node:perf_hooks";
 
 // ../../node_modules/.pnpm/cheerio@1.2.0/node_modules/cheerio/dist/esm/options.js
 var defaultOpts = {
@@ -101473,42 +101451,165 @@ var STRINGS = {
 var undici = __toESM(require_undici(), 1);
 var import_whatwg_mimetype = __toESM(require_mime_type(), 1);
 
+// src/lib/fetch-scheduler.ts
+function createPriorityLimiter(options) {
+  const maxConcurrent = Math.max(1, Math.floor(options.maxConcurrent));
+  const reserved = Math.min(Math.max(0, Math.floor(options.reservedForHigh ?? 0)), maxConcurrent - 1);
+  const lowLimit = maxConcurrent - reserved;
+  let active = 0;
+  const high = [];
+  const low = [];
+  function pump() {
+    for (; ; ) {
+      let next2;
+      if (high.length > 0 && active < maxConcurrent) {
+        next2 = high.shift();
+      } else if (low.length > 0 && active < lowLimit) {
+        next2 = low.shift();
+      }
+      if (!next2) return;
+      active += 1;
+      next2.start();
+    }
+  }
+  async function run(task, priority = "high", tag) {
+    const canStartNow = priority === "high" ? active < maxConcurrent : active < lowLimit;
+    if (canStartNow) {
+      active += 1;
+    } else {
+      await new Promise((resolve) => {
+        (priority === "high" ? high : low).push({ tag, start: resolve });
+      });
+    }
+    try {
+      return await task();
+    } finally {
+      active -= 1;
+      pump();
+    }
+  }
+  function promote(tag) {
+    const index2 = low.findIndex((waiter2) => waiter2.tag === tag);
+    if (index2 < 0) return false;
+    const [waiter] = low.splice(index2, 1);
+    high.push(waiter);
+    pump();
+    return true;
+  }
+  return {
+    run,
+    promote,
+    stats: () => ({ active, queuedHigh: high.length, queuedLow: low.length })
+  };
+}
+function withTimeout(promise2, ms, message = "timeout") {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise2.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error40) => {
+        clearTimeout(timer);
+        reject(error40);
+      }
+    );
+  });
+}
+async function waitAtMost(promise2, ms) {
+  try {
+    return await withTimeout(promise2, ms);
+  } catch {
+    return void 0;
+  }
+}
+function settleWithSoftDeadline(promises, softDeadlineMs) {
+  return new Promise((resolve) => {
+    const results = new Array(promises.length).fill(void 0);
+    let settled = 0;
+    let fulfilled = 0;
+    let deadlinePassed = false;
+    let finished = false;
+    let timer;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
+      resolve(results.slice());
+    };
+    const checkDone = () => {
+      if (settled === promises.length || deadlinePassed && fulfilled > 0) finish();
+    };
+    if (promises.length === 0) {
+      finish();
+      return;
+    }
+    promises.forEach((promise2, index2) => {
+      promise2.then(
+        (value) => {
+          if (finished) return;
+          results[index2] = { status: "fulfilled", value };
+          settled += 1;
+          fulfilled += 1;
+          checkDone();
+        },
+        (reason) => {
+          if (finished) return;
+          results[index2] = { status: "rejected", reason };
+          settled += 1;
+          checkDone();
+        }
+      );
+    });
+    if (!finished && softDeadlineMs !== void 0 && softDeadlineMs >= 0) {
+      timer = setTimeout(() => {
+        deadlinePassed = true;
+        checkDone();
+      }, softDeadlineMs);
+    }
+  });
+}
+function readIntEnv(name, fallback, min = 1) {
+  const raw = process.env[name];
+  if (raw === void 0 || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= min ? Math.floor(value) : fallback;
+}
+
+// src/lib/logger.ts
+var import_pino = __toESM(require_pino(), 1);
+var isProduction = process.env.NODE_ENV === "production";
+var logger = (0, import_pino.default)({
+  level: process.env.LOG_LEVEL ?? "info",
+  redact: [
+    "req.headers.authorization",
+    "req.headers.cookie",
+    "res.headers['set-cookie']"
+  ],
+  ...isProduction ? {} : {
+    transport: {
+      target: "pino-pretty",
+      options: { colorize: true }
+    }
+  }
+});
+
 // src/lib/fishing-source.ts
 var CACHE_TTL_MS = 20 * 60 * 1e3;
 var monthCache = /* @__PURE__ */ new Map();
-var SOURCE_FETCH_CONCURRENCY = 6;
-async function mapWithConcurrency(items, limit, mapper) {
-  const results = new Array(items.length);
-  let cursor = 0;
-  async function worker() {
-    while (cursor < items.length) {
-      const index2 = cursor++;
-      try {
-        results[index2] = { status: "fulfilled", value: await mapper(items[index2], index2) };
-      } catch (reason) {
-        results[index2] = { status: "rejected", reason };
-      }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
-var MAX_CONCURRENT_FETCHES = 6;
-var activeFetches = 0;
-var fetchQueue = [];
-async function withFetchLimit(task) {
-  if (activeFetches >= MAX_CONCURRENT_FETCHES) {
-    await new Promise((resolve) => fetchQueue.push(resolve));
-  }
-  activeFetches += 1;
-  try {
-    return await task();
-  } finally {
-    activeFetches -= 1;
-    const next2 = fetchQueue.shift();
-    if (next2) next2();
-  }
-}
+var inflightMonths = /* @__PURE__ */ new Map();
+var cacheEpoch = 0;
+var FETCH_CONCURRENCY = readIntEnv("FISHING_FETCH_CONCURRENCY", 10);
+var FETCH_RESERVED_FOR_SEARCH = readIntEnv("FISHING_FETCH_RESERVED", 4, 0);
+var FETCH_TIMEOUT_MS = 15e3;
+var fetchLimiter = createPriorityLimiter({
+  maxConcurrent: FETCH_CONCURRENCY,
+  reservedForHigh: FETCH_RESERVED_FOR_SEARCH
+});
+var SLOW_FETCH_LOG_MS = 4e3;
+var USER_FETCH_CONTEXT = { priority: "high" };
+var monthTimings = /* @__PURE__ */ new Map();
 var FAILURE_THRESHOLD = 3;
 var COOLDOWN_MS = 10 * 60 * 1e3;
 var sourceHealth = /* @__PURE__ */ new Map();
@@ -101522,13 +101623,23 @@ function recordSuccess(sourceId) {
 }
 function recordFailure(sourceId, error40) {
   const prev2 = sourceHealth.get(sourceId);
+  if (prev2 && prev2.lastErrorRef !== void 0 && prev2.lastErrorRef === error40) return;
   const consecutiveFailures = (prev2?.consecutiveFailures ?? 0) + 1;
   const skipUntil = consecutiveFailures >= FAILURE_THRESHOLD ? Date.now() + COOLDOWN_MS : 0;
   sourceHealth.set(sourceId, {
     consecutiveFailures,
     skipUntil,
-    lastError: error40 instanceof Error ? error40.message : String(error40)
+    lastError: error40 instanceof Error ? error40.message : String(error40),
+    lastErrorRef: error40
   });
+}
+function getSourceHealthSnapshot() {
+  return [...sourceHealth.entries()].map(([id, health]) => ({
+    id,
+    consecutiveFailures: health.consecutiveFailures,
+    skippedUntil: health.skipUntil > Date.now() ? new Date(health.skipUntil).toISOString() : null,
+    lastError: health.lastError
+  }));
 }
 function resetSourceHealth() {
   sourceHealth.clear();
@@ -101561,6 +101672,9 @@ async function listConfiguredSources() {
 }
 function clearSourceCache() {
   monthCache.clear();
+  inflightMonths.clear();
+  monthTimings.clear();
+  cacheEpoch += 1;
   knownShips.clear();
   knownShipsByPort.clear();
   knownShipsByRegion.clear();
@@ -101641,28 +101755,51 @@ function browserHeaders(referer) {
     Referer: referer
   };
 }
-async function fetchMonth(year, month, config2) {
+async function fetchHtml(url2, referer, ctx) {
+  const queuedAt = performance2.now();
+  const response = await fetchLimiter.run(
+    async () => {
+      const startedAt = performance2.now();
+      if (ctx.trace) ctx.trace.queueMs = Math.round(startedAt - queuedAt);
+      try {
+        return await fetch(url2, {
+          headers: browserHeaders(referer),
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+        });
+      } finally {
+        if (ctx.trace) ctx.trace.headersMs = Math.round(performance2.now() - startedAt);
+      }
+    },
+    ctx.priority,
+    ctx.tag
+  );
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => void 0);
+    throw new Error(`\uC608\uC57D \uC6D0\uBCF8\uC774 ${response.status} \uC0C1\uD0DC\uB97C \uBC18\uD658\uD588\uC2B5\uB2C8\uB2E4.`);
+  }
+  const bodyStartedAt = performance2.now();
+  const html3 = await response.text();
+  if (ctx.trace) {
+    ctx.trace.bodyMs = Math.round(performance2.now() - bodyStartedAt);
+    ctx.trace.bytes = html3.length;
+  }
+  return html3;
+}
+async function fetchMonth(year, month, config2, ctx = USER_FETCH_CONTEXT) {
   const monthValue = String(month).padStart(2, "0");
   const url2 = new URL("/index.php", config2.baseUrl);
   url2.searchParams.set("mid", "bk");
   url2.searchParams.set("year", String(year));
   url2.searchParams.set("month", monthValue);
   url2.searchParams.set("day", "01");
-  const response = await withFetchLimit(
-    () => fetch(url2, {
-      headers: browserHeaders(config2.baseUrl),
-      signal: AbortSignal.timeout(15e3)
-    })
-  );
-  if (!response.ok) {
-    throw new Error(`\uC608\uC57D \uC6D0\uBCF8\uC774 ${response.status} \uC0C1\uD0DC\uB97C \uBC18\uD658\uD588\uC2B5\uB2C8\uB2E4.`);
-  }
-  const html3 = await response.text();
+  const html3 = await fetchHtml(url2, config2.baseUrl, ctx);
+  const parseStartedAt = performance2.now();
   const $2 = load(html3);
   const sourceItems = [];
   $2(".new-divs").each((_index, element) => {
     sourceItems.push(...parseDayBlock($2(element), config2));
   });
+  if (ctx.trace) ctx.trace.parseMs = Math.round(performance2.now() - parseStartedAt);
   return sourceItems;
 }
 var WEEKDAY_KO = ["\uC77C\uC694\uC77C", "\uC6D4\uC694\uC77C", "\uD654\uC694\uC77C", "\uC218\uC694\uC77C", "\uBAA9\uC694\uC77C", "\uAE08\uC694\uC77C", "\uD1A0\uC694\uC77C"];
@@ -101719,39 +101856,30 @@ function parseSunsangDayBlock($2, dayTable, config2) {
   });
   return items;
 }
-async function fetchSunsangMonth(year, month, config2) {
+async function fetchSunsangMonth(year, month, config2, ctx = USER_FETCH_CONTEXT) {
   const monthValue = `${year}${String(month).padStart(2, "0")}`;
   const url2 = new URL(`/ship/schedule_fleet/${monthValue}`, config2.baseUrl);
-  const response = await withFetchLimit(
-    () => fetch(url2, {
-      headers: browserHeaders(config2.baseUrl),
-      signal: AbortSignal.timeout(15e3)
-    })
-  );
-  if (!response.ok) {
-    throw new Error(`\uC608\uC57D \uC6D0\uBCF8\uC774 ${response.status} \uC0C1\uD0DC\uB97C \uBC18\uD658\uD588\uC2B5\uB2C8\uB2E4.`);
-  }
-  const html3 = await response.text();
+  const html3 = await fetchHtml(url2, config2.baseUrl, ctx);
+  const parseStartedAt = performance2.now();
   const $2 = load(html3);
   const sourceItems = [];
   $2(".shipsinfo_daywarp").each((_index, element) => {
     sourceItems.push(...parseSunsangDayBlock($2, $2(element), config2));
   });
+  if (ctx.trace) ctx.trace.parseMs = Math.round(performance2.now() - parseStartedAt);
   return sourceItems;
 }
-async function fetchMonthForConfig(year, month, config2) {
-  return isSunsang24(config2.baseUrl) ? fetchSunsangMonth(year, month, config2) : fetchMonth(year, month, config2);
+async function fetchMonthForConfig(year, month, config2, ctx = USER_FETCH_CONTEXT) {
+  return isSunsang24(config2.baseUrl) ? fetchSunsangMonth(year, month, config2, ctx) : fetchMonth(year, month, config2, ctx);
 }
-async function fetchPageEvidence(baseUrl) {
+async function fetchPageTitle(baseUrl) {
   try {
     const response = await fetch(baseUrl, { headers: browserHeaders(baseUrl), signal: AbortSignal.timeout(1e4) });
-    if (!response.ok) return { title: null, text: "" };
+    if (!response.ok) return null;
     const $2 = load(await response.text());
-    const title = cleanText($2("title").first().text()) || null;
-    const bodyText = cleanText($2("body").text() || $2.root().text()).slice(0, 1e5);
-    return { title, text: [title, bodyText].filter(Boolean).join("\n") };
+    return cleanText($2("title").first().text()) || null;
   } catch {
-    return { title: null, text: "" };
+    return null;
   }
 }
 function isPrivateHost(hostname2) {
@@ -101800,41 +101928,83 @@ async function detectSource(rawUrl) {
       }
       const vessels = [...new Set(items.map((item) => item.vessel).filter(Boolean))];
       if (vessels.length > 0) {
-        const pageEvidence2 = await fetchPageEvidence(baseUrl);
-        return {
-          platform,
-          suggestedName: pageEvidence2.title,
-          vessels,
-          workingUrl: baseUrl,
-          evidenceText: pageEvidence2.text
-        };
+        return { platform, suggestedName: await fetchPageTitle(baseUrl), vessels, workingUrl: baseUrl };
       }
     } catch {
     }
   }
-  const pageEvidence = await fetchPageEvidence(baseUrl);
-  return {
-    platform: "unknown",
-    suggestedName: pageEvidence.title,
-    vessels: [],
-    workingUrl: null,
-    evidenceText: pageEvidence.text
-  };
+  return { platform: "unknown", suggestedName: await fetchPageTitle(baseUrl), vessels: [], workingUrl: null };
 }
-async function fetchSourceMonths(months, config2) {
-  const results = await Promise.all(
-    months.map(async ({ year, month }) => {
-      const cacheKey = `${config2.id}:${year}-${month}`;
-      const cached2 = monthCache.get(cacheKey);
-      if (cached2 && cached2.expiresAt > Date.now()) {
-        return cached2.items;
+function monthKey(sourceId, year, month) {
+  return `${sourceId}:${year}-${month}`;
+}
+function peekMonthCache(key) {
+  const cached2 = monthCache.get(key);
+  return cached2 && cached2.expiresAt > Date.now() ? cached2.items : void 0;
+}
+function describeTiming(timing) {
+  const parts = [
+    timing.queueMs !== void 0 ? `\uB300\uAE30 ${timing.queueMs}` : null,
+    timing.headersMs !== void 0 ? `\uC751\uB2F5 ${timing.headersMs}` : null,
+    timing.bodyMs !== void 0 ? `\uBCF8\uBB38 ${timing.bodyMs}` : null,
+    timing.parseMs !== void 0 ? `\uD30C\uC2F1 ${timing.parseMs}` : null,
+    timing.bytes !== void 0 ? `${Math.round(timing.bytes / 1024)}KB` : null
+  ].filter(Boolean);
+  const failure = timing.ok ? "" : ` \uC2E4\uD328: ${timing.error ?? "\uC54C \uC218 \uC5C6\uC74C"}`;
+  const label = `${timing.name} ${timing.year}-${String(timing.month).padStart(2, "0")}`;
+  return `${label} ${timing.totalMs}ms (${parts.join(" \xB7 ")})${failure}`;
+}
+function recordTiming(key, config2, year, month, startedAt, trace, outcome) {
+  const timing = {
+    ...trace,
+    name: config2.name,
+    year,
+    month,
+    totalMs: Math.round(performance2.now() - startedAt),
+    ok: outcome.ok,
+    error: outcome.ok ? void 0 : outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
+    finishedAt: Date.now()
+  };
+  monthTimings.set(key, timing);
+  if (!timing.ok) {
+    logger.warn({ timing }, `[\uC608\uC57D\uCC98 \uC870\uD68C \uC2E4\uD328] ${describeTiming(timing)}`);
+  } else if (timing.totalMs >= SLOW_FETCH_LOG_MS) {
+    logger.info({ timing }, `[\uC608\uC57D\uCC98 \uC870\uD68C \uB290\uB9BC] ${describeTiming(timing)}`);
+  }
+}
+function getMonthItems(config2, year, month, priority) {
+  const key = monthKey(config2.id, year, month);
+  const cached2 = peekMonthCache(key);
+  if (cached2) return Promise.resolve(cached2);
+  const running = inflightMonths.get(key);
+  if (running) {
+    if (priority === "high" && running.priority === "low") {
+      running.priority = "high";
+      fetchLimiter.promote(key);
+    }
+    return running.promise;
+  }
+  const epoch = cacheEpoch;
+  const trace = {};
+  const startedAt = performance2.now();
+  const entry = {
+    priority,
+    promise: fetchMonthForConfig(year, month, config2, { priority, tag: key, trace }).then(
+      (items) => {
+        if (epoch === cacheEpoch) monthCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, items });
+        recordTiming(key, config2, year, month, startedAt, trace, { ok: true });
+        return items;
+      },
+      (error40) => {
+        recordTiming(key, config2, year, month, startedAt, trace, { ok: false, error: error40 });
+        throw error40;
       }
-      const monthItems = await fetchMonthForConfig(year, month, config2);
-      monthCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, items: monthItems });
-      return monthItems;
+    ).finally(() => {
+      if (inflightMonths.get(key) === entry) inflightMonths.delete(key);
     })
-  );
-  return results.flat();
+  };
+  inflightMonths.set(key, entry);
+  return entry.promise;
 }
 function monthCursor(startDate, endDate) {
   const start = /* @__PURE__ */ new Date(`${startDate}T00:00:00Z`);
@@ -101856,14 +102026,18 @@ var BADATIME_LOCATION_IDS = {
   \uB9C8\uAC80\uD3EC: 1400
 };
 var TIDE_STRENGTH_CACHE_TTL_MS = 24 * 60 * 60 * 1e3;
+var TIDE_FAILURE_COOLDOWN_MS = 5 * 60 * 1e3;
+var TIDE_FETCH_TIMEOUT_MS = 8e3;
+var TIDE_WAIT_AFTER_SCRAPE_MS = 2e3;
 var tideStrengthMonthCache = /* @__PURE__ */ new Map();
-async function fetchTideStrengthMonth(locationId, year, month) {
-  const cacheKey = `${locationId}:${year}-${month}`;
-  const cached2 = tideStrengthMonthCache.get(cacheKey);
-  if (cached2 && cached2.expiresAt > Date.now()) return cached2.days;
+var tideFailureUntil = /* @__PURE__ */ new Map();
+var tideInflight = /* @__PURE__ */ new Map();
+var tideLimiter = createPriorityLimiter({ maxConcurrent: 4 });
+async function loadTideStrengthMonth(locationId, year, month) {
   const url2 = `https://www.badatime.com/${locationId}/daily/${year}-${String(month).padStart(2, "0")}`;
-  const response = await fetch(url2, { headers: browserHeaders(url2), signal: AbortSignal.timeout(15e3) });
+  const response = await fetch(url2, { headers: browserHeaders(url2), signal: AbortSignal.timeout(TIDE_FETCH_TIMEOUT_MS) });
   if (!response.ok) {
+    await response.body?.cancel().catch(() => void 0);
     throw new Error(`\uBC14\uB2E4\uD0C0\uC784 \uC870\uB958 \uC138\uAE30 \uC870\uD68C \uC2E4\uD328 (${response.status})`);
   }
   const html3 = await response.text();
@@ -101880,42 +102054,133 @@ async function fetchTideStrengthMonth(locationId, year, month) {
     days.set(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`, percent);
   });
   if (days.size === 0) {
-    console.warn(`[tide] \uBC14\uB2E4\uD0C0\uC784 \uD30C\uC2F1 \uACB0\uACFC 0\uAC74: ${url2} (HTML \uAD6C\uC870\uAC00 \uBC14\uB00C\uC5C8\uC744 \uC218 \uC788\uC74C)`);
+    throw new Error(`\uBC14\uB2E4\uD0C0\uC784 \uD30C\uC2F1 \uACB0\uACFC 0\uAC74 (HTML \uAD6C\uC870\uAC00 \uBC14\uB00C\uC5C8\uC744 \uC218 \uC788\uC74C): ${url2}`);
   }
-  tideStrengthMonthCache.set(cacheKey, { expiresAt: Date.now() + TIDE_STRENGTH_CACHE_TTL_MS, days });
   return days;
 }
-async function attachTideStrength(items) {
+function fetchTideStrengthMonth(locationId, year, month) {
+  const key = `${locationId}:${year}-${month}`;
+  const cached2 = tideStrengthMonthCache.get(key);
+  if (cached2 && cached2.expiresAt > Date.now()) return Promise.resolve(cached2.days);
+  if ((tideFailureUntil.get(key) ?? 0) > Date.now()) return Promise.resolve(null);
+  const running = tideInflight.get(key);
+  if (running) return running;
+  const promise2 = tideLimiter.run(() => loadTideStrengthMonth(locationId, year, month)).then(
+    (days) => {
+      tideStrengthMonthCache.set(key, { expiresAt: Date.now() + TIDE_STRENGTH_CACHE_TTL_MS, days });
+      tideFailureUntil.delete(key);
+      return days;
+    },
+    (err) => {
+      tideFailureUntil.set(key, Date.now() + TIDE_FAILURE_COOLDOWN_MS);
+      logger.warn({ err }, `[tide] \uBC14\uB2E4\uD0C0\uC784 ${key} \uC870\uD68C \uC2E4\uD328 \u2014 5\uBD84\uAC04 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC9C0 \uC54A\uC74C`);
+      return null;
+    }
+  ).finally(() => {
+    tideInflight.delete(key);
+  });
+  tideInflight.set(key, promise2);
+  return promise2;
+}
+function tideLocationIdFor(port2) {
+  return BADATIME_LOCATION_IDS[port2] ?? BADATIME_LOCATION_IDS[port2.replace(/항$/, "")] ?? BADATIME_LOCATION_IDS[`${port2}\uD56D`];
+}
+function prefetchTideStrength(sources, months) {
   const byPort = /* @__PURE__ */ new Map();
-  for (const item of items) {
-    const list = byPort.get(item.port) ?? [];
-    list.push(item);
-    byPort.set(item.port, list);
-  }
-  await Promise.all(
-    Array.from(byPort.entries()).map(async ([port2, portItems]) => {
-      const locationId = BADATIME_LOCATION_IDS[port2] ?? BADATIME_LOCATION_IDS[port2.replace(/항$/, "")] ?? BADATIME_LOCATION_IDS[`${port2}\uD56D`];
-      if (!locationId) return;
-      const months = new Set(portItems.map((item) => item.departureDate.slice(0, 7)));
-      const merged = /* @__PURE__ */ new Map();
-      await Promise.all(
-        Array.from(months).map(async (yearMonth) => {
-          const [year, month] = yearMonth.split("-").map(Number);
-          try {
-            const monthDays = await fetchTideStrengthMonth(locationId, year, month);
-            for (const [date6, percent] of monthDays) merged.set(date6, percent);
-          } catch (err) {
-            console.warn(`[tide] ${port2} ${yearMonth} \uC870\uD68C \uC2E4\uD328:`, err);
-          }
+  const jobs = [];
+  for (const port2 of new Set(sources.map((source) => source.port))) {
+    const locationId = tideLocationIdFor(port2);
+    if (!locationId) continue;
+    const merged = /* @__PURE__ */ new Map();
+    byPort.set(port2, merged);
+    for (const { year, month } of months) {
+      jobs.push(
+        fetchTideStrengthMonth(locationId, year, month).then((days) => {
+          if (days) for (const [date6, percent] of days) merged.set(date6, percent);
         })
       );
-      for (const item of portItems) {
-        item.tideStrengthPercent = merged.get(item.departureDate) ?? null;
+    }
+  }
+  return { byPort, done: Promise.all(jobs).then(() => void 0) };
+}
+function applyTideStrength(items, byPort) {
+  for (const item of items) {
+    item.tideStrengthPercent = byPort.get(item.port)?.get(item.departureDate) ?? null;
+  }
+}
+function logSearchSummary(args) {
+  const totalMs = Math.round(performance2.now() - args.startedAt);
+  const fetchedMonths = args.requestedKeys.length - args.cachedMonths;
+  if (args.priority === "low" && fetchedMonths === 0 && !args.failedSources.length && !args.pendingSources.length) {
+    return;
+  }
+  const slowest = args.requestedKeys.map((key) => monthTimings.get(key)).filter((timing) => timing !== void 0 && timing.finishedAt >= args.startedAtWall).sort((a, b) => b.totalMs - a.totalMs).slice(0, 5).map(describeTiming);
+  const okCount = args.sources.length - args.failedSources.length - args.pendingSources.length;
+  const parts = [
+    `[${args.label}] ${totalMs}ms`,
+    `\uC608\uC57D\uCC98 ${args.sources.length}\uACF3 (\uC131\uACF5 ${okCount} \xB7 \uC2E4\uD328 ${args.failedSources.length} \xB7 \uC9C0\uC5F0 ${args.pendingSources.length})`,
+    `\uC6D4 \uCE90\uC2DC ${args.cachedMonths}/${args.requestedKeys.length}`,
+    `\uC870\uB958 \uB300\uAE30 ${args.tideWaitMs === null ? "-" : `${args.tideWaitMs}ms`}`,
+    `\uC11C\uBC84 \uBC14\uC068 ${Math.round(args.loopBusy * 100)}%`,
+    `\uACB0\uACFC ${args.resultCount}\uAC74`
+  ];
+  if (args.failedSources.length) parts.push(`\uC2E4\uD328: ${args.failedSources.join(", ")}`);
+  if (args.pendingSources.length) parts.push(`\uC9C0\uC5F0: ${args.pendingSources.join(", ")}`);
+  parts.push(`\uB290\uB9B0 \uC21C: ${slowest.length ? slowest.join(" ; ") : "\uC5C6\uC74C(\uC804\uBD80 \uCE90\uC2DC)"}`);
+  logger.info(
+    {
+      timing: {
+        label: args.label,
+        totalMs,
+        sources: args.sources.length,
+        failed: args.failedSources.length,
+        pending: args.pendingSources.length,
+        cachedMonths: args.cachedMonths,
+        requestedMonths: args.requestedKeys.length,
+        tideWaitMs: args.tideWaitMs,
+        loopBusy: Math.round(args.loopBusy * 100) / 100,
+        queue: fetchLimiter.stats()
       }
-    })
+    },
+    parts.join(" | ")
   );
 }
-async function getSchedules(startDate, endDate, filter4) {
+function getFetchDiagnostics() {
+  const now = Date.now();
+  return {
+    settings: {
+      fetchConcurrency: FETCH_CONCURRENCY,
+      reservedForSearch: FETCH_RESERVED_FOR_SEARCH,
+      fetchTimeoutMs: FETCH_TIMEOUT_MS,
+      cacheTtlMinutes: CACHE_TTL_MS / 6e4
+    },
+    queue: fetchLimiter.stats(),
+    cachedMonths: [...monthCache.values()].filter((entry) => entry.expiresAt > now).length,
+    inflightMonths: inflightMonths.size,
+    // 서버를 켠 뒤 지금까지 이벤트 루프가 일한 비율. 검색 한 번 동안의 값은 로그의 "서버 바쁨"을 본다.
+    eventLoopBusySinceBoot: Math.round(performance2.eventLoopUtilization().utilization * 1e3) / 1e3,
+    recentFetches: [...monthTimings.values()].sort((a, b) => b.totalMs - a.totalMs).map((timing) => ({
+      source: timing.name,
+      month: `${timing.year}-${String(timing.month).padStart(2, "0")}`,
+      ok: timing.ok,
+      totalMs: timing.totalMs,
+      queueMs: timing.queueMs ?? null,
+      headersMs: timing.headersMs ?? null,
+      bodyMs: timing.bodyMs ?? null,
+      parseMs: timing.parseMs ?? null,
+      kb: timing.bytes === void 0 ? null : Math.round(timing.bytes / 1024),
+      error: timing.error ?? null,
+      secondsAgo: Math.round((now - timing.finishedAt) / 1e3)
+    })),
+    sourceHealth: getSourceHealthSnapshot()
+  };
+}
+async function getSchedules(startDate, endDate, options = {}) {
+  const { filter: filter4, priority = "high", softDeadlineMs, withTide = true } = options;
+  const label = options.label ?? (priority === "high" ? "\uAC80\uC0C9" : "\uD544\uD130\uBAA9\uB85D");
+  const startedAt = performance2.now();
+  const startedAtWall = Date.now();
+  const loopStart = performance2.eventLoopUtilization();
   const sourceRecords = await listConfiguredSources();
   let sources = sourceRecords.filter((source) => source.enabled).map(toSourceConfig);
   if (filter4?.region?.length) {
@@ -101925,35 +102190,84 @@ async function getSchedules(startDate, endDate, filter4) {
     sources = sources.filter((source) => source.port === filter4.port);
   }
   if (sources.length === 0) {
-    return { items: [], sources, failedSources: [] };
+    return { items: [], sources, failedSources: [], pendingSources: [] };
   }
   const months = monthCursor(startDate, endDate);
-  const sourceResults = await mapWithConcurrency(sources, SOURCE_FETCH_CONCURRENCY, async (source) => {
-    const skipped = isSkipped(source.id);
-    if (skipped) {
-      throw new Error(`\uCD5C\uADFC \uBC18\uBCF5 \uC2E4\uD328\uB85C \uAC74\uB108\uB700 (${skipped.consecutiveFailures}\uD68C \uC5F0\uC18D \uC2E4\uD328, \uC774\uC804 \uC624\uB958: ${skipped.lastError ?? "\uC54C \uC218 \uC5C6\uC74C"})`);
+  const tide = prefetchTideStrength(sources, months);
+  const skipped = sources.map((source) => isSkipped(source.id));
+  const monthRequests = sources.map(() => []);
+  const requestedKeys = [];
+  let cachedMonths = 0;
+  for (const { year, month } of months) {
+    sources.forEach((source, index2) => {
+      if (skipped[index2]) return;
+      const key = monthKey(source.id, year, month);
+      requestedKeys.push(key);
+      if (peekMonthCache(key)) cachedMonths += 1;
+      monthRequests[index2].push(getMonthItems(source, year, month, priority));
+    });
+  }
+  const sourcePromises = sources.map((source, index2) => {
+    const skippedHealth = skipped[index2];
+    if (skippedHealth) {
+      return Promise.reject(
+        new Error(`\uCD5C\uADFC \uBC18\uBCF5 \uC2E4\uD328\uB85C \uAC74\uB108\uB700 (${skippedHealth.consecutiveFailures}\uD68C \uC5F0\uC18D \uC2E4\uD328, \uC774\uC804 \uC624\uB958: ${skippedHealth.lastError ?? "\uC54C \uC218 \uC5C6\uC74C"})`)
+      );
     }
-    try {
-      const result = await fetchSourceMonths(months, source);
-      recordSuccess(source.id);
-      return result;
-    } catch (error40) {
-      recordFailure(source.id, error40);
-      throw error40;
+    return Promise.all(monthRequests[index2]).then(
+      (parts) => {
+        recordSuccess(source.id);
+        return parts.flat();
+      },
+      (error40) => {
+        recordFailure(source.id, error40);
+        throw error40;
+      }
+    );
+  });
+  const settled = await settleWithSoftDeadline(sourcePromises, softDeadlineMs);
+  const collected = [];
+  const failedSources = [];
+  const pendingSources = [];
+  settled.forEach((result, index2) => {
+    const name = sources[index2]?.name || "\uC608\uC57D\uCC98";
+    if (!result) {
+      pendingSources.push(name);
+    } else if (result.status === "rejected") {
+      failedSources.push(name);
+    } else {
+      for (const item of result.value) collected.push(item);
     }
   });
-  const items = sourceResults.flatMap((result) => result.status === "fulfilled" ? result.value : []).filter((item) => item.departureDate >= startDate && item.departureDate <= endDate);
-  const failedSources = sourceResults.flatMap(
-    (result, index2) => result.status === "rejected" ? [sources[index2]?.name || "\uC608\uC57D\uCC98"] : []
-  );
+  const items = collected.filter((item) => item.departureDate >= startDate && item.departureDate <= endDate);
   if (items.length === 0 && failedSources.length === sources.length) {
     throw new Error("\uBAA8\uB4E0 \uC608\uC57D\uCC98\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
   }
-  try {
-    await attachTideStrength(items);
-  } catch {
+  let tideWaitMs = null;
+  if (withTide) {
+    const tideStartedAt = performance2.now();
+    await waitAtMost(tide.done, TIDE_WAIT_AFTER_SCRAPE_MS);
+    tideWaitMs = Math.round(performance2.now() - tideStartedAt);
+    try {
+      applyTideStrength(items, tide.byPort);
+    } catch {
+    }
   }
-  return { items, sources, failedSources };
+  logSearchSummary({
+    label,
+    priority,
+    startedAt,
+    startedAtWall,
+    sources,
+    requestedKeys,
+    cachedMonths,
+    failedSources,
+    pendingSources,
+    tideWaitMs,
+    loopBusy: performance2.eventLoopUtilization(loopStart).utilization,
+    resultCount: items.length
+  });
+  return { items, sources, failedSources, pendingSources };
 }
 var knownTides = /* @__PURE__ */ new Set();
 ["1\uBB3C", "2\uBB3C", "3\uBB3C", "4\uBB3C", "5\uBB3C", "6\uBB3C", "7\uBB3C", "8\uBB3C", "9\uBB3C", "10\uBB3C", "11\uBB3C", "12\uBB3C", "13\uBB3C", "\uC870\uAE08", "\uBB34\uC2DC"].forEach(
@@ -102002,7 +102316,43 @@ function getSourceLabel(sources) {
 
 // src/routes/fishing.ts
 var router2 = (0, import_express2.Router)();
-var lastGoodOptions = null;
+var SEARCH_SOFT_DEADLINE_MS = readIntEnv("FISHING_SEARCH_SOFT_DEADLINE_MS", 6e3, 0);
+var FILTER_OPTIONS_REFRESH_FAILURE_BACKOFF_MS = 6e4;
+var filterOptionsRefreshPromise = null;
+var filterOptionsRefreshNextAt = 0;
+var filterOptionsRefreshGeneration = 0;
+function resetFilterOptionsRefresh() {
+  filterOptionsRefreshGeneration += 1;
+  filterOptionsRefreshNextAt = 0;
+}
+function clearFishingSourceCache() {
+  clearSourceCache();
+  resetFilterOptionsRefresh();
+}
+function refreshFilterOptionsInBackground(startDate, endDate) {
+  if (filterOptionsRefreshPromise || Date.now() < filterOptionsRefreshNextAt) return;
+  const generation = filterOptionsRefreshGeneration;
+  filterOptionsRefreshNextAt = Date.now() + CACHE_TTL_MS;
+  let refreshPromise;
+  refreshPromise = getSchedules(startDate, endDate, {
+    priority: "low",
+    withTide: false
+  }).then((search) => {
+    if (generation === filterOptionsRefreshGeneration) {
+      getFilterOptions(search.items, search.sources);
+    }
+  }).catch((error40) => {
+    if (generation === filterOptionsRefreshGeneration) {
+      filterOptionsRefreshNextAt = Date.now() + FILTER_OPTIONS_REFRESH_FAILURE_BACKOFF_MS;
+    }
+    logger.warn({ err: error40 }, "Background fishing filter refresh failed");
+  }).finally(() => {
+    if (filterOptionsRefreshPromise === refreshPromise) {
+      filterOptionsRefreshPromise = null;
+    }
+  });
+  filterOptionsRefreshPromise = refreshPromise;
+}
 function queryValues(value) {
   if (value === void 0) return void 0;
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
@@ -102044,13 +102394,17 @@ router2.get("/fishing/schedules", async (req, res) => {
     return;
   }
   try {
-    const search = await getSchedules(startDate, endDate);
-    const warmedOptions = getFilterOptions(search.items, search.sources);
-    if (search.items.length > 0) {
-      lastGoodOptions = warmedOptions;
-    }
     const region = parsed.data.region || [];
     const ship = parsed.data.ship || [];
+    const regionOrPortSelected = region.length > 0 || Boolean(parsed.data.port);
+    const search = await getSchedules(startDate, endDate, {
+      // 지역/항구를 골랐다면 그쪽 예약처만 조회한다. 고르지 않은("전체") 검색은 모든 예약처를 조회한다.
+      filter: regionOrPortSelected ? { region, port: parsed.data.port } : void 0,
+      // 사용자가 직접 누른 검색은 필터 목록용 백그라운드 조회보다 항상 먼저 처리한다.
+      priority: "high",
+      softDeadlineMs: SEARCH_SOFT_DEADLINE_MS > 0 ? SEARCH_SOFT_DEADLINE_MS : void 0
+    });
+    getFilterOptions(search.items, search.sources);
     const items = search.items.filter((item) => {
       const departureMatches = item.departureDate >= startDate && item.departureDate <= endDate;
       const regionMatches = region.length === 0 || region.includes(item.region);
@@ -102060,13 +102414,22 @@ router2.get("/fishing/schedules", async (req, res) => {
       return departureMatches && regionMatches && portMatches && shipMatches && tideMatches;
     });
     items.sort((a, b) => a.departureDate.localeCompare(b.departureDate) || a.vessel.localeCompare(b.vessel, "ko"));
+    const warnings = [];
+    if (search.failedSources.length) {
+      warnings.push(`\uC77C\uBD80 \uC608\uC57D\uCC98\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${search.failedSources.join(", ")}`);
+    }
+    if (search.pendingSources.length) {
+      warnings.push(
+        `\uC751\uB2F5\uC774 \uB2A6\uC740 \uC608\uC57D\uCC98\uB294 \uC6B0\uC120 \uBE7C\uACE0 \uBA3C\uC800 \uBCF4\uC5EC\uB4DC\uB824\uC694. \uC790\uB3D9\uC73C\uB85C \uB2E4\uC2DC \uBD88\uB7EC\uC624\uACE0, \uACC4\uC18D \uC548 \uB098\uC624\uBA74 '\uC790\uB9AC \uCC3E\uAE30'\uB97C \uB2E4\uC2DC \uB20C\uB7EC \uC8FC\uC138\uC694: ${search.pendingSources.join(", ")}`
+      );
+    }
     const response = SearchFishingSchedulesResponse.parse({
       items,
       total: items.length,
       searchedAt: /* @__PURE__ */ new Date(),
       source: getSourceLabel(search.sources),
-      cachedUntil: new Date(Date.now() + 5 * 60 * 1e3),
-      warning: search.failedSources.length ? `\uC77C\uBD80 \uC608\uC57D\uCC98\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${search.failedSources.join(", ")}` : null
+      cachedUntil: new Date(Date.now() + CACHE_TTL_MS),
+      warning: warnings.length ? warnings.join(" / ") : null
     });
     res.json(response);
   } catch (error40) {
@@ -102075,37 +102438,43 @@ router2.get("/fishing/schedules", async (req, res) => {
   }
 });
 router2.post("/fishing/cache/refresh", (_req, res) => {
-  clearSourceCache();
+  clearFishingSourceCache();
   resetSourceHealth();
-  lastGoodOptions = null;
   res.json({ ok: true });
 });
-router2.get("/fishing/options", async (_req, res) => {
+router2.get("/fishing/options", async (req, res) => {
   try {
     const today = /* @__PURE__ */ new Date();
-    const end2 = new Date(today);
-    end2.setUTCDate(end2.getUTCDate() + 90);
     const startDate = today.toISOString().slice(0, 10);
-    const endDate = end2.toISOString().slice(0, 10);
+    const endDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 2, 0)).toISOString().slice(0, 10);
     const configuredSources = (await listConfiguredSources()).filter((source) => source.enabled);
-    let options;
-    try {
-      const search = await Promise.race([
-        getSchedules(startDate, endDate),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("filter-options-timeout")), 12e3))
-      ]);
-      options = getFilterOptions(search.items, search.sources);
-      if (search.items.length > 0) {
-        lastGoodOptions = options;
-      }
-    } catch {
-      options = lastGoodOptions ?? getFilterOptions([], configuredSources.map(toSourceConfig));
+    if (configuredSources.length > 0) {
+      refreshFilterOptionsInBackground(startDate, endDate);
     }
-    const parsedOptions = GetFishingFilterOptionsResponse.parse(options);
+    const options = getFilterOptions([], configuredSources.map(toSourceConfig));
+    const parsedOptions = GetFishingFilterOptionsResponse.parse({
+      ...options,
+      refreshing: Boolean(filterOptionsRefreshPromise)
+    });
     res.json(parsedOptions);
   } catch (error40) {
+    req.log.error({ err: error40 }, "Fishing filter options failed to load");
     res.status(502).json({ error: "\uD544\uD130 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694." });
   }
+});
+router2.get("/fishing/diagnostics", async (_req, res) => {
+  const diagnostics = getFetchDiagnostics();
+  let names = /* @__PURE__ */ new Map();
+  try {
+    names = new Map((await listConfiguredSources()).map((source) => [source.id, source.name]));
+  } catch {
+  }
+  res.json({
+    now: (/* @__PURE__ */ new Date()).toISOString(),
+    uptimeSeconds: Math.round(process.uptime()),
+    ...diagnostics,
+    sourceHealth: diagnostics.sourceHealth.map((health) => ({ ...health, name: names.get(health.id) ?? null }))
+  });
 });
 router2.get("/fishing/sources", async (_req, res) => {
   try {
@@ -102123,7 +102492,7 @@ router2.post("/fishing/sources", async (req, res) => {
   try {
     const [created] = await db.insert(fishingSourcesTable).values({ ...parsed.data, enabled: parsed.data.enabled ?? true }).returning();
     const source = (await listConfiguredSources()).find((item) => item.id === created.id);
-    clearSourceCache();
+    clearFishingSourceCache();
     res.status(201).json(source);
   } catch (error40) {
     if (getPgErrorCode(error40) === "23505") {
@@ -102148,7 +102517,7 @@ router2.patch("/fishing/sources/:id", async (req, res) => {
       return;
     }
     const source = (await listConfiguredSources()).find((item) => item.id === updated.id);
-    clearSourceCache();
+    clearFishingSourceCache();
     res.json(source);
   } catch (error40) {
     if (getPgErrorCode(error40) === "23505") {
@@ -102170,7 +102539,7 @@ router2.delete("/fishing/sources/:id", async (req, res) => {
     res.status(404).json({ error: "\uC608\uC57D\uCC98\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4." });
     return;
   }
-  clearSourceCache();
+  clearFishingSourceCache();
   res.status(204).send();
 });
 router2.post("/fishing/sources/:id/vessels", async (req, res) => {
@@ -102197,7 +102566,7 @@ router2.post("/fishing/sources/:id/vessels", async (req, res) => {
     return;
   }
   await db.insert(fishingSourceVesselsTable).values(vessels.map((vessel) => ({ sourceId: source.id, ...vessel }))).onConflictDoNothing();
-  clearSourceCache();
+  clearFishingSourceCache();
   const updated = (await listConfiguredSources()).find((item) => item.id === source.id);
   res.json(updated);
 });
@@ -102213,7 +102582,7 @@ router2.delete("/fishing/sources/:id/vessels", async (req, res) => {
     return;
   }
   await db.delete(fishingSourceVesselsTable).where(eq(fishingSourceVesselsTable.sourceId, source.id));
-  clearSourceCache();
+  clearFishingSourceCache();
   res.status(204).send();
 });
 router2.post("/fishing/sources/detect", async (req, res) => {
@@ -102227,31 +102596,7 @@ router2.post("/fishing/sources/detect", async (req, res) => {
     res.status(400).json({ error: "\uC62C\uBC14\uB978 \uC608\uC57D\uCC98 URL\uC774 \uC544\uB2D9\uB2C8\uB2E4. http:// \uB610\uB294 https://\uB85C \uC2DC\uC791\uD558\uB294 \uC8FC\uC18C\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694." });
     return;
   }
-  const { evidenceText, ...detection } = result;
-  let registeredSources = [];
-  try {
-    registeredSources = await db.select({ port: fishingSourcesTable.port, region: fishingSourcesTable.region }).from(fishingSourcesTable);
-  } catch (error40) {
-    req.log.warn({ err: error40 }, "Could not load registered harbors for source detection");
-  }
-  const decodedAddress = (() => {
-    try {
-      return decodeURIComponent(parsed.data.url);
-    } catch {
-      return parsed.data.url;
-    }
-  })();
-  const location = resolveDetectedHarbor(
-    `${evidenceText}
-${parsed.data.url}
-${decodedAddress}`,
-    registeredSources
-  );
-  res.json(DetectFishingSourceResponse.parse({
-    ...detection,
-    suggestedPort: location.port,
-    suggestedRegion: location.region
-  }));
+  res.json(DetectFishingSourceResponse.parse(result));
 });
 var fishing_default = router2;
 
@@ -102260,24 +102605,6 @@ var router3 = (0, import_express3.Router)();
 router3.use(health_default);
 router3.use(fishing_default);
 var routes_default = router3;
-
-// src/lib/logger.ts
-var import_pino = __toESM(require_pino(), 1);
-var isProduction = process.env.NODE_ENV === "production";
-var logger = (0, import_pino.default)({
-  level: process.env.LOG_LEVEL ?? "info",
-  redact: [
-    "req.headers.authorization",
-    "req.headers.cookie",
-    "res.headers['set-cookie']"
-  ],
-  ...isProduction ? {} : {
-    transport: {
-      target: "pino-pretty",
-      options: { colorize: true }
-    }
-  }
-});
 
 // src/app.ts
 var app = (0, import_express4.default)();
