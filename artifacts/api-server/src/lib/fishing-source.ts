@@ -98,8 +98,21 @@ const fetchLimiter = createPriorityLimiter({
 const SLOW_FETCH_LOG_MS = 4_000;
 
 // 한 번의 '예약처-월' 조회가 어디서 시간을 썼는지(대기/응답/본문 수신/파싱, ms) 기록해서
-// 로그로 원인을 확인할 수 있게 한다.
-type FetchTrace = { queueMs?: number; headersMs?: number; bodyMs?: number; parseMs?: number; bytes?: number };
+// 로그로 원인을 확인할 수 있게 한다. 한 달을 여러 쪽에 나눠 받는 예약처는 쪽마다 더해서 기록한다.
+// blocks/items/pages는 "페이지는 받았는데 왜 0건인지"를 가르는 용도다:
+//   blocks = 달력에서 찾은 날짜 칸 수 (0이면 달력 자체를 못 찾음: 차단/다른 화면/구조 변경 의심)
+//   items  = 그중 남은 자리가 있어 결과로 읽은 건수 (blocks가 있는데 0이면 정말 빈 달이거나 읽는 방식이 다름)
+//   pages  = 이 달을 채우려고 요청한 쪽 수
+type FetchTrace = {
+  queueMs?: number;
+  headersMs?: number;
+  bodyMs?: number;
+  parseMs?: number;
+  bytes?: number;
+  blocks?: number;
+  items?: number;
+  pages?: number;
+};
 type FetchContext = { priority: FetchPriority; tag?: string; trace?: FetchTrace };
 const USER_FETCH_CONTEXT: FetchContext = { priority: "high" };
 
@@ -228,6 +241,38 @@ function parseSeatCount(value: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+// 더 새로운 예약 화면(예: reservation_boat_v5.2_seat1)은 남은 자리를 이미지(alt="남은자리 N명") 대신
+// 글자("14명")로 보여 준다. "예약완료", "기상악화", "배정비일"처럼 숫자가 아닌 표기는 자리가 없는
+// 것으로 본다. "예약완료 (대기 3명)"처럼 다른 숫자가 섞인 문구를 자리로 오인하지 않도록,
+// 칸 전체가 "N명"(또는 "남은자리 N명")일 때만 인정한다.
+function parseSeatCountText(value: string): number | null {
+  const match = cleanText(value).match(/^(?:남은\s*자리\s*)?(\d+)\s*명$/);
+  return match ? Number(match[1]) : null;
+}
+
+// 글자형 화면의 가운데 칸(예약 현황)은 "라벨 | 내용"이 한 줄씩 쌓인 작은 표다. "낚시종류" 줄이 있으면
+// 그 값을, 없으면 공지 문구에서 "OO 출조합니다"의 OO만 장르로 쓴다. 이 칸에는 예약자 이름과 전화번호가
+// 섞여 있으므로 칸 전체를 장르로 노출하지 않고, 둘 다 없으면 기본값("선상 낚시")을 쓴다.
+function genreFromStatusCell(cell: cheerio.Cheerio<any>, $: cheerio.CheerioAPI): string {
+  const labeled = (label: string): string => {
+    let value = "";
+    cell.find("tr").each((_index, tr) => {
+      const tds = $(tr).children("td");
+      if (tds.length >= 2 && cleanText(tds.eq(0).text()) === label) {
+        value = cleanText(tds.eq(1).text());
+        return false;
+      }
+      return undefined;
+    });
+    return value;
+  };
+  const kind = labeled("낚시종류");
+  if (kind) return kind;
+  const notice = labeled("공지");
+  const head = notice.includes("출조") ? cleanText(notice.split("출조")[0]).replace(/[\s.,·~!]+$/g, "") : "";
+  return head && head.length <= 20 ? head : "선상 낚시";
+}
+
 function parseDateFromDayBlock(id: string, text: string): string | null {
   const idMatch = id.match(/new-div-(\d{8})/);
   if (idMatch?.[1]) {
@@ -246,7 +291,22 @@ function parseDateFromDayBlock(id: string, text: string): string | null {
 function extractBookingUrl(onclick: string, baseUrl: string): string | null {
   const match = onclick.match(/f_popup\('([^']+)'/);
   if (!match?.[1]) return null;
-  return new URL(match[1], baseUrl).href;
+  try {
+    return new URL(match[1], baseUrl).href;
+  } catch {
+    // 주소 모양이 이상한 줄 하나 때문에 그 달 전체 조회가 실패하지 않게 한다.
+    return null;
+  }
+}
+
+// 등록한 주소가 "http://fishingi.net/index.php"처럼 경로까지 들어 있어도 "출처" 링크가
+// ".../index.php/index.php?..."로 깨지지 않게, 주소의 서버 부분(origin)에 붙인다.
+function monthPageHref(baseUrl: string, departureDate: string): string {
+  const url = new URL("/index.php", baseUrl);
+  url.searchParams.set("mid", "bk");
+  url.searchParams.set("year", departureDate.slice(0, 4));
+  url.searchParams.set("month", departureDate.slice(5, 7));
+  return url.href;
 }
 
 function parseDayBlock(
@@ -270,13 +330,19 @@ function parseDayBlock(
 
     const vessel = cleanText(cells.eq(0).find("span").first().text() || cells.eq(0).text());
     const seatAlt = cells.eq(2).find("img").first().attr("alt") || "";
-    const remainingSeats = parseSeatCount(seatAlt);
+    let remainingSeats = parseSeatCount(seatAlt);
+    // 이미지로 남은 자리를 알려 주는 예전 화면은 위에서 읽히고, 이 분기는 타지 않는다.
+    // 이미지가 없는 글자형 화면("14명")만 칸의 글자로 읽는다.
+    const textLayout = remainingSeats === null;
+    if (textLayout) remainingSeats = parseSeatCountText(cells.eq(2).text());
     if (!vessel || isExcludedVessel(vessel) || remainingSeats === null || remainingSeats <= 0) return;
 
-    const genre = cleanText(
-      cells.eq(1).find('img[alt="낚시종류"]').closest("tr").find("td").last().text() ||
-        cells.eq(1).text(),
-    );
+    const genre = textLayout
+      ? genreFromStatusCell(cells.eq(1), row$)
+      : cleanText(
+          cells.eq(1).find('img[alt="낚시종류"]').closest("tr").find("td").last().text() ||
+            cells.eq(1).text(),
+        );
     const bookingUrl = extractBookingUrl(cells.eq(0).find("a").first().attr("onclick") || "", config.baseUrl);
     const id = `${departureDate}-${vessel}-${bookingUrl || "schedule"}`
       .replace(/[^0-9A-Za-z가-힣-]+/g, "-")
@@ -296,7 +362,7 @@ function parseDayBlock(
       remainingSeats,
       operatorUrl: config.baseUrl,
       bookingUrl,
-      source: `${config.baseUrl}/index.php?mid=bk&year=${departureDate.slice(0, 4)}&month=${departureDate.slice(5, 7)}`,
+      source: monthPageHref(config.baseUrl, departureDate),
     });
   });
 
@@ -323,14 +389,15 @@ async function fetchHtml(url: URL, referer: string, ctx: FetchContext): Promise<
   const response = await fetchLimiter.run(
     async () => {
       const startedAt = performance.now();
-      if (ctx.trace) ctx.trace.queueMs = Math.round(startedAt - queuedAt);
+      // 한 달을 여러 쪽에 나눠 받는 예약처는 쪽마다 호출되므로, 덮어쓰지 않고 더한다.
+      if (ctx.trace) ctx.trace.queueMs = (ctx.trace.queueMs ?? 0) + Math.round(startedAt - queuedAt);
       try {
         return await fetch(url, {
           headers: browserHeaders(referer),
           signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         });
       } finally {
-        if (ctx.trace) ctx.trace.headersMs = Math.round(performance.now() - startedAt);
+        if (ctx.trace) ctx.trace.headersMs = (ctx.trace.headersMs ?? 0) + Math.round(performance.now() - startedAt);
       }
     },
     ctx.priority,
@@ -344,11 +411,48 @@ async function fetchHtml(url: URL, referer: string, ctx: FetchContext): Promise<
   const bodyStartedAt = performance.now();
   const html = await response.text();
   if (ctx.trace) {
-    ctx.trace.bodyMs = Math.round(performance.now() - bodyStartedAt);
-    ctx.trace.bytes = html.length;
+    ctx.trace.bodyMs = (ctx.trace.bodyMs ?? 0) + Math.round(performance.now() - bodyStartedAt);
+    ctx.trace.bytes = (ctx.trace.bytes ?? 0) + html.length;
   }
   return html;
 }
+
+type MonthPage = {
+  items: FishingSchedule[];
+  // 이 페이지에서 찾은 날짜 칸(.new-divs) 수
+  blocks: number;
+  // 이 페이지가 담고 있는 가장 늦은 날짜 (YYYY-MM-DD). 날짜 칸이 없으면 null.
+  lastDate: string | null;
+  // "한 번에 며칠치만 보여 주고 나머지는 스크롤하면 더 불러오는" 화면인지 (#list_day 숨김 입력이 있으면 그렇다)
+  rolling: boolean;
+};
+
+function parseMonthPage(html: string, config: SourceConfig): MonthPage {
+  const $ = cheerio.load(html);
+  const items: FishingSchedule[] = [];
+  let lastDate: string | null = null;
+  const dayBlocks = $(".new-divs");
+  dayBlocks.each((_index, element) => {
+    const block = $(element);
+    items.push(...parseDayBlock(block, config));
+    const idDate = (block.attr("id") || "").match(/new-div-(\d{4})(\d{2})(\d{2})/);
+    if (idDate) {
+      const date = `${idDate[1]}-${idDate[2]}-${idDate[3]}`;
+      if (lastDate === null || date > lastDate) lastDate = date;
+    }
+  });
+  return { items, blocks: dayBlocks.length, lastDate, rolling: $("#list_day").length > 0 };
+}
+
+function addDaysIso(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+// 한 달을 채우려고 이어서 받는 최대 쪽 수. 8일씩 보여 주는 화면이면 4쪽이면 충분하고, 더 적게
+// 보여 주는 화면이어도 끝없이 요청하지 않도록 상한을 둔다.
+const MONTH_PAGE_LIMIT = 8;
 
 async function fetchMonth(
   year: number,
@@ -363,15 +467,63 @@ async function fetchMonth(
   url.searchParams.set("month", monthValue);
   url.searchParams.set("day", "01");
 
-  const html = await fetchHtml(url, config.baseUrl, ctx);
-  const parseStartedAt = performance.now();
-  const $ = cheerio.load(html);
-  const sourceItems: FishingSchedule[] = [];
-  $(".new-divs").each((_index, element) => {
-    sourceItems.push(...parseDayBlock($(element), config));
-  });
-  if (ctx.trace) ctx.trace.parseMs = Math.round(performance.now() - parseStartedAt);
-  return sourceItems;
+  const readPage = async (pageUrl: URL): Promise<MonthPage> => {
+    const html = await fetchHtml(pageUrl, config.baseUrl, ctx);
+    const parseStartedAt = performance.now();
+    const page = parseMonthPage(html, config);
+    if (ctx.trace) ctx.trace.parseMs = (ctx.trace.parseMs ?? 0) + Math.round(performance.now() - parseStartedAt);
+    return page;
+  };
+
+  const first = await readPage(url);
+  let items = first.items;
+  let blocks = first.blocks;
+  let pages = 1;
+
+  if (first.rolling) {
+    // 이 화면(예: 대야도 피싱아일랜드)은 한 번에 8일치만 보여 주고 나머지는 스크롤하면 더 불러온다.
+    // 그래서 첫 페이지만 읽으면 그 달 앞쪽 며칠만 나오고 이후 날짜는 통째로 빠진다. 사이트의 날짜 이동과
+    // 같은 요청(mid=bk&year&month&day&mode=list)으로 마지막으로 받은 날짜 다음 날부터 이 달 끝까지 이어 받는다.
+    // 지난 날짜는 어차피 쓰지 않으므로, 이번 달이면 오늘부터 받는다 (서버 시계는 UTC라 한국 날짜보다
+    // 같거나 하루 늦어서, 한국 기준 오늘이 빠지는 일은 없다).
+    const monthPrefix = `${year}-${monthValue}-`;
+    const monthStart = `${monthPrefix}01`;
+    const monthEnd = `${monthPrefix}${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, "0")}`;
+    const today = new Date().toISOString().slice(0, 10);
+    const wantFrom = today > monthStart && today <= monthEnd ? today : monthStart;
+
+    const byId = new Map<string, FishingSchedule>(first.items.map((item) => [item.id, item]));
+    let cursor = first.lastDate;
+    while (pages < MONTH_PAGE_LIMIT) {
+      let next = cursor ? addDaysIso(cursor, 1) : wantFrom;
+      if (next < wantFrom) next = wantFrom;
+      if (next > monthEnd) break;
+
+      const pageUrl = new URL("/index.php", config.baseUrl);
+      pageUrl.searchParams.set("mid", "bk");
+      pageUrl.searchParams.set("year", String(year));
+      pageUrl.searchParams.set("month", monthValue);
+      pageUrl.searchParams.set("day", next.slice(8, 10));
+      pageUrl.searchParams.set("mode", "list");
+      pageUrl.searchParams.set("PA_N_UID", "0");
+      const page = await readPage(pageUrl);
+      pages += 1;
+      blocks += page.blocks;
+      for (const item of page.items) byId.set(item.id, item);
+      // 더 이어질 날짜가 없거나(빈 페이지) 날짜가 앞으로 나아가지 않으면 멈춘다.
+      if (!page.lastDate || (cursor !== null && page.lastDate <= cursor)) break;
+      cursor = page.lastDate;
+    }
+    // 다음 달 앞부분까지 딸려 온 날짜는 그 달 조회가 따로 가져오므로, 이 달 것만 남긴다 (중복 방지).
+    items = [...byId.values()].filter((item) => item.departureDate.startsWith(monthPrefix));
+  }
+
+  if (ctx.trace) {
+    ctx.trace.blocks = blocks;
+    ctx.trace.items = items.length;
+    ctx.trace.pages = pages;
+  }
+  return items;
 }
 
 // ---------------------------------------------------------------------------
@@ -588,6 +740,9 @@ function describeTiming(timing: MonthTiming): string {
     timing.bodyMs !== undefined ? `본문 ${timing.bodyMs}` : null,
     timing.parseMs !== undefined ? `파싱 ${timing.parseMs}` : null,
     timing.bytes !== undefined ? `${Math.round(timing.bytes / 1024)}KB` : null,
+    timing.blocks !== undefined
+      ? `달력 ${timing.blocks}일 · ${timing.items ?? 0}건${timing.pages && timing.pages > 1 ? ` · ${timing.pages}쪽` : ""}`
+      : null,
   ].filter(Boolean);
   const failure = timing.ok ? "" : ` 실패: ${timing.error ?? "알 수 없음"}`;
   const label = `${timing.name} ${timing.year}-${String(timing.month).padStart(2, "0")}`;
@@ -941,6 +1096,11 @@ export function getFetchDiagnostics() {
         bodyMs: timing.bodyMs ?? null,
         parseMs: timing.parseMs ?? null,
         kb: timing.bytes === undefined ? null : Math.round(timing.bytes / 1024),
+        // 응답은 받았는데 결과가 0건일 때 이유를 가른다: calendarDays가 0이면 달력을 못 찾은 것(차단/다른 화면),
+        // calendarDays가 있는데 items가 0이면 남은 자리가 있는 날이 없거나 읽는 방식이 다른 것.
+        calendarDays: timing.blocks ?? null,
+        items: timing.items ?? null,
+        pages: timing.pages ?? null,
         error: timing.error ?? null,
         secondsAgo: Math.round((now - timing.finishedAt) / 1000),
       })),
