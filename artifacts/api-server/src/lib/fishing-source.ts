@@ -61,6 +61,11 @@ export const CACHE_TTL_MS = 20 * 60 * 1000;
 // 예약처별로 이미 조회한 '연-월'은 캐시해서, 겹치는 기간을 다시 조회할 때
 // 네트워크 스크래핑 없이 재사용한다. 키 형태: `${sourceId}:${year}-${month}`
 const monthCache = new Map<string, { expiresAt: number; items: FishingSchedule[] }>();
+// 한 달을 여러 쪽에 나눠 받는 예약처에서, 첫 쪽은 받았지만 이어지는 쪽이 실패해 앞쪽 날짜만 캐시에 들어간
+// 달의 기록. 일부만 받은 결과는 20분씩 붙잡지 않고 금방(PARTIAL_CACHE_TTL_MS) 다시 시도하며,
+// 검색 결과에는 "일부 날짜만 불러온 예약처"로 알려 준다. missingFrom = 못 받은 첫 날짜.
+const PARTIAL_CACHE_TTL_MS = 3 * 60 * 1000;
+const partialMonthNotes = new Map<string, { missingFrom: string; message: string }>();
 
 // 지금 이 순간 네트워크로 가져오는 중인 '예약처-월' 요청. 같은 키를 또 요청하는 쪽
 // (예: 필터 목록 조회가 먼저 시작해 둔 요청을 사용자의 검색이 이어서 필요로 할 때)은
@@ -102,7 +107,8 @@ const SLOW_FETCH_LOG_MS = 4_000;
 // blocks/items/pages는 "페이지는 받았는데 왜 0건인지"를 가르는 용도다:
 //   blocks = 달력에서 찾은 날짜 칸 수 (0이면 달력 자체를 못 찾음: 차단/다른 화면/구조 변경 의심)
 //   items  = 그중 남은 자리가 있어 결과로 읽은 건수 (blocks가 있는데 0이면 정말 빈 달이거나 읽는 방식이 다름)
-//   pages  = 이 달을 채우려고 요청한 쪽 수
+//   pages  = 이 달을 채우려고 성공적으로 받은 쪽 수
+//   partialError/missingFrom = 첫 쪽은 받았는데 이어지는 쪽이 실패해서 앞쪽 날짜만 받은 경우의 이유와, 못 받은 첫 날짜
 type FetchTrace = {
   queueMs?: number;
   headersMs?: number;
@@ -112,6 +118,8 @@ type FetchTrace = {
   blocks?: number;
   items?: number;
   pages?: number;
+  partialError?: string;
+  missingFrom?: string;
 };
 type FetchContext = { priority: FetchPriority; tag?: string; trace?: FetchTrace };
 const USER_FETCH_CONTEXT: FetchContext = { priority: "high" };
@@ -213,6 +221,7 @@ export async function listConfiguredSources(): Promise<FishingSourceWithVessels[
 
 export function clearSourceCache(): void {
   monthCache.clear();
+  partialMonthNotes.clear();
   // 진행 중이던 요청은 끝까지 가도록 두되(기다리던 쪽이 있을 수 있음), 새 캐시에는
   // 결과를 쓰지 못하게 하고 이후 요청이 그 낡은 요청에 합류하지도 않게 한다.
   inflightMonths.clear();
@@ -381,6 +390,40 @@ function browserHeaders(referer: string): Record<string, string> {
   };
 }
 
+// Node의 fetch는 연결이 안 되면 그냥 "fetch failed"라고만 말하고, 진짜 이유(주소를 못 찾음, 연결 거부,
+// 인증서 문제 등)는 error.cause 안에 들어 있다. 로그·진단 화면·검색 오류 화면에서 원인을 바로 알 수 있도록
+// 그 이유를 꺼내 짧은 한글로 풀어 쓴다. (괄호는 쓰지 않는다: "예약처이름(이유)" 형태로 붙여 보여 주기 때문)
+function describeFetchFailure(error: unknown): string {
+  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return `응답 시간 초과 ${FETCH_TIMEOUT_MS / 1000}초`;
+  }
+  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
+  let code = "";
+  for (const candidate of [cause, error]) {
+    if (candidate && typeof candidate === "object" && "code" in candidate) {
+      const value = String((candidate as { code: unknown }).code ?? "");
+      if (value) {
+        code = value;
+        break;
+      }
+    }
+  }
+  const meaning: Record<string, string> = {
+    ENOTFOUND: "주소를 찾지 못함",
+    EAI_AGAIN: "주소를 찾지 못함",
+    ECONNREFUSED: "연결 거부됨",
+    ECONNRESET: "연결이 끊김",
+    ETIMEDOUT: "연결 시간 초과",
+    UND_ERR_CONNECT_TIMEOUT: "연결 시간 초과",
+    UND_ERR_SOCKET: "연결이 끊김",
+    EHOSTUNREACH: "서버에 닿지 못함",
+    ENETUNREACH: "서버에 닿지 못함",
+  };
+  const label = meaning[code] ?? (/CERT|TLS|SSL/i.test(code) ? "보안 연결 인증서 문제" : "연결 실패");
+  const raw = cause instanceof Error ? cause.message : error instanceof Error ? error.message : String(error);
+  return code ? `${label} ${code}` : `${label} ${raw.replace(/[()]/g, "").slice(0, 60)}`.trim();
+}
+
 // 예약처 페이지 하나를 받아온다. 동시 조회 한도(fetchLimiter)에는 "응답 헤더가 올 때까지"만
 // 해당하고(예전과 동일), 15초 타임아웃은 줄 서서 기다린 시간이 아니라 실제로 요청을
 // 시작한 시점부터 잰다. 구간별 소요 시간은 ctx.trace에 남겨 로그로 확인할 수 있게 한다.
@@ -396,6 +439,8 @@ async function fetchHtml(url: URL, referer: string, ctx: FetchContext): Promise<
           headers: browserHeaders(referer),
           signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         });
+      } catch (error) {
+        throw new Error(`예약 원본에 연결하지 못했습니다: ${describeFetchFailure(error)}`);
       } finally {
         if (ctx.trace) ctx.trace.headersMs = (ctx.trace.headersMs ?? 0) + Math.round(performance.now() - startedAt);
       }
@@ -409,7 +454,12 @@ async function fetchHtml(url: URL, referer: string, ctx: FetchContext): Promise<
     throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.`);
   }
   const bodyStartedAt = performance.now();
-  const html = await response.text();
+  let html: string;
+  try {
+    html = await response.text();
+  } catch (error) {
+    throw new Error(`예약 원본 응답을 끝까지 받지 못했습니다: ${describeFetchFailure(error)}`);
+  }
   if (ctx.trace) {
     ctx.trace.bodyMs = (ctx.trace.bodyMs ?? 0) + Math.round(performance.now() - bodyStartedAt);
     ctx.trace.bytes = (ctx.trace.bytes ?? 0) + html.length;
@@ -506,7 +556,19 @@ async function fetchMonth(
       pageUrl.searchParams.set("day", next.slice(8, 10));
       pageUrl.searchParams.set("mode", "list");
       pageUrl.searchParams.set("PA_N_UID", "0");
-      const page = await readPage(pageUrl);
+      let page: MonthPage;
+      try {
+        page = await readPage(pageUrl);
+      } catch (error) {
+        // 첫 쪽은 받았는데 이어지는 쪽이 실패했다. 이 달 전체를 실패로 처리하면 이미 받은 앞쪽 날짜까지
+        // 버리게 되므로, 받은 날짜까지만 돌려주고 "어느 날짜부터 못 받았는지"를 남긴다. 검색 결과에는
+        // 그 사실이 경고로 표시되고, 일부만 받은 결과는 캐시에 짧게(PARTIAL_CACHE_TTL_MS)만 둔다.
+        if (ctx.trace) {
+          ctx.trace.partialError = error instanceof Error ? error.message : String(error);
+          ctx.trace.missingFrom = next;
+        }
+        break;
+      }
       pages += 1;
       blocks += page.blocks;
       for (const item of page.items) byId.set(item.id, item);
@@ -745,8 +807,9 @@ function describeTiming(timing: MonthTiming): string {
       : null,
   ].filter(Boolean);
   const failure = timing.ok ? "" : ` 실패: ${timing.error ?? "알 수 없음"}`;
+  const partial = timing.partialError ? ` 일부만 받음(${timing.missingFrom ?? "?"}부터 못 받음): ${timing.partialError}` : "";
   const label = `${timing.name} ${timing.year}-${String(timing.month).padStart(2, "0")}`;
-  return `${label} ${timing.totalMs}ms (${parts.join(" · ")})${failure}`;
+  return `${label} ${timing.totalMs}ms (${parts.join(" · ")})${failure}${partial}`;
 }
 
 function recordTiming(
@@ -771,6 +834,8 @@ function recordTiming(
   monthTimings.set(key, timing);
   if (!timing.ok) {
     logger.warn({ timing }, `[예약처 조회 실패] ${describeTiming(timing)}`);
+  } else if (timing.partialError) {
+    logger.warn({ timing }, `[예약처 조회 일부만] ${describeTiming(timing)}`);
   } else if (timing.totalMs >= SLOW_FETCH_LOG_MS) {
     logger.info({ timing }, `[예약처 조회 느림] ${describeTiming(timing)}`);
   }
@@ -808,7 +873,13 @@ function getMonthItems(
     promise: fetchMonthForConfig(year, month, config, { priority, tag: key, trace })
       .then(
         (items) => {
-          if (epoch === cacheEpoch) monthCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, items });
+          if (epoch === cacheEpoch) {
+            // 이어지는 쪽이 실패해 앞쪽 날짜만 받은 달은 짧게만 캐시하고, 못 받은 날짜를 기록해 둔다.
+            const partial = trace.partialError && trace.missingFrom;
+            monthCache.set(key, { expiresAt: Date.now() + (partial ? PARTIAL_CACHE_TTL_MS : CACHE_TTL_MS), items });
+            if (partial) partialMonthNotes.set(key, { missingFrom: trace.missingFrom!, message: trace.partialError! });
+            else partialMonthNotes.delete(key);
+          }
           recordTiming(key, config, year, month, startedAt, trace, { ok: true });
           return items;
         },
@@ -842,10 +913,55 @@ export type FishingScheduleSearch = {
   items: FishingSchedule[];
   sources: SourceConfig[];
   failedSources: string[];
+  // failedSources와 같은 순서의 실패 이유. "예약처 이름(이유)"로 경고에 붙여 보여 주려는 용도.
+  failures: Array<{ name: string; reason: string }>;
   // 마감 시간(softDeadlineMs) 안에 응답하지 못해 이번 결과에서 빠진 예약처. 실패가 아니라 아직
   // 진행 중인 것이라, 백그라운드에서 계속 받아 캐시에 채우므로 잠시 뒤 다시 검색하면 나온다.
   pendingSources: string[];
+  // 한 달을 여러 쪽에 나눠 받는 예약처 중, 이어지는 쪽이 실패해 찾는 기간의 일부 날짜를 못 받은 곳.
+  // 받은 날짜의 결과는 그대로 들어 있고, 못 받은 날짜는 잠시 뒤 다시 시도한다.
+  partialSources: Array<{ name: string; message: string }>;
 };
+
+/**
+ * 한 줄로 보여 줄 실패 이유. 내부 오류 문구에서 군더더기를 덜어 낸다 (예: "예약 원본이 403 상태를
+ * 반환했습니다." → "HTTP 403", "예약 원본에 연결하지 못했습니다: 주소를 찾지 못함 ENOTFOUND" →
+ * "주소를 찾지 못함 ENOTFOUND"). 전체 문구는 /api/fishing/diagnostics 와 서버 로그에 그대로 남는다.
+ */
+export function summarizeFailureReason(reason: unknown): string {
+  const message = reason instanceof Error ? reason.message : String(reason ?? "");
+  // 건너뛰는 중이라는 문구 안에 "이전 오류"가 들어 있으므로, HTTP 상태를 찾기 전에 먼저 가려낸다.
+  if (message.startsWith("최근 반복 실패로 건너뜀")) {
+    const previous = message.match(/이전 오류: (.*)\)$/s);
+    return previous ? `반복 실패로 잠시 건너뜀 - 이전 오류 ${summarizeFailureReason(previous[1])}` : "반복 실패로 잠시 건너뜀";
+  }
+  const http = message.match(/(\d{3}) 상태를 반환/);
+  if (http) return `HTTP ${http[1]}`;
+  const connection = message.match(/^예약 원본(?:에 연결하지 못했습니다| 응답을 끝까지 받지 못했습니다): (.+)$/);
+  const text = (connection ? connection[1] : message).replace(/\s+/g, " ").trim();
+  return text.length > 60 ? `${text.slice(0, 60)}…` : text || "알 수 없는 오류";
+}
+
+/**
+ * 조회 대상 예약처가 전부 실패해 결과를 하나도 못 만들었을 때 던진다. 어느 예약처가 왜 실패했는지를
+ * 담고 있어서, 검색 오류 화면과 서버 로그에서 원인을 바로 볼 수 있다.
+ */
+export class AllSourcesFailedError extends Error {
+  readonly failures: Array<{ name: string; reason: string }>;
+
+  constructor(failures: Array<{ name: string; reason: string }>) {
+    super("모든 예약처를 불러오지 못했습니다.");
+    this.name = "AllSourcesFailedError";
+    this.failures = failures;
+  }
+
+  /** 화면에 보여 줄 한두 줄 요약. 예약처가 많으면 앞의 몇 곳만 보여 준다. */
+  get detail(): string {
+    const shown = this.failures.slice(0, 4).map((failure) => `${failure.name}: ${failure.reason}`);
+    const rest = this.failures.length - shown.length;
+    return rest > 0 ? `${shown.join(" / ")} / 외 ${rest}곳` : shown.join(" / ");
+  }
+}
 
 // 우리 항구 이름 → 바다타임(badatime.com) 지역 ID. 바다타임 사이트에서 해당
 // 항구를 검색해 URL의 숫자 ID를 직접 확인해 채워 넣었다. 여기 없는 항구는
@@ -1102,6 +1218,9 @@ export function getFetchDiagnostics() {
         items: timing.items ?? null,
         pages: timing.pages ?? null,
         error: timing.error ?? null,
+        // 첫 쪽은 받았는데 이어지는 쪽이 실패해 앞쪽 날짜만 받은 경우의 이유와, 못 받은 첫 날짜 (이때 ok는 true).
+        partialError: timing.partialError ?? null,
+        missingFrom: timing.missingFrom ?? null,
         secondsAgo: Math.round((now - timing.finishedAt) / 1000),
       })),
     sourceHealth: getSourceHealthSnapshot(),
@@ -1133,7 +1252,7 @@ export async function getSchedules(
   }
 
   if (sources.length === 0) {
-    return { items: [], sources, failedSources: [], pendingSources: [] };
+    return { items: [], sources, failedSources: [], failures: [], pendingSources: [], partialSources: [] };
   }
 
   const months = monthCursor(startDate, endDate);
@@ -1182,21 +1301,44 @@ export async function getSchedules(
   const settled = await settleWithSoftDeadline(sourcePromises, softDeadlineMs);
   const collected: FishingSchedule[] = [];
   const failedSources: string[] = [];
+  const failures: Array<{ name: string; reason: string }> = [];
   const pendingSources: string[] = [];
+  const partialSources: Array<{ name: string; message: string }> = [];
+  // 이 검색 기간에 걸리는 달 중, 이어지는 쪽을 못 받아 일부 날짜가 빠진 달이 있으면 그 이유를 돌려준다.
+  // (캐시가 아직 살아 있는 동안만 유효하다. 못 받은 날짜가 검색 기간 밖이면 알릴 필요가 없다.)
+  const partialNoteFor = (sourceId: number): string | null => {
+    for (const { year, month } of months) {
+      const key = monthKey(sourceId, year, month);
+      const note = partialMonthNotes.get(key);
+      if (note && note.missingFrom <= endDate && peekMonthCache(key)) {
+        const day = `${Number(note.missingFrom.slice(5, 7))}월 ${Number(note.missingFrom.slice(8, 10))}일`;
+        return `${day}부터는 못 받음: ${summarizeFailureReason(note.message)}`;
+      }
+    }
+    return null;
+  };
   settled.forEach((result, index) => {
     const name = sources[index]?.name || "예약처";
     if (!result) {
       pendingSources.push(name);
     } else if (result.status === "rejected") {
       failedSources.push(name);
+      failures.push({ name, reason: summarizeFailureReason(result.reason) });
     } else {
       for (const item of result.value) collected.push(item);
+      const note = partialNoteFor(sources[index].id);
+      if (note) partialSources.push({ name, message: note });
     }
   });
   // 월 단위로 가져온 데이터라, 실제 요청한 날짜 범위(startDate~endDate)에 맞게 여기서 다시 거른다.
   const items = collected.filter((item) => item.departureDate >= startDate && item.departureDate <= endDate);
   if (items.length === 0 && failedSources.length === sources.length) {
-    throw new Error("모든 예약처를 불러오지 못했습니다.");
+    // 이 경우는 아래 검색 요약 로그까지 가지 못하므로, 어느 예약처가 왜 실패했는지 여기서 남긴다.
+    logger.warn(
+      { failures },
+      `[${label} 실패] 조회 대상 예약처 ${sources.length}곳이 모두 실패: ${failures.map((failure) => `${failure.name}(${failure.reason})`).join(", ")}`,
+    );
+    throw new AllSourcesFailedError(failures);
   }
 
   let tideWaitMs: number | null = null;
@@ -1226,7 +1368,7 @@ export async function getSchedules(
     loopBusy: performance.eventLoopUtilization(loopStart).utilization,
     resultCount: items.length,
   });
-  return { items, sources, failedSources, pendingSources };
+  return { items, sources, failedSources, failures, pendingSources, partialSources };
 }
 
 // 실제로 한 번이라도 스크래핑에서 관측된 물때 표기(예: "7물", "조금", "무시")를

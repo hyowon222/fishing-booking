@@ -101689,6 +101689,29 @@ function parseSeatCount(value) {
   const match = value.match(/남은자리\s*(\d+)\s*명/);
   return match ? Number(match[1]) : null;
 }
+function parseSeatCountText(value) {
+  const match = cleanText(value).match(/^(?:남은\s*자리\s*)?(\d+)\s*명$/);
+  return match ? Number(match[1]) : null;
+}
+function genreFromStatusCell(cell, $2) {
+  const labeled = (label) => {
+    let value = "";
+    cell.find("tr").each((_index, tr) => {
+      const tds = $2(tr).children("td");
+      if (tds.length >= 2 && cleanText(tds.eq(0).text()) === label) {
+        value = cleanText(tds.eq(1).text());
+        return false;
+      }
+      return void 0;
+    });
+    return value;
+  };
+  const kind = labeled("\uB09A\uC2DC\uC885\uB958");
+  if (kind) return kind;
+  const notice = labeled("\uACF5\uC9C0");
+  const head = notice.includes("\uCD9C\uC870") ? cleanText(notice.split("\uCD9C\uC870")[0]).replace(/[\s.,·~!]+$/g, "") : "";
+  return head && head.length <= 20 ? head : "\uC120\uC0C1 \uB09A\uC2DC";
+}
 function parseDateFromDayBlock(id, text4) {
   const idMatch = id.match(/new-div-(\d{8})/);
   if (idMatch?.[1]) {
@@ -101703,7 +101726,18 @@ function parseDateFromDayBlock(id, text4) {
 function extractBookingUrl(onclick, baseUrl) {
   const match = onclick.match(/f_popup\('([^']+)'/);
   if (!match?.[1]) return null;
-  return new URL(match[1], baseUrl).href;
+  try {
+    return new URL(match[1], baseUrl).href;
+  } catch {
+    return null;
+  }
+}
+function monthPageHref(baseUrl, departureDate) {
+  const url2 = new URL("/index.php", baseUrl);
+  url2.searchParams.set("mid", "bk");
+  url2.searchParams.set("year", departureDate.slice(0, 4));
+  url2.searchParams.set("month", departureDate.slice(5, 7));
+  return url2.href;
 }
 function parseDayBlock(block, config2) {
   const header = block.find("tr.jeil-panel").first();
@@ -101720,9 +101754,11 @@ function parseDayBlock(block, config2) {
     if (cells.length < 3) return;
     const vessel = cleanText(cells.eq(0).find("span").first().text() || cells.eq(0).text());
     const seatAlt = cells.eq(2).find("img").first().attr("alt") || "";
-    const remainingSeats = parseSeatCount(seatAlt);
+    let remainingSeats = parseSeatCount(seatAlt);
+    const textLayout = remainingSeats === null;
+    if (textLayout) remainingSeats = parseSeatCountText(cells.eq(2).text());
     if (!vessel || isExcludedVessel(vessel) || remainingSeats === null || remainingSeats <= 0) return;
-    const genre = cleanText(
+    const genre = textLayout ? genreFromStatusCell(cells.eq(1), row$) : cleanText(
       cells.eq(1).find('img[alt="\uB09A\uC2DC\uC885\uB958"]').closest("tr").find("td").last().text() || cells.eq(1).text()
     );
     const bookingUrl = extractBookingUrl(cells.eq(0).find("a").first().attr("onclick") || "", config2.baseUrl);
@@ -101741,7 +101777,7 @@ function parseDayBlock(block, config2) {
       remainingSeats,
       operatorUrl: config2.baseUrl,
       bookingUrl,
-      source: `${config2.baseUrl}/index.php?mid=bk&year=${departureDate.slice(0, 4)}&month=${departureDate.slice(5, 7)}`
+      source: monthPageHref(config2.baseUrl, departureDate)
     });
   });
   return items;
@@ -101760,14 +101796,14 @@ async function fetchHtml(url2, referer, ctx) {
   const response = await fetchLimiter.run(
     async () => {
       const startedAt = performance2.now();
-      if (ctx.trace) ctx.trace.queueMs = Math.round(startedAt - queuedAt);
+      if (ctx.trace) ctx.trace.queueMs = (ctx.trace.queueMs ?? 0) + Math.round(startedAt - queuedAt);
       try {
         return await fetch(url2, {
           headers: browserHeaders(referer),
           signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
         });
       } finally {
-        if (ctx.trace) ctx.trace.headersMs = Math.round(performance2.now() - startedAt);
+        if (ctx.trace) ctx.trace.headersMs = (ctx.trace.headersMs ?? 0) + Math.round(performance2.now() - startedAt);
       }
     },
     ctx.priority,
@@ -101780,11 +101816,33 @@ async function fetchHtml(url2, referer, ctx) {
   const bodyStartedAt = performance2.now();
   const html3 = await response.text();
   if (ctx.trace) {
-    ctx.trace.bodyMs = Math.round(performance2.now() - bodyStartedAt);
-    ctx.trace.bytes = html3.length;
+    ctx.trace.bodyMs = (ctx.trace.bodyMs ?? 0) + Math.round(performance2.now() - bodyStartedAt);
+    ctx.trace.bytes = (ctx.trace.bytes ?? 0) + html3.length;
   }
   return html3;
 }
+function parseMonthPage(html3, config2) {
+  const $2 = load(html3);
+  const items = [];
+  let lastDate = null;
+  const dayBlocks = $2(".new-divs");
+  dayBlocks.each((_index, element) => {
+    const block = $2(element);
+    items.push(...parseDayBlock(block, config2));
+    const idDate = (block.attr("id") || "").match(/new-div-(\d{4})(\d{2})(\d{2})/);
+    if (idDate) {
+      const date6 = `${idDate[1]}-${idDate[2]}-${idDate[3]}`;
+      if (lastDate === null || date6 > lastDate) lastDate = date6;
+    }
+  });
+  return { items, blocks: dayBlocks.length, lastDate, rolling: $2("#list_day").length > 0 };
+}
+function addDaysIso(date6, days) {
+  const value = /* @__PURE__ */ new Date(`${date6}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+var MONTH_PAGE_LIMIT = 8;
 async function fetchMonth(year, month, config2, ctx = USER_FETCH_CONTEXT) {
   const monthValue = String(month).padStart(2, "0");
   const url2 = new URL("/index.php", config2.baseUrl);
@@ -101792,15 +101850,51 @@ async function fetchMonth(year, month, config2, ctx = USER_FETCH_CONTEXT) {
   url2.searchParams.set("year", String(year));
   url2.searchParams.set("month", monthValue);
   url2.searchParams.set("day", "01");
-  const html3 = await fetchHtml(url2, config2.baseUrl, ctx);
-  const parseStartedAt = performance2.now();
-  const $2 = load(html3);
-  const sourceItems = [];
-  $2(".new-divs").each((_index, element) => {
-    sourceItems.push(...parseDayBlock($2(element), config2));
-  });
-  if (ctx.trace) ctx.trace.parseMs = Math.round(performance2.now() - parseStartedAt);
-  return sourceItems;
+  const readPage = async (pageUrl) => {
+    const html3 = await fetchHtml(pageUrl, config2.baseUrl, ctx);
+    const parseStartedAt = performance2.now();
+    const page = parseMonthPage(html3, config2);
+    if (ctx.trace) ctx.trace.parseMs = (ctx.trace.parseMs ?? 0) + Math.round(performance2.now() - parseStartedAt);
+    return page;
+  };
+  const first2 = await readPage(url2);
+  let items = first2.items;
+  let blocks = first2.blocks;
+  let pages = 1;
+  if (first2.rolling) {
+    const monthPrefix = `${year}-${monthValue}-`;
+    const monthStart = `${monthPrefix}01`;
+    const monthEnd = `${monthPrefix}${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, "0")}`;
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const wantFrom = today > monthStart && today <= monthEnd ? today : monthStart;
+    const byId = new Map(first2.items.map((item) => [item.id, item]));
+    let cursor = first2.lastDate;
+    while (pages < MONTH_PAGE_LIMIT) {
+      let next2 = cursor ? addDaysIso(cursor, 1) : wantFrom;
+      if (next2 < wantFrom) next2 = wantFrom;
+      if (next2 > monthEnd) break;
+      const pageUrl = new URL("/index.php", config2.baseUrl);
+      pageUrl.searchParams.set("mid", "bk");
+      pageUrl.searchParams.set("year", String(year));
+      pageUrl.searchParams.set("month", monthValue);
+      pageUrl.searchParams.set("day", next2.slice(8, 10));
+      pageUrl.searchParams.set("mode", "list");
+      pageUrl.searchParams.set("PA_N_UID", "0");
+      const page = await readPage(pageUrl);
+      pages += 1;
+      blocks += page.blocks;
+      for (const item of page.items) byId.set(item.id, item);
+      if (!page.lastDate || cursor !== null && page.lastDate <= cursor) break;
+      cursor = page.lastDate;
+    }
+    items = [...byId.values()].filter((item) => item.departureDate.startsWith(monthPrefix));
+  }
+  if (ctx.trace) {
+    ctx.trace.blocks = blocks;
+    ctx.trace.items = items.length;
+    ctx.trace.pages = pages;
+  }
+  return items;
 }
 var WEEKDAY_KO = ["\uC77C\uC694\uC77C", "\uC6D4\uC694\uC77C", "\uD654\uC694\uC77C", "\uC218\uC694\uC77C", "\uBAA9\uC694\uC77C", "\uAE08\uC694\uC77C", "\uD1A0\uC694\uC77C"];
 function isSunsang24(baseUrl) {
@@ -101948,7 +102042,8 @@ function describeTiming(timing) {
     timing.headersMs !== void 0 ? `\uC751\uB2F5 ${timing.headersMs}` : null,
     timing.bodyMs !== void 0 ? `\uBCF8\uBB38 ${timing.bodyMs}` : null,
     timing.parseMs !== void 0 ? `\uD30C\uC2F1 ${timing.parseMs}` : null,
-    timing.bytes !== void 0 ? `${Math.round(timing.bytes / 1024)}KB` : null
+    timing.bytes !== void 0 ? `${Math.round(timing.bytes / 1024)}KB` : null,
+    timing.blocks !== void 0 ? `\uB2EC\uB825 ${timing.blocks}\uC77C \xB7 ${timing.items ?? 0}\uAC74${timing.pages && timing.pages > 1 ? ` \xB7 ${timing.pages}\uCABD` : ""}` : null
   ].filter(Boolean);
   const failure = timing.ok ? "" : ` \uC2E4\uD328: ${timing.error ?? "\uC54C \uC218 \uC5C6\uC74C"}`;
   const label = `${timing.name} ${timing.year}-${String(timing.month).padStart(2, "0")}`;
@@ -102169,6 +102264,11 @@ function getFetchDiagnostics() {
       bodyMs: timing.bodyMs ?? null,
       parseMs: timing.parseMs ?? null,
       kb: timing.bytes === void 0 ? null : Math.round(timing.bytes / 1024),
+      // 응답은 받았는데 결과가 0건일 때 이유를 가른다: calendarDays가 0이면 달력을 못 찾은 것(차단/다른 화면),
+      // calendarDays가 있는데 items가 0이면 남은 자리가 있는 날이 없거나 읽는 방식이 다른 것.
+      calendarDays: timing.blocks ?? null,
+      items: timing.items ?? null,
+      pages: timing.pages ?? null,
       error: timing.error ?? null,
       secondsAgo: Math.round((now - timing.finishedAt) / 1e3)
     })),

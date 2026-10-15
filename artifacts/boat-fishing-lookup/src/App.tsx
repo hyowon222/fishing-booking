@@ -569,16 +569,34 @@ function ScheduleRow({ schedule }: { schedule: FishingSchedule }) {
   );
 }
 
+// 검색 요청이 실패했을 때 오류 카드에 덧붙일 원인 한 줄. 우리 서버가 직접 답한 오류(JSON)와, 서버가 아예
+// 응답하지 못한 경우(켜지는 중·재시작·네트워크 문제)를 구분해서 알려 준다. 스크린샷만으로 원인을 가리기 위한 용도.
+function describeSearchError(error: unknown): string | null {
+  if (!error || typeof error !== "object") return null;
+  const { status, data } = error as { status?: unknown; data?: unknown };
+  const body = data && typeof data === "object" ? (data as { error?: unknown; detail?: unknown }) : null;
+  const message = typeof body?.error === "string" ? body.error : "";
+  if (typeof status === "number") {
+    if (typeof body?.detail === "string" && body.detail) return body.detail;
+    if (status >= 400 && status < 500 && message) return message;
+    if (message) return `서버 오류 (HTTP ${status}). 원인은 서버 로그에서 확인할 수 있어요.`;
+    return `서버가 응답하지 못했어요 (HTTP ${status}). 서버가 켜지는 중이거나 다시 시작되는 중일 수 있어요.`;
+  }
+  return "서버에 연결하지 못했어요. 인터넷 연결이나 서버 상태를 확인해 주세요.";
+}
+
 function ScheduleResults({
   data,
   isLoading,
   isError,
+  error,
   hasSearched,
   onRetry,
 }: {
   data?: { items: FishingSchedule[]; total: number; searchedAt: string; source: string; cachedUntil: string | null; warning: string | null };
   isLoading: boolean;
   isError: boolean;
+  error?: unknown;
   hasSearched: boolean;
   onRetry: () => void;
 }) {
@@ -593,11 +611,13 @@ function ScheduleResults({
   }
   if (isLoading) return <SeatRadar />;
   if (isError) {
+    const reason = describeSearchError(error);
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-destructive/25 bg-card px-6 py-16 text-center">
         <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive"><CircleAlert size={22} /></div>
         <h3 className="font-bold">일정을 불러오지 못했습니다</h3>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">예약처 연결이 잠시 불안정합니다. 같은 조건으로 다시 시도해 주세요.</p>
+        {reason && <p className="mt-3 max-w-md rounded-lg bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground" data-testid="text-search-error-detail">원인: {reason}</p>}
         <button onClick={onRetry} className="mt-5 flex items-center gap-2 rounded-lg border border-input px-4 py-2 text-sm font-semibold hover:bg-muted" data-testid="button-retry-search"><RefreshCw size={14} /> 다시 시도</button>
       </div>
     );
@@ -608,6 +628,8 @@ function ScheduleResults({
         <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Compass size={25} /></div>
         <h3 className="font-bold">조건에 맞는 배가 없습니다</h3>
         <p className="mt-1 max-w-sm text-sm leading-6 text-muted-foreground">기간을 넓히거나 지역·선박 필터를 하나씩 해제하면 더 많은 출항을 확인할 수 있습니다.</p>
+        {/* 일부 예약처를 못 불러왔거나 응답이 늦은 경우, 결과가 0건이어도 그 이유를 같이 보여 준다 */}
+        {data?.warning && <div className="mt-5 flex max-w-md items-start gap-2 rounded-lg border border-accent/30 bg-accent/10 px-4 py-3 text-left text-xs leading-5 text-[#765019]" data-testid="text-empty-warning"><Info size={15} className="mt-0.5 shrink-0" />{data.warning}</div>}
       </div>
     );
   }
@@ -776,7 +798,7 @@ function Home() {
               {data?.cachedUntil && <span className="hidden items-center gap-1.5 sm:flex"><RefreshCw size={12} /> {formatSearchedAt(data.cachedUntil)}까지 캐시</span>}
             </div>
           </div>
-          <ScheduleResults data={data} isLoading={hasSearched && searchQuery.isLoading} isError={hasSearched && searchQuery.isError} hasSearched={hasSearched} onRetry={() => searchQuery.refetch()} />
+          <ScheduleResults data={data} isLoading={hasSearched && searchQuery.isLoading} isError={hasSearched && searchQuery.isError} error={searchQuery.error} hasSearched={hasSearched} onRetry={() => searchQuery.refetch()} />
         </section>
       </main>
       )}

@@ -17,6 +17,7 @@ import {
 import { db, fishingSourcesTable } from "@workspace/db";
 import { fishingSourceVesselsTable } from "@workspace/db";
 import {
+  AllSourcesFailedError,
   CACHE_TTL_MS,
   clearSourceCache,
   detectSource,
@@ -106,6 +107,15 @@ function getPgErrorCode(error: unknown): string | undefined {
   return undefined;
 }
 
+// 검색이 통째로 실패했을 때 화면(App.tsx)의 오류 카드에 한 줄로 보여 줄 원인. 예약처가 전부 실패한
+// 경우에는 어느 예약처가 왜 실패했는지를, 그 밖의 서버 오류는 종류(오류 코드)만 알려 준다 (내부 주소나
+// 상세 문구는 화면에 내보내지 않는다). 전체 내용은 서버 로그에 남는다.
+function describeSearchFailure(error: unknown): string {
+  if (error instanceof AllSourcesFailedError) return error.detail;
+  const code = getPgErrorCode(error);
+  return code ? `서버 내부 오류 (${code})` : "서버 내부 오류";
+}
+
 router.get("/fishing/schedules", async (req, res) => {
   const parsed = SearchFishingSchedulesQueryParams.safeParse({
     startDate: dateValue(req.query.startDate),
@@ -155,8 +165,16 @@ router.get("/fishing/schedules", async (req, res) => {
     // 출항일이 빠른 순서대로, 같은 날짜 안에서는 선박명 가나다순으로 정렬한다.
     items.sort((a, b) => a.departureDate.localeCompare(b.departureDate) || a.vessel.localeCompare(b.vessel, "ko"));
     const warnings: string[] = [];
-    if (search.failedSources.length) {
-      warnings.push(`일부 예약처를 불러오지 못했습니다: ${search.failedSources.join(", ")}`);
+    if (search.failures.length) {
+      // 예약처 이름 뒤에 실패 이유를 붙인다. 예: "대야도 피싱아일랜드(HTTP 403)", "…(응답 시간 초과 15초)"
+      warnings.push(
+        `일부 예약처를 불러오지 못했습니다: ${search.failures.map((failure) => `${failure.name}(${failure.reason})`).join(", ")}`,
+      );
+    }
+    if (search.partialSources.length) {
+      warnings.push(
+        `일부 날짜는 불러오지 못한 예약처가 있어요. 잠시 뒤 '자리 찾기'를 다시 누르면 채워질 수 있어요: ${search.partialSources.map((partial) => `${partial.name}(${partial.message})`).join(", ")}`,
+      );
     }
     if (search.pendingSources.length) {
       // 주의: App.tsx가 이 문구의 "응답이 늦은 예약처"로 이 상황을 알아보고 자동 재조회한다.
@@ -176,7 +194,10 @@ router.get("/fishing/schedules", async (req, res) => {
     res.json(response);
   } catch (error) {
     req.log.error({ err: error }, "Fishing source lookup failed");
-    res.status(502).json({ error: "예약 원본을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." });
+    res.status(502).json({
+      error: "예약 원본을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      detail: describeSearchFailure(error),
+    });
   }
 });
 

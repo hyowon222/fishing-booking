@@ -61,6 +61,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 - 더피싱 계열 예약 화면은 두 가지 모양이 있다. (1) 남은 자리를 이미지 `alt="남은자리 N명"`로 보여 주는 예전 화면, (2) 글자 `14명`으로 보여 주는 새 화면(예: fishingi.net 대야도 피싱아일랜드, `reservation_boat_v5.2_seat1`). 이미지가 없으면 칸 전체가 `N명`일 때만 자리로 읽는다(`예약완료`/`기상악화`/`배정비일`은 자리 없음). 새 화면은 가운데 칸에 예약자 이름·전화번호가 섞여 있으므로 장르는 `낚시종류` 줄이나 공지의 "OO 출조합니다"에서만 뽑는다.
 - 새 화면은 한 번에 8일치만 보여 주고 나머지는 스크롤하면 더 불러온다(`#list_day` 숨김 입력이 있으면 그런 화면). `fetchMonth`는 마지막으로 받은 날짜 다음 날부터 `mode=list&day=…`로 이 달 끝까지(최대 8쪽) 이어 받는다. 예전 화면은 첫 쪽에 한 달이 다 있어서 추가 요청이 없다.
 - 예약처 결과가 0건일 때는 `/api/fishing/diagnostics`의 `recentFetches`에서 `calendarDays`(달력에서 찾은 날짜 칸 수)와 `items`(읽은 건수)를 본다: `calendarDays`가 0이면 달력을 못 받은 것(차단/다른 화면), 있는데 `items`가 0이면 열린 자리가 없거나 읽는 방식이 다른 것.
+- 이어 받는 쪽(2번째 쪽부터)이 실패해도 그 달 전체를 실패로 처리하지 않는다. 받은 날짜까지만 돌려주고, 검색 결과에 "일부 날짜는 불러오지 못한 예약처가 있어요…"를 띄우며, 그 달은 3분만 캐시한 뒤 다시 시도한다(`partialMonthNotes`). 첫 쪽부터 실패하면 예전처럼 그 예약처는 실패다. `/api/fishing/diagnostics`의 `partialError`/`missingFrom`으로 어느 날짜부터 왜 못 받았는지 볼 수 있다.
+- 검색이 통째로 실패(조회 대상 예약처가 전부 실패)하면 서버가 502와 함께 `detail`에 "예약처: 이유"를 담아 보내고(`AllSourcesFailedError`), 화면(`App.tsx`)의 오류 카드가 "원인: …" 한 줄로 보여 준다. 접속 실패 이유는 `describeFetchFailure`가 한글로 풀어 쓴다(시간 초과 15초 / 주소를 찾지 못함 / 연결 거부됨 / HTTP 403 …). 3번 연속 실패한 예약처는 10분간 건너뛰며, 그동안은 "반복 실패로 잠시 건너뜀 - 이전 오류 …"로 나온다.
 - Run API codegen after changing `lib/api-spec/openapi.yaml`.
 
 ## Pointers
