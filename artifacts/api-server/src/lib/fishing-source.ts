@@ -1,3 +1,5 @@
+import { lookup } from "node:dns/promises";
+import net from "node:net";
 import { performance } from "node:perf_hooks";
 import * as cheerio from "cheerio";
 import { asc } from "drizzle-orm";
@@ -98,6 +100,103 @@ const fetchLimiter = createPriorityLimiter({
   maxConcurrent: FETCH_CONCURRENCY,
   reservedForHigh: FETCH_RESERVED_FOR_SEARCH,
 });
+
+// ---------------------------------------------------------------------------
+// 연결 단계(TCP) 실패 대응
+//
+// "연결 시간 초과(UND_ERR_CONNECT_TIMEOUT)"는 사이트가 이상한 HTML을 줘서가 아니라, 서버에서 그
+// 사이트로 접속 자체가 안 되는 상태다 (요청 헤더/파싱 로직과 무관). 같은 사이트가 브라우저에서는
+// 열리는데 서버에서만 안 열릴 때는 그쪽 호스팅이 이 서버의 IP를 막거나 느리게 받는 경우가 많다.
+// 그래서 (1) 같은 사이트에 한꺼번에 몰리지 않게 사이트당 동시 연결을 제한하고, (2) 연결이 안 된
+// 사이트는 잠깐 쉬었다가 다시 시도하고, (3) 직전에 받아 둔 정보가 있으면 그걸 "n분 전 정보"로
+// 보여 주며, (4) 왜 연결이 안 되는지(DNS/IPv4/IPv6/포트)를 서버 로그에 남긴다.
+// ---------------------------------------------------------------------------
+const CONNECT_FAILURE_CODES = new Set(["UND_ERR_CONNECT_TIMEOUT", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH"]);
+const HOST_COOLDOWN_MS = 45_000;
+const PROBE_INTERVAL_MS = 10 * 60 * 1000;
+const PER_HOST_CONCURRENCY = readIntEnv("FISHING_PER_HOST_CONCURRENCY", 2, 1);
+const hostCooldown = new Map<string, { until: number; reason: string }>();
+const lastProbeAt = new Map<string, number>();
+const hostSlots = new Map<string, { active: number; waiting: Array<() => void> }>();
+
+function isConnectFailure(error: unknown): boolean {
+  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
+  for (const candidate of [cause, error]) {
+    if (candidate && typeof candidate === "object" && "code" in candidate) {
+      if (CONNECT_FAILURE_CODES.has(String((candidate as { code: unknown }).code ?? ""))) return true;
+    }
+  }
+  return false;
+}
+
+// 같은 사이트(호스트)로 동시에 나가는 요청 수를 제한한다. 전체 한도(fetchLimiter)와는 별개다.
+async function withHostSlot<T>(host: string, task: () => Promise<T>): Promise<T> {
+  let slot = hostSlots.get(host);
+  if (!slot) {
+    slot = { active: 0, waiting: [] };
+    hostSlots.set(host, slot);
+  }
+  const current = slot;
+  if (current.active >= PER_HOST_CONCURRENCY) {
+    // 자리가 나면 finally에서 active를 줄이지 않고 그대로 넘겨받는다.
+    await new Promise<void>((resolve) => current.waiting.push(resolve));
+  } else {
+    current.active += 1;
+  }
+  try {
+    return await task();
+  } finally {
+    const next = current.waiting.shift();
+    if (next) {
+      next();
+    } else {
+      current.active -= 1;
+      if (current.active === 0 && hostSlots.get(host) === current) hostSlots.delete(host);
+    }
+  }
+}
+
+// 연결이 안 된 사이트의 주소(DNS)와 IPv4/IPv6별 접속 가능 여부를 직접 시험해 로그로 남긴다.
+// 사이트당 10분에 한 번만 하고, 결과를 기다리지 않는다 (진단용이라 검색을 늦추면 안 된다).
+async function probeHostConnectivity(url: URL): Promise<void> {
+  const host = url.hostname;
+  const now = Date.now();
+  if (now - (lastProbeAt.get(host) ?? 0) < PROBE_INTERVAL_MS) return;
+  lastProbeAt.set(host, now);
+  const port = Number(url.port) || (url.protocol === "https:" ? 443 : 80);
+  try {
+    const addresses = await lookup(host, { all: true });
+    const results = await Promise.all(
+      addresses.map(
+        (entry) =>
+          new Promise<string>((resolve) => {
+            const started = performance.now();
+            const socket = net.connect({ host: entry.address, port, family: entry.family });
+            const finish = (label: string) => {
+              socket.destroy();
+              resolve(`${entry.address}(IPv${entry.family}) ${label} ${Math.round(performance.now() - started)}ms`);
+            };
+            socket.setTimeout(4_000);
+            socket.once("connect", () => finish("연결됨"));
+            socket.once("timeout", () => finish("시간 초과"));
+            socket.once("error", (error: NodeJS.ErrnoException) => finish(`오류 ${error.code ?? error.message}`));
+          }),
+      ),
+    );
+    logger.warn({ host, port, results }, `[연결 진단] ${host}:${port} → ${results.join(" | ")}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn({ host, port }, `[연결 진단] ${host} 주소 조회 실패: ${message}`);
+  }
+}
+
+// 가장 최근에 "온전히" 받았던 달 데이터. 새로 받는 데 실패했을 때 대신 보여 주려고 따로 둔다.
+// 일반 캐시(monthCache)와 달리 20분이 지나도, 그리고 "전체 다시 조회"로 캐시를 비워도 남겨 둔다
+// (그래야 사이트가 막힌 순간에 새로고침을 눌러도 화면이 텅 비지 않는다). 예약처 URL이 바뀌었으면 쓰지 않는다.
+const STALE_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+const STALE_RETRY_MS = 60_000;
+const lastGoodMonths = new Map<string, { storedAt: number; baseUrl: string; items: FishingSchedule[] }>();
+const staleNotes = new Map<string, { storedAt: number; reason: string }>();
 
 // 이 시간 이상 걸린 개별 조회는 검색 요약과 별도로 바로 로그에 남긴다.
 const SLOW_FETCH_LOG_MS = 4_000;
@@ -222,6 +321,9 @@ export async function listConfiguredSources(): Promise<FishingSourceWithVessels[
 export function clearSourceCache(): void {
   monthCache.clear();
   partialMonthNotes.clear();
+  staleNotes.clear();
+  // 수동 새로고침이나 예약처 설정 변경 뒤에는 쉬는 중이던 사이트도 바로 다시 시도한다.
+  hostCooldown.clear();
   // 진행 중이던 요청은 끝까지 가도록 두되(기다리던 쪽이 있을 수 있음), 새 캐시에는
   // 결과를 쓰지 못하게 하고 이후 요청이 그 낡은 요청에 합류하지도 않게 한다.
   inflightMonths.clear();
@@ -428,25 +530,40 @@ function describeFetchFailure(error: unknown): string {
 // 해당하고(예전과 동일), 15초 타임아웃은 줄 서서 기다린 시간이 아니라 실제로 요청을
 // 시작한 시점부터 잰다. 구간별 소요 시간은 ctx.trace에 남겨 로그로 확인할 수 있게 한다.
 async function fetchHtml(url: URL, referer: string, ctx: FetchContext): Promise<string> {
+  const host = url.hostname;
+  const cooling = hostCooldown.get(host);
+  if (cooling && cooling.until > Date.now()) {
+    const seconds = Math.ceil((cooling.until - Date.now()) / 1000);
+    throw new Error(`예약 원본에 연결하지 못했습니다: 방금 ${cooling.reason}여서 ${seconds}초 쉬는 중`);
+  }
   const queuedAt = performance.now();
-  const response = await fetchLimiter.run(
-    async () => {
-      const startedAt = performance.now();
-      // 한 달을 여러 쪽에 나눠 받는 예약처는 쪽마다 호출되므로, 덮어쓰지 않고 더한다.
-      if (ctx.trace) ctx.trace.queueMs = (ctx.trace.queueMs ?? 0) + Math.round(startedAt - queuedAt);
-      try {
-        return await fetch(url, {
-          headers: browserHeaders(referer),
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        });
-      } catch (error) {
-        throw new Error(`예약 원본에 연결하지 못했습니다: ${describeFetchFailure(error)}`);
-      } finally {
-        if (ctx.trace) ctx.trace.headersMs = (ctx.trace.headersMs ?? 0) + Math.round(performance.now() - startedAt);
-      }
-    },
-    ctx.priority,
-    ctx.tag,
+  const response = await withHostSlot(host, () =>
+    fetchLimiter.run(
+      async () => {
+        const startedAt = performance.now();
+        // 한 달을 여러 쪽에 나눠 받는 예약처는 쪽마다 호출되므로, 덮어쓰지 않고 더한다.
+        if (ctx.trace) ctx.trace.queueMs = (ctx.trace.queueMs ?? 0) + Math.round(startedAt - queuedAt);
+        try {
+          const result = await fetch(url, {
+            headers: browserHeaders(referer),
+            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          });
+          hostCooldown.delete(host);
+          return result;
+        } catch (error) {
+          const failure = describeFetchFailure(error);
+          if (isConnectFailure(error)) {
+            hostCooldown.set(host, { until: Date.now() + HOST_COOLDOWN_MS, reason: failure });
+            void probeHostConnectivity(url);
+          }
+          throw new Error(`예약 원본에 연결하지 못했습니다: ${failure}`);
+        } finally {
+          if (ctx.trace) ctx.trace.headersMs = (ctx.trace.headersMs ?? 0) + Math.round(performance.now() - startedAt);
+        }
+      },
+      ctx.priority,
+      ctx.tag,
+    ),
   );
   if (!response.ok) {
     // 본문을 읽지 않고 그냥 버리면 연결이 풀리지 않은 채 남을 수 있어서 명시적으로 닫는다.
@@ -880,11 +997,26 @@ function getMonthItems(
             if (partial) partialMonthNotes.set(key, { missingFrom: trace.missingFrom!, message: trace.partialError! });
             else partialMonthNotes.delete(key);
           }
+          if (!(trace.partialError && trace.missingFrom)) {
+            lastGoodMonths.set(key, { storedAt: Date.now(), baseUrl: config.baseUrl, items });
+          }
+          staleNotes.delete(key);
           recordTiming(key, config, year, month, startedAt, trace, { ok: true });
           return items;
         },
         (error: unknown) => {
           recordTiming(key, config, year, month, startedAt, trace, { ok: false, error });
+          // 새로 받지 못했지만 직전에 온전히 받아 둔 데이터가 있으면 그걸 대신 쓴다. 사용자에게는
+          // 검색 결과 경고로 "n분 전 정보"임을 알리고, 잠깐(STALE_RETRY_MS) 캐시해서 실패하는 사이트를
+          // 검색할 때마다 다시 두드리지 않는다.
+          const last = lastGoodMonths.get(key);
+          if (last && last.baseUrl === config.baseUrl && Date.now() - last.storedAt <= STALE_MAX_AGE_MS) {
+            staleNotes.set(key, { storedAt: last.storedAt, reason: summarizeFailureReason(error) });
+            if (epoch === cacheEpoch) {
+              monthCache.set(key, { expiresAt: Date.now() + STALE_RETRY_MS, items: last.items });
+            }
+            return last.items;
+          }
           throw error;
         },
       )
@@ -1317,6 +1449,22 @@ export async function getSchedules(
     }
     return null;
   };
+  // 새로 받지 못해서 직전에 받아 둔 데이터로 대신한 달이 있으면, 가장 오래된 시점을 "n분 전 정보"로 알린다.
+  const staleNoteFor = (sourceId: number): string | null => {
+    let oldest: number | null = null;
+    let reason = "";
+    for (const { year, month } of months) {
+      const note = staleNotes.get(monthKey(sourceId, year, month));
+      if (note && (oldest === null || note.storedAt < oldest)) {
+        oldest = note.storedAt;
+        reason = note.reason;
+      }
+    }
+    if (oldest === null) return null;
+    const minutes = Math.max(1, Math.round((Date.now() - oldest) / 60_000));
+    const age = minutes < 60 ? `${minutes}분` : `${Math.floor(minutes / 60)}시간 ${minutes % 60}분`;
+    return `최신 조회 실패(${reason})로 ${age} 전 정보를 보여줌`;
+  };
   settled.forEach((result, index) => {
     const name = sources[index]?.name || "예약처";
     if (!result) {
@@ -1328,6 +1476,8 @@ export async function getSchedules(
       for (const item of result.value) collected.push(item);
       const note = partialNoteFor(sources[index].id);
       if (note) partialSources.push({ name, message: note });
+      const staleNote = staleNoteFor(sources[index].id);
+      if (staleNote) partialSources.push({ name, message: staleNote });
     }
   });
   // 월 단위로 가져온 데이터라, 실제 요청한 날짜 범위(startDate~endDate)에 맞게 여기서 다시 거른다.
