@@ -1,6 +1,9 @@
 import { lookup } from "node:dns/promises";
+import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 import { performance } from "node:perf_hooks";
+import zlib from "node:zlib";
 import * as cheerio from "cheerio";
 import { asc } from "drizzle-orm";
 import {
@@ -188,6 +191,73 @@ async function probeHostConnectivity(url: URL): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn({ host, port }, `[연결 진단] ${host} 주소 조회 실패: ${message}`);
   }
+}
+
+// "오래 기다리는" 접속 방식. 기본 fetch는 연결(TCP)이 10초 안에 안 되면 포기하는데, 어떤 사이트는
+// 연결 수락이 느려서 10초를 넘기고도 결국 응답하는 경우가 있다. 한 번이라도 연결 시간 초과가 난
+// 사이트(또는 환경변수 FISHING_PATIENT_HOSTS에 적어 둔 사이트)는 이후부터 이 방식으로 받는다.
+// Node 기본 http/https는 연결 제한 시간이 따로 없어서, 전체 제한(FISHING_PATIENT_TIMEOUT_SECONDS,
+// 기본 45초) 안에서는 끝까지 기다린다. 연결 자체가 막혀 있으면(패킷이 버려지는 경우) 기다려도 소용없다.
+const PATIENT_TIMEOUT_MS = readIntEnv("FISHING_PATIENT_TIMEOUT_SECONDS", 45, 10) * 1000;
+const patientHosts = new Set<string>(
+  (process.env["FISHING_PATIENT_HOSTS"] ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+function isTimeoutLike(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+}
+
+// fetch 대신 node:http/https로 받아서, 나머지 코드가 그대로 쓸 수 있게 Response로 감싸 돌려준다.
+function patientGet(
+  url: URL,
+  headers: Record<string, string>,
+  timeoutMs: number,
+  redirectsLeft = 3,
+): Promise<Response> {
+  return new Promise<Response>((resolve, reject) => {
+    const client = url.protocol === "https:" ? https : http;
+    const request = client.request(
+      url,
+      { method: "GET", headers: { ...headers, "Accept-Encoding": "identity" }, signal: AbortSignal.timeout(timeoutMs) },
+      (response) => {
+        const status = response.statusCode ?? 0;
+        const location = response.headers.location;
+        if (status >= 300 && status < 400 && location && redirectsLeft > 0) {
+          response.resume();
+          let next: URL;
+          try {
+            next = new URL(location, url);
+          } catch (error) {
+            reject(error);
+            return;
+          }
+          patientGet(next, headers, timeoutMs, redirectsLeft - 1).then(resolve, reject);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("error", reject);
+        response.on("end", () => {
+          try {
+            let body = Buffer.concat(chunks);
+            const encoding = String(response.headers["content-encoding"] ?? "").toLowerCase();
+            if (encoding === "gzip") body = zlib.gunzipSync(body);
+            else if (encoding === "deflate") body = zlib.inflateSync(body);
+            else if (encoding === "br") body = zlib.brotliDecompressSync(body);
+            const noBody = status === 204 || status === 205 || status === 304;
+            resolve(new Response(noBody ? null : new Uint8Array(body), { status: status >= 200 && status <= 599 ? status : 502 }));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
+    request.on("error", reject);
+    request.end();
+  });
 }
 
 // 가장 최근에 "온전히" 받았던 달 데이터. 새로 받는 데 실패했을 때 대신 보여 주려고 따로 둔다.
@@ -543,16 +613,35 @@ async function fetchHtml(url: URL, referer: string, ctx: FetchContext): Promise<
         const startedAt = performance.now();
         // 한 달을 여러 쪽에 나눠 받는 예약처는 쪽마다 호출되므로, 덮어쓰지 않고 더한다.
         if (ctx.trace) ctx.trace.queueMs = (ctx.trace.queueMs ?? 0) + Math.round(startedAt - queuedAt);
+        const hostKey = host.toLowerCase();
+        const patientMode = patientHosts.has(hostKey);
+        const headers = browserHeaders(referer);
         try {
-          const result = await fetch(url, {
-            headers: browserHeaders(referer),
-            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-          });
+          const result = patientMode
+            ? await patientGet(url, headers, PATIENT_TIMEOUT_MS)
+            : await fetch(url, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
           hostCooldown.delete(host);
           return result;
-        } catch (error) {
-          const failure = describeFetchFailure(error);
-          if (isConnectFailure(error)) {
+        } catch (firstError) {
+          let error = firstError;
+          let waitedLonger = patientMode;
+          if (!patientMode && isConnectFailure(firstError)) {
+            // 연결이 10초 안에 안 됐다. 이 사이트는 이후 "오래 기다리는" 방식으로 받고, 지금 요청도 바로
+            // 그 방식으로 한 번 더 시도한다 (연결이 느릴 뿐이라면 이번에 받아진다).
+            patientHosts.add(hostKey);
+            waitedLonger = true;
+            logger.warn({ host }, `[연결 느림] ${host} 연결 시간 초과 → 이후 최대 ${PATIENT_TIMEOUT_MS / 1000}초까지 기다리는 방식으로 전환`);
+            try {
+              const retry = await patientGet(url, headers, PATIENT_TIMEOUT_MS);
+              hostCooldown.delete(host);
+              return retry;
+            } catch (retryError) {
+              error = retryError;
+            }
+          }
+          const timedOut = waitedLonger && isTimeoutLike(error);
+          const failure = timedOut ? `응답 시간 초과 ${PATIENT_TIMEOUT_MS / 1000}초` : describeFetchFailure(error);
+          if (isConnectFailure(error) || timedOut) {
             hostCooldown.set(host, { until: Date.now() + HOST_COOLDOWN_MS, reason: failure });
             void probeHostConnectivity(url);
           }
@@ -1396,7 +1485,15 @@ export async function getSchedules(
   // (예약처 × 월) 요청을 "월 순서대로" 만든다: 모든 예약처의 첫 달을 먼저, 그다음 달을 요청한다.
   // 그래야 줄이 길어도 가까운 달 데이터부터 채워진다. 같은 키가 이미 캐시에 있거나 진행 중이면
   // getMonthItems가 새 요청 없이 그걸 재사용한다.
-  const skipped = sources.map((source) => isSkipped(source.id));
+  // 오래 기다리는 방식으로 받는 사이트는 느릴 뿐 결과는 올 수 있으므로, 반복 실패 건너뛰기로 막지 않는다.
+  const skipped = sources.map((source) => {
+    try {
+      if (patientHosts.has(new URL(source.baseUrl).hostname.toLowerCase())) return undefined;
+    } catch {
+      // 주소 형식이 이상하면 일반 규칙을 따른다.
+    }
+    return isSkipped(source.id);
+  });
   const monthRequests: Array<Array<Promise<FishingSchedule[]>>> = sources.map(() => []);
   const requestedKeys: string[] = [];
   let cachedMonths = 0;
