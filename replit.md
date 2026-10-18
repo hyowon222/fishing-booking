@@ -25,6 +25,8 @@
 - `artifacts/boat-fishing-lookup` — responsive React/Vite lookup interface
 - `artifacts/api-server/src/lib/fishing-source.ts` — public reservation source fetch and parsing (더피싱-style and SUNSANG24), 20-minute per-source month cache with in-flight de-duplication, failure cooldown, and badatime tide strength
 - `artifacts/api-server/src/lib/fetch-scheduler.ts` — priority-aware fetch limiter (`high` = a user's search, `low` = background filter-options warm-up) and soft-deadline helpers
+- `artifacts/api-server/src/lib/relay.ts` — optional Seoul relay client (off unless `FISHING_RELAY_URL` + `FISHING_RELAY_TOKEN` are set)
+- `seoul-relay/` — the relay function itself (Vercel, pinned to Seoul `icn1`) with a Korean setup guide in its README; not part of the pnpm workspace
 - `artifacts/api-server/src/routes/fishing.ts` — schedule, filter-options, source CRUD/detect, and `/fishing/diagnostics` endpoints
 - `artifacts/boat-fishing-lookup/src/hooks/use-auto-retry-pending.ts` — re-queries automatically (max 2×) while the server reports slow sources
 - `lib/api-spec/openapi.yaml` — source of truth for the generated API client and Zod response schemas
@@ -41,7 +43,7 @@
 - `/fishing/schedules` answers after `FISHING_SEARCH_SOFT_DEADLINE_MS` with whatever sources have responded. Slower sources keep loading in the background and are listed in `warning` ("응답이 늦은 예약처는 …"); the web UI recognises that exact phrase and re-queries automatically (max 2×). Keep the server message and `PENDING_SOURCES_NOTICE` in `use-auto-retry-pending.ts` in sync.
 - `/fishing/options` only scans the current and next month, at `low` priority, and never waits for tide data (it just warms the badatime cache).
 - Tide strength is prefetched in parallel with the scrape; a search waits at most 2 s for it after scraping, and badatime failures are not retried for 5 minutes.
-- Tunable env vars (Render): `FISHING_FETCH_CONCURRENCY` (default 10), `FISHING_FETCH_RESERVED` (default 4), `FISHING_SEARCH_SOFT_DEADLINE_MS` (default 6000; `0` = wait for every source).
+- Tunable env vars (Render): `FISHING_FETCH_CONCURRENCY` (default 10), `FISHING_FETCH_RESERVED` (default 4), `FISHING_SEARCH_SOFT_DEADLINE_MS` (default 6000; `0` = wait for every source). Optional Seoul relay: `FISHING_RELAY_URL`, `FISHING_RELAY_TOKEN`, `FISHING_RELAY_HOSTS`.
 - Diagnostics: `GET /api/fishing/diagnostics` shows per source-month queue / response / body / parse times; each search also logs one `[검색] …` line. "서버 바쁨" near 100% means CPU-bound, near 0% means waiting on the reservation sites.
 
 ## Product
@@ -64,6 +66,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 - 이어 받는 쪽(2번째 쪽부터)이 실패해도 그 달 전체를 실패로 처리하지 않는다. 받은 날짜까지만 돌려주고, 검색 결과에 "일부 날짜는 불러오지 못한 예약처가 있어요…"를 띄우며, 그 달은 3분만 캐시한 뒤 다시 시도한다(`partialMonthNotes`). 첫 쪽부터 실패하면 예전처럼 그 예약처는 실패다. `/api/fishing/diagnostics`의 `partialError`/`missingFrom`으로 어느 날짜부터 왜 못 받았는지 볼 수 있다.
 - 검색이 통째로 실패(조회 대상 예약처가 전부 실패)하면 서버가 502와 함께 `detail`에 "예약처: 이유"를 담아 보내고(`AllSourcesFailedError`), 화면(`App.tsx`)의 오류 카드가 "원인: …" 한 줄로 보여 준다. 접속 실패 이유는 `describeFetchFailure`가 한글로 풀어 쓴다(시간 초과 15초 / 주소를 찾지 못함 / 연결 거부됨 / HTTP 403 …). 3번 연속 실패한 예약처는 10분간 건너뛰며, 그동안은 "반복 실패로 잠시 건너뜀 - 이전 오류 …"로 나온다.
 - Run API codegen after changing `lib/api-spec/openapi.yaml`.
+- Some reservation sites drop connections from overseas/cloud IPs (Render is in the US), which shows up as `연결 시간 초과 UND_ERR_CONNECT_TIMEOUT`. With the Seoul relay configured (`FISHING_RELAY_URL`, `FISHING_RELAY_TOKEN`, optional `FISHING_RELAY_HOSTS`), a direct connect failure (timeout/refused/reset/unreachable) or HTTP 403 is retried once through the relay; a host that succeeds via relay is fetched via relay first for 6 hours. Without the env vars nothing changes. Relay failures read `서울 중계로도 못 열림: …` (the site refuses Korean IPs too), `중계 서버 토큰이 맞지 않음`, etc. `/api/fishing/diagnostics` shows `relay` (configured/forced/learned hosts) and a per-fetch `via`. Only http/https public hosts are relayed; keep the token out of the repo.
+- Sources that fail in a search are returned as `unavailableSources` (`{name, url, reason}`; the 502 body carries the same list as `unavailable`) and the UI shows them as "직접 열기" links. `url` is null for anything that is not an http(s) address.
 
 ## Pointers
 

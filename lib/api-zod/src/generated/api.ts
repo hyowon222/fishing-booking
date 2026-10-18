@@ -51,7 +51,12 @@ export const SearchFishingSchedulesResponse = zod.object({
   "searchedAt": zod.coerce.date(),
   "source": zod.string().describe('URL for one source, or a label when multiple sources are configured'),
   "cachedUntil": zod.coerce.date().nullable(),
-  "warning": zod.string().nullable()
+  "warning": zod.string().nullable(),
+  "unavailableSources": zod.array(zod.object({
+  "name": zod.string(),
+  "url": zod.string().nullable().describe('직접 열어 볼 수 있는 예약처 주소. http/https 주소가 아니면 null.'),
+  "reason": zod.string().describe('불러오지 못한 이유를 줄인 한 줄 (예 - 연결 시간 초과 UND_ERR_CONNECT_TIMEOUT)')
+})).optional().describe('이번 검색에서 끝내 불러오지 못한 예약처. 화면에서 직접 열어 볼 수 있는 링크로 보여 준다.')
 })
 
 

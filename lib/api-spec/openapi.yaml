@@ -380,6 +380,26 @@ components:
           format: date-time
         warning:
           type: ["string", "null"]
+        unavailableSources:
+          type: array
+          description: 이번 검색에서 끝내 불러오지 못한 예약처. 화면에서 직접 열어 볼 수 있는 링크로 보여 준다.
+          items:
+            $ref: "#/components/schemas/UnavailableSource"
+    UnavailableSource:
+      type: object
+      required:
+        - name
+        - url
+        - reason
+      properties:
+        name:
+          type: string
+        url:
+          type: ["string", "null"]
+          description: 직접 열어 볼 수 있는 예약처 주소. http/https 주소가 아니면 null.
+        reason:
+          type: string
+          description: 불러오지 못한 이유를 줄인 한 줄 (예 - 연결 시간 초과 UND_ERR_CONNECT_TIMEOUT)
     FishingFilterOptions:
       type: object
       required:
@@ -565,4 +585,12 @@ components:
       properties:
         error:
           type: string
+        detail:
+          type: string
+          description: 일정 조회가 실패한 원인 한 줄 (예 - 대야도 피싱아일랜드 - 연결 시간 초과). 검색 오류 화면에 "원인:"으로 보여 준다.
+        unavailable:
+          type: array
+          description: 일정 조회가 모든 예약처에서 실패했을 때, 직접 열어 볼 수 있도록 알려 주는 예약처 목록.
+          items:
+            $ref: "#/components/schemas/UnavailableSource"
 

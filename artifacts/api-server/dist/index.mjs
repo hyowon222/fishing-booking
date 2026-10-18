@@ -15201,7 +15201,7 @@ var require_mime_types = __commonJS({
     exports.contentType = contentType;
     exports.extension = extension;
     exports.extensions = /* @__PURE__ */ Object.create(null);
-    exports.lookup = lookup;
+    exports.lookup = lookup2;
     exports.types = /* @__PURE__ */ Object.create(null);
     exports._extensionConflicts = [];
     populateMaps(exports.extensions, exports.types);
@@ -15244,7 +15244,7 @@ var require_mime_types = __commonJS({
       }
       return exts[0];
     }
-    function lookup(path) {
+    function lookup2(path) {
       if (!path || typeof path !== "string") {
         return false;
       }
@@ -15508,7 +15508,7 @@ var require_read = __commonJS({
     var getBody = require_raw_body();
     var iconv2 = require_lib();
     var onFinished = require_on_finished();
-    var zlib = __require("node:zlib");
+    var zlib2 = __require("node:zlib");
     var hasBody = require_type_is().hasBody;
     var { getCharset } = require_utils();
     module.exports = read;
@@ -15633,13 +15633,13 @@ var require_read = __commonJS({
       switch (encoding) {
         case "deflate":
           debug("inflate body");
-          return zlib.createInflate();
+          return zlib2.createInflate();
         case "gzip":
           debug("gunzip body");
-          return zlib.createGunzip();
+          return zlib2.createGunzip();
         case "br":
           debug("brotli decompress body");
-          return zlib.createBrotliDecompress();
+          return zlib2.createBrotliDecompress();
         default:
           throw createError(415, 'unsupported content encoding "' + encoding + '"', {
             encoding,
@@ -18830,7 +18830,7 @@ var require_view = __commonJS({
       this.engine = opts.engines[this.ext];
       this.path = this.lookup(fileName);
     }
-    View2.prototype.lookup = function lookup(name) {
+    View2.prototype.lookup = function lookup2(name) {
       var path2;
       var roots = [].concat(this.root);
       debug('lookup "%s"', name);
@@ -21115,7 +21115,7 @@ var require_application = __commonJS({
     var finalhandler = require_finalhandler();
     var debug = require_src()("express:application");
     var View2 = require_view();
-    var http = __require("node:http");
+    var http2 = __require("node:http");
     var methods = require_utils3().methods;
     var compileETag = require_utils3().compileETag;
     var compileQueryParser = require_utils3().compileQueryParser;
@@ -21348,7 +21348,7 @@ var require_application = __commonJS({
       tryRender(view, renderOptions, done);
     };
     app2.listen = function listen() {
-      var server = http.createServer(this);
+      var server = http2.createServer(this);
       var args = slice2.call(arguments);
       if (typeof args[args.length - 1] === "function") {
         var done = args[args.length - 1] = once(args[args.length - 1]);
@@ -22059,12 +22059,12 @@ var require_request = __commonJS({
     var accepts = require_accepts();
     var isIP = __require("node:net").isIP;
     var typeis = require_type_is();
-    var http = __require("node:http");
+    var http2 = __require("node:http");
     var fresh = require_fresh();
     var parseRange = require_range_parser();
     var parse10 = require_parseurl();
     var proxyaddr = require_proxy_addr();
-    var req = Object.create(http.IncomingMessage.prototype);
+    var req = Object.create(http2.IncomingMessage.prototype);
     module.exports = req;
     req.get = req.header = function header(name) {
       if (!name) {
@@ -23158,7 +23158,7 @@ var require_response = __commonJS({
     var deprecate = require_depd()("express");
     var encodeUrl = require_encodeurl();
     var escapeHtml = require_escape_html();
-    var http = __require("node:http");
+    var http2 = __require("node:http");
     var onFinished = require_on_finished();
     var mime = require_mime_types();
     var path = __require("node:path");
@@ -23174,7 +23174,7 @@ var require_response = __commonJS({
     var resolve = path.resolve;
     var vary = require_vary();
     var { Buffer: Buffer2 } = __require("node:buffer");
-    var res = Object.create(http.ServerResponse.prototype);
+    var res = Object.create(http2.ServerResponse.prototype);
     module.exports = res;
     res.status = function status(code) {
       if (!Number.isInteger(code)) {
@@ -31686,8 +31686,8 @@ var require_stream = __commonJS({
     };
     function getNodejsStreamFuncs() {
       function getStream2(ssl) {
-        const net = __require("net");
-        return new net.Socket();
+        const net2 = __require("net");
+        return new net2.Socket();
       }
       function getSecureStream2(options) {
         const tls = __require("tls");
@@ -31825,8 +31825,8 @@ var require_connection = __commonJS({
         if (self.sslNegotiation === "direct") {
           options.ALPNProtocols = ["postgresql"];
         }
-        const net = __require("net");
-        if (net.isIP && net.isIP(host2) === 0) {
+        const net2 = __require("net");
+        if (net2.isIP && net2.isIP(host2) === 0) {
           options.servername = host2;
         }
         try {
@@ -39338,7 +39338,7 @@ var require_util = __commonJS({
     var { kDestroyed, kBodyUsed, kListeners, kBody } = require_symbols2();
     var { IncomingMessage } = __require("node:http");
     var stream = __require("node:stream");
-    var net = __require("node:net");
+    var net2 = __require("node:net");
     var { stringify: stringify2 } = __require("node:querystring");
     var { EventEmitter: EE } = __require("node:events");
     var timers = require_timers();
@@ -39487,7 +39487,7 @@ var require_util = __commonJS({
       }
       assert2(typeof host2 === "string");
       const servername = getHostname(host2);
-      if (net.isIP(servername)) {
+      if (net2.isIP(servername)) {
         return "";
       }
       return servername;
@@ -41150,7 +41150,7 @@ var require_dispatcher_base = __commonJS({
 var require_connect = __commonJS({
   "../../node_modules/.pnpm/undici@7.29.1/node_modules/undici/lib/core/connect.js"(exports, module) {
     "use strict";
-    var net = __require("node:net");
+    var net2 = __require("node:net");
     var assert2 = __require("node:assert");
     var util2 = require_util();
     var { InvalidArgumentError } = require_errors();
@@ -41233,7 +41233,7 @@ var require_connect = __commonJS({
         } else {
           assert2(!httpSocket, "httpSocket can only be sent on TLS update");
           port2 = port2 || 80;
-          socket = net.connect({
+          socket = net2.connect({
             highWaterMark: 64 * 1024,
             // Same as nodejs fs streams.
             ...options,
@@ -43323,7 +43323,7 @@ var require_util2 = __commonJS({
   "../../node_modules/.pnpm/undici@7.29.1/node_modules/undici/lib/web/fetch/util.js"(exports, module) {
     "use strict";
     var { Transform } = __require("node:stream");
-    var zlib = __require("node:zlib");
+    var zlib2 = __require("node:zlib");
     var { redirectStatusSet, referrerPolicyTokens, badPortsSet } = require_constants4();
     var { getGlobalOrigin } = require_global();
     var { collectAnHTTPQuotedString, parseMIMEType } = require_data_url();
@@ -43926,7 +43926,7 @@ var require_util2 = __commonJS({
             callback();
             return;
           }
-          this._inflateStream = (chunk[0] & 15) === 8 ? zlib.createInflate(this.#zlibOptions) : zlib.createInflateRaw(this.#zlibOptions);
+          this._inflateStream = (chunk[0] & 15) === 8 ? zlib2.createInflate(this.#zlibOptions) : zlib2.createInflateRaw(this.#zlibOptions);
           this._inflateStream.on("data", this.push.bind(this));
           this._inflateStream.on("end", () => this.push(null));
           this._inflateStream.on("error", (err) => this.destroy(err));
@@ -46910,8 +46910,8 @@ var require_client3 = __commonJS({
   "../../node_modules/.pnpm/undici@7.29.1/node_modules/undici/lib/dispatcher/client.js"(exports, module) {
     "use strict";
     var assert2 = __require("node:assert");
-    var net = __require("node:net");
-    var http = __require("node:http");
+    var net2 = __require("node:net");
+    var http2 = __require("node:http");
     var util2 = require_util();
     var { ClientStats } = require_stats();
     var { channels } = require_diagnostics();
@@ -46969,7 +46969,7 @@ var require_client3 = __commonJS({
     var connectH1 = require_client_h1();
     var connectH2 = require_client_h2();
     var kClosedResolve = /* @__PURE__ */ Symbol("kClosedResolve");
-    var getDefaultNodeMaxHeaderSize = http && http.maxHeaderSize && Number.isInteger(http.maxHeaderSize) && http.maxHeaderSize > 0 ? () => http.maxHeaderSize : () => {
+    var getDefaultNodeMaxHeaderSize = http2 && http2.maxHeaderSize && Number.isInteger(http2.maxHeaderSize) && http2.maxHeaderSize > 0 ? () => http2.maxHeaderSize : () => {
       throw new InvalidArgumentError("http module not available or http.maxHeaderSize invalid");
     };
     var noop = () => {
@@ -47065,7 +47065,7 @@ var require_client3 = __commonJS({
         if (maxRequestsPerClient != null && (!Number.isInteger(maxRequestsPerClient) || maxRequestsPerClient < 0)) {
           throw new InvalidArgumentError("maxRequestsPerClient must be a positive number");
         }
-        if (localAddress != null && (typeof localAddress !== "string" || net.isIP(localAddress) === 0)) {
+        if (localAddress != null && (typeof localAddress !== "string" || net2.isIP(localAddress) === 0)) {
           throw new InvalidArgumentError("localAddress must be valid string IP address");
         }
         if (maxResponseSize != null && (!Number.isInteger(maxResponseSize) || maxResponseSize < -1)) {
@@ -47245,7 +47245,7 @@ var require_client3 = __commonJS({
         const idx = hostname2.indexOf("]");
         assert2(idx !== -1);
         const ip = hostname2.substring(1, idx);
-        assert2(net.isIPv6(ip));
+        assert2(net2.isIPv6(ip));
         hostname2 = ip;
       }
       client[kConnecting] = true;
@@ -48190,10 +48190,10 @@ var require_socks5_utils = __commonJS({
   "../../node_modules/.pnpm/undici@7.29.1/node_modules/undici/lib/core/socks5-utils.js"(exports, module) {
     "use strict";
     var { Buffer: Buffer2 } = __require("node:buffer");
-    var net = __require("node:net");
+    var net2 = __require("node:net");
     var { InvalidArgumentError } = require_errors();
     function parseAddress(address) {
-      if (net.isIPv4(address)) {
+      if (net2.isIPv4(address)) {
         const parts = address.split(".").map(Number);
         return {
           type: 1,
@@ -48201,7 +48201,7 @@ var require_socks5_utils = __commonJS({
           buffer: Buffer2.from(parts)
         };
       }
-      if (net.isIPv6(address)) {
+      if (net2.isIPv6(address)) {
         return {
           type: 4,
           // IPv6
@@ -48224,7 +48224,7 @@ var require_socks5_utils = __commonJS({
       if (address.includes(".")) {
         const lastColonIndex = address.lastIndexOf(":");
         const ipv4Part = address.slice(lastColonIndex + 1);
-        if (net.isIPv4(ipv4Part)) {
+        if (net2.isIPv4(ipv4Part)) {
           const octets = ipv4Part.split(".").map(Number);
           const high = (octets[0] << 8 | octets[1]).toString(16);
           const low = (octets[2] << 8 | octets[3]).toString(16);
@@ -53265,7 +53265,7 @@ var require_dns = __commonJS({
   "../../node_modules/.pnpm/undici@7.29.1/node_modules/undici/lib/interceptor/dns.js"(exports, module) {
     "use strict";
     var { isIP } = __require("node:net");
-    var { lookup } = __require("node:dns");
+    var { lookup: lookup2 } = __require("node:dns");
     var DecoratorHandler = require_decorator_handler();
     var { InvalidArgumentError, InformationalError } = require_errors();
     var maxInt = Math.pow(2, 31) - 1;
@@ -53455,7 +53455,7 @@ var require_dns = __commonJS({
         }
       }
       #defaultLookup(origin, opts, cb) {
-        lookup(
+        lookup2(
           origin.hostname,
           {
             all: true,
@@ -58839,7 +58839,7 @@ var require_fetch = __commonJS({
     } = require_response2();
     var { HeadersList } = require_headers();
     var { Request, cloneRequest, getRequestDispatcher, getRequestState } = require_request3();
-    var zlib = __require("node:zlib");
+    var zlib2 = __require("node:zlib");
     var {
       makePolicyContainer,
       clonePolicyContainer,
@@ -59841,28 +59841,28 @@ var require_fetch = __commonJS({
                 for (let i = codings.length - 1; i >= 0; --i) {
                   const coding = codings[i].trim();
                   if (coding === "x-gzip" || coding === "gzip") {
-                    decoders.push(zlib.createGunzip({
+                    decoders.push(zlib2.createGunzip({
                       // Be less strict when decoding compressed responses, since sometimes
                       // servers send slightly invalid responses that are still accepted
                       // by common browsers.
                       // Always using Z_SYNC_FLUSH is what cURL does.
-                      flush: zlib.constants.Z_SYNC_FLUSH,
-                      finishFlush: zlib.constants.Z_SYNC_FLUSH
+                      flush: zlib2.constants.Z_SYNC_FLUSH,
+                      finishFlush: zlib2.constants.Z_SYNC_FLUSH
                     }));
                   } else if (coding === "deflate") {
                     decoders.push(createInflate({
-                      flush: zlib.constants.Z_SYNC_FLUSH,
-                      finishFlush: zlib.constants.Z_SYNC_FLUSH
+                      flush: zlib2.constants.Z_SYNC_FLUSH,
+                      finishFlush: zlib2.constants.Z_SYNC_FLUSH
                     }));
                   } else if (coding === "br") {
-                    decoders.push(zlib.createBrotliDecompress({
-                      flush: zlib.constants.BROTLI_OPERATION_FLUSH,
-                      finishFlush: zlib.constants.BROTLI_OPERATION_FLUSH
+                    decoders.push(zlib2.createBrotliDecompress({
+                      flush: zlib2.constants.BROTLI_OPERATION_FLUSH,
+                      finishFlush: zlib2.constants.BROTLI_OPERATION_FLUSH
                     }));
                   } else if (coding === "zstd" && hasZstd) {
-                    decoders.push(zlib.createZstdDecompress({
-                      flush: zlib.constants.ZSTD_e_continue,
-                      finishFlush: zlib.constants.ZSTD_e_end
+                    decoders.push(zlib2.createZstdDecompress({
+                      flush: zlib2.constants.ZSTD_e_continue,
+                      finishFlush: zlib2.constants.ZSTD_e_end
                     }));
                   } else {
                     decoders.length = 0;
@@ -87007,7 +87007,12 @@ var pool = new Pool3({ connectionString: process.env.DATABASE_URL });
 var db = drizzle(pool, { schema: schema_exports });
 
 // src/lib/fishing-source.ts
+import { lookup } from "node:dns/promises";
+import http from "node:http";
+import https from "node:https";
+import net from "node:net";
 import { performance as performance2 } from "node:perf_hooks";
+import zlib from "node:zlib";
 
 // ../../node_modules/.pnpm/cheerio@1.2.0/node_modules/cheerio/dist/esm/options.js
 var defaultOpts = {
@@ -101598,6 +101603,8 @@ var logger = (0, import_pino.default)({
 // src/lib/fishing-source.ts
 var CACHE_TTL_MS = 20 * 60 * 1e3;
 var monthCache = /* @__PURE__ */ new Map();
+var PARTIAL_CACHE_TTL_MS = 3 * 60 * 1e3;
+var partialMonthNotes = /* @__PURE__ */ new Map();
 var inflightMonths = /* @__PURE__ */ new Map();
 var cacheEpoch = 0;
 var FETCH_CONCURRENCY = readIntEnv("FISHING_FETCH_CONCURRENCY", 10);
@@ -101607,6 +101614,130 @@ var fetchLimiter = createPriorityLimiter({
   maxConcurrent: FETCH_CONCURRENCY,
   reservedForHigh: FETCH_RESERVED_FOR_SEARCH
 });
+var CONNECT_FAILURE_CODES = /* @__PURE__ */ new Set(["UND_ERR_CONNECT_TIMEOUT", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH"]);
+var HOST_COOLDOWN_MS = 45e3;
+var PROBE_INTERVAL_MS = 10 * 60 * 1e3;
+var PER_HOST_CONCURRENCY = readIntEnv("FISHING_PER_HOST_CONCURRENCY", 2, 1);
+var hostCooldown = /* @__PURE__ */ new Map();
+var lastProbeAt = /* @__PURE__ */ new Map();
+var hostSlots = /* @__PURE__ */ new Map();
+function isConnectFailure(error40) {
+  const cause = error40 instanceof Error ? error40.cause : void 0;
+  for (const candidate of [cause, error40]) {
+    if (candidate && typeof candidate === "object" && "code" in candidate) {
+      if (CONNECT_FAILURE_CODES.has(String(candidate.code ?? ""))) return true;
+    }
+  }
+  return false;
+}
+async function withHostSlot(host2, task) {
+  let slot = hostSlots.get(host2);
+  if (!slot) {
+    slot = { active: 0, waiting: [] };
+    hostSlots.set(host2, slot);
+  }
+  const current = slot;
+  if (current.active >= PER_HOST_CONCURRENCY) {
+    await new Promise((resolve) => current.waiting.push(resolve));
+  } else {
+    current.active += 1;
+  }
+  try {
+    return await task();
+  } finally {
+    const next2 = current.waiting.shift();
+    if (next2) {
+      next2();
+    } else {
+      current.active -= 1;
+      if (current.active === 0 && hostSlots.get(host2) === current) hostSlots.delete(host2);
+    }
+  }
+}
+async function probeHostConnectivity(url2) {
+  const host2 = url2.hostname;
+  const now = Date.now();
+  if (now - (lastProbeAt.get(host2) ?? 0) < PROBE_INTERVAL_MS) return;
+  lastProbeAt.set(host2, now);
+  const port2 = Number(url2.port) || (url2.protocol === "https:" ? 443 : 80);
+  try {
+    const addresses = await lookup(host2, { all: true });
+    const results = await Promise.all(
+      addresses.map(
+        (entry) => new Promise((resolve) => {
+          const started = performance2.now();
+          const socket = net.connect({ host: entry.address, port: port2, family: entry.family });
+          const finish = (label) => {
+            socket.destroy();
+            resolve(`${entry.address}(IPv${entry.family}) ${label} ${Math.round(performance2.now() - started)}ms`);
+          };
+          socket.setTimeout(4e3);
+          socket.once("connect", () => finish("\uC5F0\uACB0\uB428"));
+          socket.once("timeout", () => finish("\uC2DC\uAC04 \uCD08\uACFC"));
+          socket.once("error", (error40) => finish(`\uC624\uB958 ${error40.code ?? error40.message}`));
+        })
+      )
+    );
+    logger.warn({ host: host2, port: port2, results }, `[\uC5F0\uACB0 \uC9C4\uB2E8] ${host2}:${port2} \u2192 ${results.join(" | ")}`);
+  } catch (error40) {
+    const message = error40 instanceof Error ? error40.message : String(error40);
+    logger.warn({ host: host2, port: port2 }, `[\uC5F0\uACB0 \uC9C4\uB2E8] ${host2} \uC8FC\uC18C \uC870\uD68C \uC2E4\uD328: ${message}`);
+  }
+}
+var PATIENT_TIMEOUT_MS = readIntEnv("FISHING_PATIENT_TIMEOUT_SECONDS", 45, 10) * 1e3;
+var patientHosts = new Set(
+  (process.env["FISHING_PATIENT_HOSTS"] ?? "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean)
+);
+function isTimeoutLike(error40) {
+  return error40 instanceof Error && (error40.name === "TimeoutError" || error40.name === "AbortError");
+}
+function patientGet(url2, headers, timeoutMs, redirectsLeft = 3) {
+  return new Promise((resolve, reject) => {
+    const client = url2.protocol === "https:" ? https : http;
+    const request = client.request(
+      url2,
+      { method: "GET", headers: { ...headers, "Accept-Encoding": "identity" }, signal: AbortSignal.timeout(timeoutMs) },
+      (response) => {
+        const status = response.statusCode ?? 0;
+        const location = response.headers.location;
+        if (status >= 300 && status < 400 && location && redirectsLeft > 0) {
+          response.resume();
+          let next2;
+          try {
+            next2 = new URL(location, url2);
+          } catch (error40) {
+            reject(error40);
+            return;
+          }
+          patientGet(next2, headers, timeoutMs, redirectsLeft - 1).then(resolve, reject);
+          return;
+        }
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("error", reject);
+        response.on("end", () => {
+          try {
+            let body = Buffer.concat(chunks);
+            const encoding = String(response.headers["content-encoding"] ?? "").toLowerCase();
+            if (encoding === "gzip") body = zlib.gunzipSync(body);
+            else if (encoding === "deflate") body = zlib.inflateSync(body);
+            else if (encoding === "br") body = zlib.brotliDecompressSync(body);
+            const noBody = status === 204 || status === 205 || status === 304;
+            resolve(new Response(noBody ? null : new Uint8Array(body), { status: status >= 200 && status <= 599 ? status : 502 }));
+          } catch (error40) {
+            reject(error40);
+          }
+        });
+      }
+    );
+    request.on("error", reject);
+    request.end();
+  });
+}
+var STALE_MAX_AGE_MS = 3 * 60 * 60 * 1e3;
+var STALE_RETRY_MS = 6e4;
+var lastGoodMonths = /* @__PURE__ */ new Map();
+var staleNotes = /* @__PURE__ */ new Map();
 var SLOW_FETCH_LOG_MS = 4e3;
 var USER_FETCH_CONTEXT = { priority: "high" };
 var monthTimings = /* @__PURE__ */ new Map();
@@ -101672,6 +101803,9 @@ async function listConfiguredSources() {
 }
 function clearSourceCache() {
   monthCache.clear();
+  partialMonthNotes.clear();
+  staleNotes.clear();
+  hostCooldown.clear();
   inflightMonths.clear();
   monthTimings.clear();
   cacheEpoch += 1;
@@ -101791,30 +101925,98 @@ function browserHeaders(referer) {
     Referer: referer
   };
 }
-async function fetchHtml(url2, referer, ctx) {
-  const queuedAt = performance2.now();
-  const response = await fetchLimiter.run(
-    async () => {
-      const startedAt = performance2.now();
-      if (ctx.trace) ctx.trace.queueMs = (ctx.trace.queueMs ?? 0) + Math.round(startedAt - queuedAt);
-      try {
-        return await fetch(url2, {
-          headers: browserHeaders(referer),
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
-        });
-      } finally {
-        if (ctx.trace) ctx.trace.headersMs = (ctx.trace.headersMs ?? 0) + Math.round(performance2.now() - startedAt);
+function describeFetchFailure(error40) {
+  if (error40 instanceof Error && (error40.name === "TimeoutError" || error40.name === "AbortError")) {
+    return `\uC751\uB2F5 \uC2DC\uAC04 \uCD08\uACFC ${FETCH_TIMEOUT_MS / 1e3}\uCD08`;
+  }
+  const cause = error40 instanceof Error ? error40.cause : void 0;
+  let code = "";
+  for (const candidate of [cause, error40]) {
+    if (candidate && typeof candidate === "object" && "code" in candidate) {
+      const value = String(candidate.code ?? "");
+      if (value) {
+        code = value;
+        break;
       }
-    },
-    ctx.priority,
-    ctx.tag
+    }
+  }
+  const meaning = {
+    ENOTFOUND: "\uC8FC\uC18C\uB97C \uCC3E\uC9C0 \uBABB\uD568",
+    EAI_AGAIN: "\uC8FC\uC18C\uB97C \uCC3E\uC9C0 \uBABB\uD568",
+    ECONNREFUSED: "\uC5F0\uACB0 \uAC70\uBD80\uB428",
+    ECONNRESET: "\uC5F0\uACB0\uC774 \uB04A\uAE40",
+    ETIMEDOUT: "\uC5F0\uACB0 \uC2DC\uAC04 \uCD08\uACFC",
+    UND_ERR_CONNECT_TIMEOUT: "\uC5F0\uACB0 \uC2DC\uAC04 \uCD08\uACFC",
+    UND_ERR_SOCKET: "\uC5F0\uACB0\uC774 \uB04A\uAE40",
+    EHOSTUNREACH: "\uC11C\uBC84\uC5D0 \uB2FF\uC9C0 \uBABB\uD568",
+    ENETUNREACH: "\uC11C\uBC84\uC5D0 \uB2FF\uC9C0 \uBABB\uD568"
+  };
+  const label = meaning[code] ?? (/CERT|TLS|SSL/i.test(code) ? "\uBCF4\uC548 \uC5F0\uACB0 \uC778\uC99D\uC11C \uBB38\uC81C" : "\uC5F0\uACB0 \uC2E4\uD328");
+  const raw = cause instanceof Error ? cause.message : error40 instanceof Error ? error40.message : String(error40);
+  return code ? `${label} ${code}` : `${label} ${raw.replace(/[()]/g, "").slice(0, 60)}`.trim();
+}
+async function fetchHtml(url2, referer, ctx) {
+  const host2 = url2.hostname;
+  const cooling = hostCooldown.get(host2);
+  if (cooling && cooling.until > Date.now()) {
+    const seconds = Math.ceil((cooling.until - Date.now()) / 1e3);
+    throw new Error(`\uC608\uC57D \uC6D0\uBCF8\uC5D0 \uC5F0\uACB0\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: \uBC29\uAE08 ${cooling.reason}\uC5EC\uC11C ${seconds}\uCD08 \uC26C\uB294 \uC911`);
+  }
+  const queuedAt = performance2.now();
+  const response = await withHostSlot(
+    host2,
+    () => fetchLimiter.run(
+      async () => {
+        const startedAt = performance2.now();
+        if (ctx.trace) ctx.trace.queueMs = (ctx.trace.queueMs ?? 0) + Math.round(startedAt - queuedAt);
+        const hostKey = host2.toLowerCase();
+        const patientMode = patientHosts.has(hostKey);
+        const headers = browserHeaders(referer);
+        try {
+          const result = patientMode ? await patientGet(url2, headers, PATIENT_TIMEOUT_MS) : await fetch(url2, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+          hostCooldown.delete(host2);
+          return result;
+        } catch (firstError) {
+          let error40 = firstError;
+          let waitedLonger = patientMode;
+          if (!patientMode && isConnectFailure(firstError)) {
+            patientHosts.add(hostKey);
+            waitedLonger = true;
+            logger.warn({ host: host2 }, `[\uC5F0\uACB0 \uB290\uB9BC] ${host2} \uC5F0\uACB0 \uC2DC\uAC04 \uCD08\uACFC \u2192 \uC774\uD6C4 \uCD5C\uB300 ${PATIENT_TIMEOUT_MS / 1e3}\uCD08\uAE4C\uC9C0 \uAE30\uB2E4\uB9AC\uB294 \uBC29\uC2DD\uC73C\uB85C \uC804\uD658`);
+            try {
+              const retry = await patientGet(url2, headers, PATIENT_TIMEOUT_MS);
+              hostCooldown.delete(host2);
+              return retry;
+            } catch (retryError) {
+              error40 = retryError;
+            }
+          }
+          const timedOut = waitedLonger && isTimeoutLike(error40);
+          const failure = timedOut ? `\uC751\uB2F5 \uC2DC\uAC04 \uCD08\uACFC ${PATIENT_TIMEOUT_MS / 1e3}\uCD08` : describeFetchFailure(error40);
+          if (isConnectFailure(error40) || timedOut) {
+            hostCooldown.set(host2, { until: Date.now() + HOST_COOLDOWN_MS, reason: failure });
+            void probeHostConnectivity(url2);
+          }
+          throw new Error(`\uC608\uC57D \uC6D0\uBCF8\uC5D0 \uC5F0\uACB0\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${failure}`);
+        } finally {
+          if (ctx.trace) ctx.trace.headersMs = (ctx.trace.headersMs ?? 0) + Math.round(performance2.now() - startedAt);
+        }
+      },
+      ctx.priority,
+      ctx.tag
+    )
   );
   if (!response.ok) {
     await response.body?.cancel().catch(() => void 0);
     throw new Error(`\uC608\uC57D \uC6D0\uBCF8\uC774 ${response.status} \uC0C1\uD0DC\uB97C \uBC18\uD658\uD588\uC2B5\uB2C8\uB2E4.`);
   }
   const bodyStartedAt = performance2.now();
-  const html3 = await response.text();
+  let html3;
+  try {
+    html3 = await response.text();
+  } catch (error40) {
+    throw new Error(`\uC608\uC57D \uC6D0\uBCF8 \uC751\uB2F5\uC744 \uB05D\uAE4C\uC9C0 \uBC1B\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${describeFetchFailure(error40)}`);
+  }
   if (ctx.trace) {
     ctx.trace.bodyMs = (ctx.trace.bodyMs ?? 0) + Math.round(performance2.now() - bodyStartedAt);
     ctx.trace.bytes = (ctx.trace.bytes ?? 0) + html3.length;
@@ -101880,7 +102082,16 @@ async function fetchMonth(year, month, config2, ctx = USER_FETCH_CONTEXT) {
       pageUrl.searchParams.set("day", next2.slice(8, 10));
       pageUrl.searchParams.set("mode", "list");
       pageUrl.searchParams.set("PA_N_UID", "0");
-      const page = await readPage(pageUrl);
+      let page;
+      try {
+        page = await readPage(pageUrl);
+      } catch (error40) {
+        if (ctx.trace) {
+          ctx.trace.partialError = error40 instanceof Error ? error40.message : String(error40);
+          ctx.trace.missingFrom = next2;
+        }
+        break;
+      }
       pages += 1;
       blocks += page.blocks;
       for (const item of page.items) byId.set(item.id, item);
@@ -102046,8 +102257,9 @@ function describeTiming(timing) {
     timing.blocks !== void 0 ? `\uB2EC\uB825 ${timing.blocks}\uC77C \xB7 ${timing.items ?? 0}\uAC74${timing.pages && timing.pages > 1 ? ` \xB7 ${timing.pages}\uCABD` : ""}` : null
   ].filter(Boolean);
   const failure = timing.ok ? "" : ` \uC2E4\uD328: ${timing.error ?? "\uC54C \uC218 \uC5C6\uC74C"}`;
+  const partial2 = timing.partialError ? ` \uC77C\uBD80\uB9CC \uBC1B\uC74C(${timing.missingFrom ?? "?"}\uBD80\uD130 \uBABB \uBC1B\uC74C): ${timing.partialError}` : "";
   const label = `${timing.name} ${timing.year}-${String(timing.month).padStart(2, "0")}`;
-  return `${label} ${timing.totalMs}ms (${parts.join(" \xB7 ")})${failure}`;
+  return `${label} ${timing.totalMs}ms (${parts.join(" \xB7 ")})${failure}${partial2}`;
 }
 function recordTiming(key, config2, year, month, startedAt, trace, outcome) {
   const timing = {
@@ -102063,6 +102275,8 @@ function recordTiming(key, config2, year, month, startedAt, trace, outcome) {
   monthTimings.set(key, timing);
   if (!timing.ok) {
     logger.warn({ timing }, `[\uC608\uC57D\uCC98 \uC870\uD68C \uC2E4\uD328] ${describeTiming(timing)}`);
+  } else if (timing.partialError) {
+    logger.warn({ timing }, `[\uC608\uC57D\uCC98 \uC870\uD68C \uC77C\uBD80\uB9CC] ${describeTiming(timing)}`);
   } else if (timing.totalMs >= SLOW_FETCH_LOG_MS) {
     logger.info({ timing }, `[\uC608\uC57D\uCC98 \uC870\uD68C \uB290\uB9BC] ${describeTiming(timing)}`);
   }
@@ -102086,12 +102300,29 @@ function getMonthItems(config2, year, month, priority) {
     priority,
     promise: fetchMonthForConfig(year, month, config2, { priority, tag: key, trace }).then(
       (items) => {
-        if (epoch === cacheEpoch) monthCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, items });
+        if (epoch === cacheEpoch) {
+          const partial2 = trace.partialError && trace.missingFrom;
+          monthCache.set(key, { expiresAt: Date.now() + (partial2 ? PARTIAL_CACHE_TTL_MS : CACHE_TTL_MS), items });
+          if (partial2) partialMonthNotes.set(key, { missingFrom: trace.missingFrom, message: trace.partialError });
+          else partialMonthNotes.delete(key);
+        }
+        if (!(trace.partialError && trace.missingFrom)) {
+          lastGoodMonths.set(key, { storedAt: Date.now(), baseUrl: config2.baseUrl, items });
+        }
+        staleNotes.delete(key);
         recordTiming(key, config2, year, month, startedAt, trace, { ok: true });
         return items;
       },
       (error40) => {
         recordTiming(key, config2, year, month, startedAt, trace, { ok: false, error: error40 });
+        const last2 = lastGoodMonths.get(key);
+        if (last2 && last2.baseUrl === config2.baseUrl && Date.now() - last2.storedAt <= STALE_MAX_AGE_MS) {
+          staleNotes.set(key, { storedAt: last2.storedAt, reason: summarizeFailureReason(error40) });
+          if (epoch === cacheEpoch) {
+            monthCache.set(key, { expiresAt: Date.now() + STALE_RETRY_MS, items: last2.items });
+          }
+          return last2.items;
+        }
         throw error40;
       }
     ).finally(() => {
@@ -102113,6 +102344,32 @@ function monthCursor(startDate, endDate) {
   }
   return months;
 }
+function summarizeFailureReason(reason) {
+  const message = reason instanceof Error ? reason.message : String(reason ?? "");
+  if (message.startsWith("\uCD5C\uADFC \uBC18\uBCF5 \uC2E4\uD328\uB85C \uAC74\uB108\uB700")) {
+    const previous = message.match(/이전 오류: (.*)\)$/s);
+    return previous ? `\uBC18\uBCF5 \uC2E4\uD328\uB85C \uC7A0\uC2DC \uAC74\uB108\uB700 - \uC774\uC804 \uC624\uB958 ${summarizeFailureReason(previous[1])}` : "\uBC18\uBCF5 \uC2E4\uD328\uB85C \uC7A0\uC2DC \uAC74\uB108\uB700";
+  }
+  const http2 = message.match(/(\d{3}) 상태를 반환/);
+  if (http2) return `HTTP ${http2[1]}`;
+  const connection = message.match(/^예약 원본(?:에 연결하지 못했습니다| 응답을 끝까지 받지 못했습니다): (.+)$/);
+  const text4 = (connection ? connection[1] : message).replace(/\s+/g, " ").trim();
+  return text4.length > 60 ? `${text4.slice(0, 60)}\u2026` : text4 || "\uC54C \uC218 \uC5C6\uB294 \uC624\uB958";
+}
+var AllSourcesFailedError = class extends Error {
+  failures;
+  constructor(failures) {
+    super("\uBAA8\uB4E0 \uC608\uC57D\uCC98\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+    this.name = "AllSourcesFailedError";
+    this.failures = failures;
+  }
+  /** 화면에 보여 줄 한두 줄 요약. 예약처가 많으면 앞의 몇 곳만 보여 준다. */
+  get detail() {
+    const shown = this.failures.slice(0, 4).map((failure) => `${failure.name}: ${failure.reason}`);
+    const rest = this.failures.length - shown.length;
+    return rest > 0 ? `${shown.join(" / ")} / \uC678 ${rest}\uACF3` : shown.join(" / ");
+  }
+};
 var BADATIME_LOCATION_IDS = {
   \uB300\uCC9C\uD56D: 126,
   \uC0BC\uAE38\uD3EC: 144,
@@ -102270,6 +102527,9 @@ function getFetchDiagnostics() {
       items: timing.items ?? null,
       pages: timing.pages ?? null,
       error: timing.error ?? null,
+      // 첫 쪽은 받았는데 이어지는 쪽이 실패해 앞쪽 날짜만 받은 경우의 이유와, 못 받은 첫 날짜 (이때 ok는 true).
+      partialError: timing.partialError ?? null,
+      missingFrom: timing.missingFrom ?? null,
       secondsAgo: Math.round((now - timing.finishedAt) / 1e3)
     })),
     sourceHealth: getSourceHealthSnapshot()
@@ -102290,11 +102550,17 @@ async function getSchedules(startDate, endDate, options = {}) {
     sources = sources.filter((source) => source.port === filter4.port);
   }
   if (sources.length === 0) {
-    return { items: [], sources, failedSources: [], pendingSources: [] };
+    return { items: [], sources, failedSources: [], failures: [], pendingSources: [], partialSources: [] };
   }
   const months = monthCursor(startDate, endDate);
   const tide = prefetchTideStrength(sources, months);
-  const skipped = sources.map((source) => isSkipped(source.id));
+  const skipped = sources.map((source) => {
+    try {
+      if (patientHosts.has(new URL(source.baseUrl).hostname.toLowerCase())) return void 0;
+    } catch {
+    }
+    return isSkipped(source.id);
+  });
   const monthRequests = sources.map(() => []);
   const requestedKeys = [];
   let cachedMonths = 0;
@@ -102328,20 +102594,57 @@ async function getSchedules(startDate, endDate, options = {}) {
   const settled = await settleWithSoftDeadline(sourcePromises, softDeadlineMs);
   const collected = [];
   const failedSources = [];
+  const failures = [];
   const pendingSources = [];
+  const partialSources = [];
+  const partialNoteFor = (sourceId) => {
+    for (const { year, month } of months) {
+      const key = monthKey(sourceId, year, month);
+      const note = partialMonthNotes.get(key);
+      if (note && note.missingFrom <= endDate && peekMonthCache(key)) {
+        const day = `${Number(note.missingFrom.slice(5, 7))}\uC6D4 ${Number(note.missingFrom.slice(8, 10))}\uC77C`;
+        return `${day}\uBD80\uD130\uB294 \uBABB \uBC1B\uC74C: ${summarizeFailureReason(note.message)}`;
+      }
+    }
+    return null;
+  };
+  const staleNoteFor = (sourceId) => {
+    let oldest = null;
+    let reason = "";
+    for (const { year, month } of months) {
+      const note = staleNotes.get(monthKey(sourceId, year, month));
+      if (note && (oldest === null || note.storedAt < oldest)) {
+        oldest = note.storedAt;
+        reason = note.reason;
+      }
+    }
+    if (oldest === null) return null;
+    const minutes = Math.max(1, Math.round((Date.now() - oldest) / 6e4));
+    const age = minutes < 60 ? `${minutes}\uBD84` : `${Math.floor(minutes / 60)}\uC2DC\uAC04 ${minutes % 60}\uBD84`;
+    return `\uCD5C\uC2E0 \uC870\uD68C \uC2E4\uD328(${reason})\uB85C ${age} \uC804 \uC815\uBCF4\uB97C \uBCF4\uC5EC\uC90C`;
+  };
   settled.forEach((result, index2) => {
     const name = sources[index2]?.name || "\uC608\uC57D\uCC98";
     if (!result) {
       pendingSources.push(name);
     } else if (result.status === "rejected") {
       failedSources.push(name);
+      failures.push({ name, reason: summarizeFailureReason(result.reason) });
     } else {
       for (const item of result.value) collected.push(item);
+      const note = partialNoteFor(sources[index2].id);
+      if (note) partialSources.push({ name, message: note });
+      const staleNote = staleNoteFor(sources[index2].id);
+      if (staleNote) partialSources.push({ name, message: staleNote });
     }
   });
   const items = collected.filter((item) => item.departureDate >= startDate && item.departureDate <= endDate);
   if (items.length === 0 && failedSources.length === sources.length) {
-    throw new Error("\uBAA8\uB4E0 \uC608\uC57D\uCC98\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+    logger.warn(
+      { failures },
+      `[${label} \uC2E4\uD328] \uC870\uD68C \uB300\uC0C1 \uC608\uC57D\uCC98 ${sources.length}\uACF3\uC774 \uBAA8\uB450 \uC2E4\uD328: ${failures.map((failure) => `${failure.name}(${failure.reason})`).join(", ")}`
+    );
+    throw new AllSourcesFailedError(failures);
   }
   let tideWaitMs = null;
   if (withTide) {
@@ -102367,7 +102670,7 @@ async function getSchedules(startDate, endDate, options = {}) {
     loopBusy: performance2.eventLoopUtilization(loopStart).utilization,
     resultCount: items.length
   });
-  return { items, sources, failedSources, pendingSources };
+  return { items, sources, failedSources, failures, pendingSources, partialSources };
 }
 var knownTides = /* @__PURE__ */ new Set();
 ["1\uBB3C", "2\uBB3C", "3\uBB3C", "4\uBB3C", "5\uBB3C", "6\uBB3C", "7\uBB3C", "8\uBB3C", "9\uBB3C", "10\uBB3C", "11\uBB3C", "12\uBB3C", "13\uBB3C", "\uC870\uAE08", "\uBB34\uC2DC"].forEach(
@@ -102471,6 +102774,11 @@ function getPgErrorCode(error40) {
   }
   return void 0;
 }
+function describeSearchFailure(error40) {
+  if (error40 instanceof AllSourcesFailedError) return error40.detail;
+  const code = getPgErrorCode(error40);
+  return code ? `\uC11C\uBC84 \uB0B4\uBD80 \uC624\uB958 (${code})` : "\uC11C\uBC84 \uB0B4\uBD80 \uC624\uB958";
+}
 router2.get("/fishing/schedules", async (req, res) => {
   const parsed = SearchFishingSchedulesQueryParams.safeParse({
     startDate: dateValue(req.query.startDate),
@@ -102515,8 +102823,15 @@ router2.get("/fishing/schedules", async (req, res) => {
     });
     items.sort((a, b) => a.departureDate.localeCompare(b.departureDate) || a.vessel.localeCompare(b.vessel, "ko"));
     const warnings = [];
-    if (search.failedSources.length) {
-      warnings.push(`\uC77C\uBD80 \uC608\uC57D\uCC98\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${search.failedSources.join(", ")}`);
+    if (search.failures.length) {
+      warnings.push(
+        `\uC77C\uBD80 \uC608\uC57D\uCC98\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${search.failures.map((failure) => `${failure.name}(${failure.reason})`).join(", ")}`
+      );
+    }
+    if (search.partialSources.length) {
+      warnings.push(
+        `\uC77C\uBD80 \uB0A0\uC9DC\uB294 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD55C \uC608\uC57D\uCC98\uAC00 \uC788\uC5B4\uC694. \uC7A0\uC2DC \uB4A4 '\uC790\uB9AC \uCC3E\uAE30'\uB97C \uB2E4\uC2DC \uB204\uB974\uBA74 \uCC44\uC6CC\uC9C8 \uC218 \uC788\uC5B4\uC694: ${search.partialSources.map((partial2) => `${partial2.name}(${partial2.message})`).join(", ")}`
+      );
     }
     if (search.pendingSources.length) {
       warnings.push(
@@ -102534,7 +102849,10 @@ router2.get("/fishing/schedules", async (req, res) => {
     res.json(response);
   } catch (error40) {
     req.log.error({ err: error40 }, "Fishing source lookup failed");
-    res.status(502).json({ error: "\uC608\uC57D \uC6D0\uBCF8\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694." });
+    res.status(502).json({
+      error: "\uC608\uC57D \uC6D0\uBCF8\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.",
+      detail: describeSearchFailure(error40)
+    });
   }
 });
 router2.post("/fishing/cache/refresh", (_req, res) => {

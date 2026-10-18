@@ -116,6 +116,21 @@ function describeSearchFailure(error: unknown): string {
   return code ? `서버 내부 오류 (${code})` : "서버 내부 오류";
 }
 
+// 못 불러온 예약처를 화면에서 "직접 열기" 링크로 보여 주기 위한 목록. 링크로 열 수 있는 http(s) 주소만 내보내고,
+// 그 밖의 값(스킴 없음 등)은 url을 null로 둔다 (이름과 이유는 그대로 보여 준다).
+function toUnavailableSources(failures: Array<{ name: string; reason: string; url: string }>) {
+  return failures.map(({ name, reason, url }) => {
+    let openable: string | null = null;
+    try {
+      const protocol = new URL(url).protocol;
+      if (protocol === "http:" || protocol === "https:") openable = url;
+    } catch {
+      // 주소 형식이 이상하면 링크 없이 이름·이유만 보여 준다.
+    }
+    return { name, url: openable, reason };
+  });
+}
+
 router.get("/fishing/schedules", async (req, res) => {
   const parsed = SearchFishingSchedulesQueryParams.safeParse({
     startDate: dateValue(req.query.startDate),
@@ -190,6 +205,7 @@ router.get("/fishing/schedules", async (req, res) => {
       source: getSourceLabel(search.sources),
       cachedUntil: new Date(Date.now() + CACHE_TTL_MS),
       warning: warnings.length ? warnings.join(" / ") : null,
+      unavailableSources: toUnavailableSources(search.failures),
     });
     res.json(response);
   } catch (error) {
@@ -197,6 +213,8 @@ router.get("/fishing/schedules", async (req, res) => {
     res.status(502).json({
       error: "예약 원본을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
       detail: describeSearchFailure(error),
+      // 예약처가 전부 실패한 경우에만: 직접 열어 볼 수 있는 링크 목록
+      ...(error instanceof AllSourcesFailedError ? { unavailable: toUnavailableSources(error.failures) } : {}),
     });
   }
 });

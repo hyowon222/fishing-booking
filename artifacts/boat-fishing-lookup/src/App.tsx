@@ -31,6 +31,7 @@ import {
   type FishingFilterOptions,
   type FishingSchedule,
   type SearchFishingSchedulesParams,
+  type UnavailableSource,
 } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { SeatRadar } from '@/components/seat-radar';
@@ -569,6 +570,48 @@ function ScheduleRow({ schedule }: { schedule: FishingSchedule }) {
   );
 }
 
+// 일정 조회가 통째로 실패했을 때 서버가 함께 알려 준 "직접 열어 볼 수 있는" 예약처 목록(502 본문의 unavailable).
+// 서버가 예전 버전이거나 다른 종류의 오류면 비어 있다. 모양이 이상한 항목은 건너뛴다.
+function readUnavailableSources(error: unknown): UnavailableSource[] {
+  if (!error || typeof error !== "object") return [];
+  const data = (error as { data?: unknown }).data;
+  const list = data && typeof data === "object" ? (data as { unavailable?: unknown }).unavailable : undefined;
+  if (!Array.isArray(list)) return [];
+  return list.filter(
+    (item): item is UnavailableSource =>
+      !!item && typeof item === "object" && typeof (item as UnavailableSource).name === "string",
+  );
+}
+
+// 끝내 불러오지 못한 예약처를 "직접 열기" 링크로 보여 준다. 주소가 이상해 링크를 못 만드는 예약처는 이름만 보여 준다.
+function UnavailableSourceLinks({ sources, centered = false }: { sources: UnavailableSource[]; centered?: boolean }) {
+  if (!sources.length) return null;
+  return (
+    <div className="mt-3" data-testid="unavailable-sources">
+      <p className="text-xs font-semibold">불러오지 못한 예약처는 직접 열어서 확인해 보세요</p>
+      <ul className={`mt-2 flex flex-wrap gap-2 ${centered ? 'justify-center' : ''}`}>
+        {sources.map((source) => (
+          <li key={`${source.name}|${source.url ?? ''}`}>
+            {source.url ? (
+              <a
+                href={source.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-full border border-input bg-card px-3 py-1.5 text-xs font-semibold text-primary hover:bg-muted"
+                data-testid={`link-open-source-${source.name}`}
+              >
+                {source.name} <ArrowUpRight size={12} />
+              </a>
+            ) : (
+              <span className="inline-flex rounded-full border border-dashed border-input px-3 py-1.5 text-xs text-muted-foreground">{source.name}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // 검색 요청이 실패했을 때 오류 카드에 덧붙일 원인 한 줄. 우리 서버가 직접 답한 오류(JSON)와, 서버가 아예
 // 응답하지 못한 경우(켜지는 중·재시작·네트워크 문제)를 구분해서 알려 준다. 스크린샷만으로 원인을 가리기 위한 용도.
 function describeSearchError(error: unknown): string | null {
@@ -593,7 +636,7 @@ function ScheduleResults({
   hasSearched,
   onRetry,
 }: {
-  data?: { items: FishingSchedule[]; total: number; searchedAt: string; source: string; cachedUntil: string | null; warning: string | null };
+  data?: { items: FishingSchedule[]; total: number; searchedAt: string; source: string; cachedUntil: string | null; warning: string | null; unavailableSources?: UnavailableSource[] };
   isLoading: boolean;
   isError: boolean;
   error?: unknown;
@@ -618,6 +661,7 @@ function ScheduleResults({
         <h3 className="font-bold">일정을 불러오지 못했습니다</h3>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">예약처 연결이 잠시 불안정합니다. 같은 조건으로 다시 시도해 주세요.</p>
         {reason && <p className="mt-3 max-w-md rounded-lg bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground" data-testid="text-search-error-detail">원인: {reason}</p>}
+        <UnavailableSourceLinks sources={readUnavailableSources(error)} centered />
         <button onClick={onRetry} className="mt-5 flex items-center gap-2 rounded-lg border border-input px-4 py-2 text-sm font-semibold hover:bg-muted" data-testid="button-retry-search"><RefreshCw size={14} /> 다시 시도</button>
       </div>
     );
@@ -630,12 +674,18 @@ function ScheduleResults({
         <p className="mt-1 max-w-sm text-sm leading-6 text-muted-foreground">기간을 넓히거나 지역·선박 필터를 하나씩 해제하면 더 많은 출항을 확인할 수 있습니다.</p>
         {/* 일부 예약처를 못 불러왔거나 응답이 늦은 경우, 결과가 0건이어도 그 이유를 같이 보여 준다 */}
         {data?.warning && <div className="mt-5 flex max-w-md items-start gap-2 rounded-lg border border-accent/30 bg-accent/10 px-4 py-3 text-left text-xs leading-5 text-[#765019]" data-testid="text-empty-warning"><Info size={15} className="mt-0.5 shrink-0" />{data.warning}</div>}
+        <UnavailableSourceLinks sources={data?.unavailableSources ?? []} centered />
       </div>
     );
   }
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-[0_8px_30px_hsl(214_42%_18%_/_0.04)]">
-      {data.warning && <div className="flex items-start gap-2 border-b border-accent/30 bg-accent/10 px-4 py-3 text-xs leading-5 text-[#765019]"><Info size={15} className="mt-0.5 shrink-0" />{data.warning}</div>}
+      {(data.warning || !!data.unavailableSources?.length) && (
+        <div className="border-b border-accent/30 bg-accent/10 px-4 py-3 text-xs leading-5 text-[#765019]">
+          {data.warning && <div className="flex items-start gap-2"><Info size={15} className="mt-0.5 shrink-0" />{data.warning}</div>}
+          <UnavailableSourceLinks sources={data.unavailableSources ?? []} />
+        </div>
+      )}
       <div className="hidden grid-cols-[1.1fr_.9fr_1fr_1.1fr_.85fr_1fr_110px] gap-4 border-b border-border bg-muted/40 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground md:grid">
         <span>출항일</span><span>지역</span><span>선박</span><span>운영사</span><span>장르</span><span>물때</span><span className="text-right">잔여</span>
       </div>
