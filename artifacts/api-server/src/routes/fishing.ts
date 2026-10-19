@@ -415,7 +415,17 @@ router.post("/fishing/sources/detect", async (req, res) => {
     res.status(400).json({ error: "올바른 예약처 URL이 아닙니다. http:// 또는 https://로 시작하는 주소를 입력해주세요." });
     return;
   }
-  res.json(DetectFishingSourceResponse.parse({ ...result, suggestedName: result.suggestedName ?? null, suggestedPort: null, suggestedRegion: null, workingUrl: result.workingUrl ?? null }));
+  const registered = await listConfiguredSources();
+  const haystack = `${result.suggestedName ?? ""} ${result.workingUrl ?? parsed.data.url}`;
+  const matched = registered.filter((item) => {
+    const base = item.port.replace(/항$/, "");
+    return base.length > 0 && haystack.includes(base);
+  });
+  const ports = [...new Set(matched.map((item) => item.port))];
+  const suggestedPort = ports.length === 1 ? ports[0] : null;
+  const regions = [...new Set(matched.filter((item) => item.port === suggestedPort).map((item) => item.region))];
+  const suggestedRegion = suggestedPort && regions.length === 1 ? regions[0] : null;
+  res.json(DetectFishingSourceResponse.parse({ ...result, suggestedPort, suggestedRegion }));
 });
 
 export default router;
