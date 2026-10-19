@@ -5,7 +5,12 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { UnavailableSource } from './unavailableSource';
 export interface ErrorResponse {
     error: string;
+    /** 일정 조회가 실패한 원인 한 줄 (예 - 대야도 피싱아일랜드 - 연결 시간 초과). 검색 오류 화면에 "원인:"으로 보여 준다. */
+    detail?: string;
+    /** 일정 조회가 모든 예약처에서 실패했을 때, 직접 열어 볼 수 있도록 알려 주는 예약처 목록. */
+    unavailable?: UnavailableSource[];
 }
 //# sourceMappingURL=errorResponse.d.ts.map

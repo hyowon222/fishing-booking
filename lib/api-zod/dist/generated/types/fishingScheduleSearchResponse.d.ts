@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { FishingSchedule } from './fishingSchedule';
+import type { UnavailableSource } from './unavailableSource';
 export interface FishingScheduleSearchResponse {
     items: FishingSchedule[];
     total: number;
@@ -16,5 +17,7 @@ export interface FishingScheduleSearchResponse {
     cachedUntil: Date | null;
     /** @nullable */
     warning: string | null;
+    /** 이번 검색에서 끝내 불러오지 못한 예약처. 화면에서 직접 열어 볼 수 있는 링크로 보여 준다. */
+    unavailableSources?: UnavailableSource[];
 }
 //# sourceMappingURL=fishingScheduleSearchResponse.d.ts.map

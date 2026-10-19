@@ -31,6 +31,16 @@ export interface FishingSchedule {
     bookingUrl: string | null;
     source: string;
 }
+export interface UnavailableSource {
+    name: string;
+    /**
+       * 직접 열어 볼 수 있는 예약처 주소. http/https 주소가 아니면 null.
+       * @nullable
+       */
+    url: string | null;
+    /** 불러오지 못한 이유를 줄인 한 줄 (예 - 연결 시간 초과 UND_ERR_CONNECT_TIMEOUT) */
+    reason: string;
+}
 export interface FishingScheduleSearchResponse {
     items: FishingSchedule[];
     total: number;
@@ -41,6 +51,8 @@ export interface FishingScheduleSearchResponse {
     cachedUntil: string | null;
     /** @nullable */
     warning: string | null;
+    /** 이번 검색에서 끝내 불러오지 못한 예약처. 화면에서 직접 열어 볼 수 있는 링크로 보여 준다. */
+    unavailableSources?: UnavailableSource[];
 }
 export type FishingFilterOptionsShipsByPort = {
     [key: string]: string[];
@@ -126,6 +138,10 @@ export interface FishingSourceInput {
 }
 export interface ErrorResponse {
     error: string;
+    /** 일정 조회가 실패한 원인 한 줄 (예 - 대야도 피싱아일랜드 - 연결 시간 초과). 검색 오류 화면에 "원인:"으로 보여 준다. */
+    detail?: string;
+    /** 일정 조회가 모든 예약처에서 실패했을 때, 직접 열어 볼 수 있도록 알려 주는 예약처 목록. */
+    unavailable?: UnavailableSource[];
 }
 export type SearchFishingSchedulesParams = {
     startDate: string;

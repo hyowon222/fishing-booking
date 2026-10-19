@@ -20,4 +20,5 @@ export * from './fishingSourceVesselInput';
 export * from './fishingSourceVesselsInput';
 export * from './healthStatus';
 export * from './searchFishingSchedulesParams';
+export * from './unavailableSource';
 //# sourceMappingURL=index.d.ts.map

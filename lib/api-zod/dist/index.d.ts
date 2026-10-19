@@ -12,4 +12,5 @@ export type { FishingSourceVesselInput } from "./generated/types/fishingSourceVe
 export type { FishingSourceVesselsInput } from "./generated/types/fishingSourceVesselsInput";
 export type { HealthStatus } from "./generated/types/healthStatus";
 export type { SearchFishingSchedulesParams } from "./generated/types/searchFishingSchedulesParams";
+export type { UnavailableSource } from "./generated/types/unavailableSource";
 //# sourceMappingURL=index.d.ts.map

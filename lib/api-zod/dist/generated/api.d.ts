@@ -95,6 +95,19 @@ export declare const SearchFishingSchedulesResponse: zod.ZodObject<{
     source: zod.ZodString;
     cachedUntil: zod.ZodNullable<zod.ZodDate>;
     warning: zod.ZodNullable<zod.ZodString>;
+    unavailableSources: zod.ZodOptional<zod.ZodArray<zod.ZodObject<{
+        name: zod.ZodString;
+        url: zod.ZodNullable<zod.ZodString>;
+        reason: zod.ZodString;
+    }, "strip", zod.ZodTypeAny, {
+        name: string;
+        url: string | null;
+        reason: string;
+    }, {
+        name: string;
+        url: string | null;
+        reason: string;
+    }>, "many">>;
 }, "strip", zod.ZodTypeAny, {
     items: {
         region: string;
@@ -117,6 +130,11 @@ export declare const SearchFishingSchedulesResponse: zod.ZodObject<{
     searchedAt: Date;
     cachedUntil: Date | null;
     warning: string | null;
+    unavailableSources?: {
+        name: string;
+        url: string | null;
+        reason: string;
+    }[] | undefined;
 }, {
     items: {
         region: string;
@@ -139,6 +157,11 @@ export declare const SearchFishingSchedulesResponse: zod.ZodObject<{
     searchedAt: Date;
     cachedUntil: Date | null;
     warning: string | null;
+    unavailableSources?: {
+        name: string;
+        url: string | null;
+        reason: string;
+    }[] | undefined;
 }>;
 /**
  * Returns configured filter values immediately and refreshes discovered values in the background.
