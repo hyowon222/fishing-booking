@@ -557,15 +557,13 @@ function SourceCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-bold">{source.port}</h3>
-            <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-secondary-foreground">{source.region}</span>
+            <h3 className="font-bold">{source.name}</h3>
             {source.enabled ? (
               <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"><Check size={10} /> 사용 중</span>
             ) : (
               <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">일시 중지</span>
             )}
           </div>
-          <p className="mt-1 text-sm font-medium text-muted-foreground">{source.name}</p>
           <p className="mono mt-3 truncate text-[11px] text-muted-foreground">{source.sourceUrl}</p>
           {source.vessels.length > 0 && (
             <div className="mt-4 overflow-hidden rounded-lg border border-border/70 text-[11px]">
@@ -757,7 +755,7 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
             <div className="space-y-5">
               {Object.entries(
                 sources.reduce<Record<string, FishingSource[]>>((groups, source) => {
-                  const key = source.port?.trim() || '기타';
+                  const key = (source.port ?? '').trim().replace(/항$/, '') || '기타';
                   if (!groups[key]) groups[key] = [];
                   groups[key].push(source);
                   return groups;
@@ -766,8 +764,7 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
                 .sort(([a], [b]) => a.localeCompare(b, 'ko'))
                 .map(([port, items]) => (
                   <details key={port} open>
-                    <summary className="mb-2 flex cursor-pointer select-none items-center gap-2 text-sm font-bold">
-                      {port}
+                    <summary className="mb-2 flex cursor-pointer select-none items-center gap-2 border-b border-border pb-1.5 text-base font-bold">$1{port}{items.some((item) => item.port?.trim().endsWith('항')) ? '항' : ''}
                       <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-secondary-foreground">{items.length}</span>
                     </summary>
                     <div className="space-y-3">

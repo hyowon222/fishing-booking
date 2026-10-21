@@ -161,7 +161,7 @@ function FilterColumn({
   testPrefix: string;
   disabled?: boolean;
   disabledHint?: string;
-  layout?: 'list' | 'grid';
+  layout?: 'list' | 'grid' | 'grid2';
 }) {
   return (
     <div>
@@ -184,7 +184,7 @@ function FilterColumn({
       </div>
       <div
         className={`max-h-40 overflow-y-auto pr-1 ${disabled ? 'opacity-70' : ''} ${
-          layout === 'grid' ? 'grid grid-cols-2 gap-x-1 gap-y-0.5 sm:grid-cols-3' : 'space-y-0.5'
+          layout === 'grid' ? 'grid grid-cols-2 gap-x-1 gap-y-0.5 sm:grid-cols-3' : layout === 'grid2' ? 'grid grid-cols-2 gap-x-2 gap-y-0.5' : 'space-y-0.5'
         }`}
       >
         {values?.length ? (
@@ -410,6 +410,7 @@ function SearchForm({
                onSelectAll={() => setCriteria({ ...criteria, ship: [] })}
               emptyText={isOptionsLoading ? '목록 불러오는 중' : '사용 가능한 선박 없음'}
               testPrefix="ship"
+              layout="grid2"
             />
           </div>
 
