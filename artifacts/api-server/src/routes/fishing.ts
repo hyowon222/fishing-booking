@@ -21,6 +21,7 @@ import {
   CACHE_TTL_MS,
   clearSourceCache,
   detectSource,
+  discoverSourcesByPort,
   getFetchDiagnostics,
   getFilterOptions,
   getSchedules,
@@ -426,6 +427,26 @@ router.post("/fishing/sources/detect", async (req, res) => {
   const regions = [...new Set(matched.filter((item) => item.port === suggestedPort).map((item) => item.region))];
   const suggestedRegion = suggestedPort && regions.length === 1 ? regions[0] : null;
   res.json(DetectFishingSourceResponse.parse({ ...result, suggestedPort, suggestedRegion }));
+});
+
+
+router.post("/fishing/sources/discover", async (req, res) => {
+  const portKeyword = typeof req.body?.portKeyword === "string" ? req.body.portKeyword.trim() : "";
+  const region = typeof req.body?.region === "string" ? req.body.region.trim() : undefined;
+  if (!portKeyword) {
+    res.status(400).json({ error: "검색할 항구 이름(예: 삼길포, 오천, 영목)을 입력해 주세요." });
+    return;
+  }
+  try {
+    const result = await discoverSourcesByPort(portKeyword, region);
+    clearFishingSourceCache();
+    res.json(result);
+  } catch (error: unknown) {
+    req.log.error({ err: error, portKeyword }, "Port source discovery failed");
+    res.status(502).json({
+      error: error instanceof Error ? error.message : "항구별 선사 스캔 중 오류가 발생했습니다.",
+    });
+  }
 });
 
 export default router;

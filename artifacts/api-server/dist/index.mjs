@@ -101618,7 +101618,7 @@ function normalizeHost(value) {
   return host2.replace(/^www\./, "");
 }
 function readRelaySettings(env = process.env) {
-  const rawUrl = env.FISHING_RELAY_URL?.trim();
+  const rawUrl = env.FISHING_RELAY_URL?.replace(/[^\x21-\x7E]/g, "").match(/https?:\/\/[^\s"'<>\)\]]+/)?.[0];
   const token = env.FISHING_RELAY_TOKEN?.trim();
   if (!rawUrl && !token) return null;
   if (!rawUrl || !token) {
@@ -101633,11 +101633,11 @@ function readRelaySettings(env = process.env) {
     return null;
   }
   const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname);
-  if (endpoint.protocol !== "https:" && !(isLocal && endpoint.protocol === "http:")) {
+  if (endpoint.protocol !== "https:" && endpoint.protocol !== "http:") {
     logger.warn("[\uC11C\uC6B8 \uC911\uACC4] FISHING_RELAY_URL\uC740 https:// \uB85C \uC2DC\uC791\uD574\uC57C \uD569\uB2C8\uB2E4. \uC9C0\uAE08\uC740 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4.");
     return null;
   }
-  const forcedHosts = (env.FISHING_RELAY_HOSTS ?? "").split(/[\s,]+/).map(normalizeHost).filter(Boolean);
+  const forcedHosts = (env.FISHING_RELAY_HOSTS ?? "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").split(/[\s,]+/).map(normalizeHost).filter(Boolean);
   return { endpoint, token, forcedHosts };
 }
 var CONNECT_FAILURE_CODES = /* @__PURE__ */ new Set([
@@ -102744,6 +102744,177 @@ function getFilterOptions(items, sources = []) {
 function getSourceLabel(sources) {
   return sources.length === 1 ? sources[0].baseUrl : `${sources.length}\uAC1C \uC608\uC57D\uCC98`;
 }
+var REGION_SHORT_MAP = {
+  "\uCDA9\uCCAD\uB0A8\uB3C4": "\uCDA9\uB0A8",
+  "\uCDA9\uCCAD\uBD81\uB3C4": "\uCDA9\uBD81",
+  "\uC804\uB77C\uB0A8\uB3C4": "\uC804\uB0A8",
+  "\uC804\uB77C\uBD81\uB3C4": "\uC804\uBD81",
+  "\uC804\uBD81\uD2B9\uBCC4\uC790\uCE58\uB3C4": "\uC804\uBD81",
+  "\uACBD\uC0C1\uB0A8\uB3C4": "\uACBD\uB0A8",
+  "\uACBD\uC0C1\uBD81\uB3C4": "\uACBD\uBD81",
+  "\uAC15\uC6D0\uD2B9\uBCC4\uC790\uCE58\uB3C4": "\uAC15\uC6D0",
+  "\uAC15\uC6D0\uB3C4": "\uAC15\uC6D0",
+  "\uC81C\uC8FC\uD2B9\uBCC4\uC790\uCE58\uB3C4": "\uC81C\uC8FC",
+  "\uC81C\uC8FC\uB3C4": "\uC81C\uC8FC",
+  "\uACBD\uAE30\uB3C4": "\uACBD\uAE30",
+  "\uC778\uCC9C\uAD11\uC5ED\uC2DC": "\uC778\uCC9C",
+  "\uBD80\uC0B0\uAD11\uC5ED\uC2DC": "\uBD80\uC0B0",
+  "\uC6B8\uC0B0\uAD11\uC5ED\uC2DC": "\uC6B8\uC0B0"
+};
+function normalizeRegionLabel(raw) {
+  const cleaned = cleanText(raw);
+  return REGION_SHORT_MAP[cleaned] || cleaned.replace(/(특별자치도|특별시|광역시|도)$/, "") || "\uAE30\uD0C0";
+}
+async function discoverSourcesByPort(rawKeyword, regionOverride) {
+  const portKeyword = cleanText(rawKeyword).replace(/항$/, "");
+  if (!portKeyword) {
+    throw new Error("\uD56D\uAD6C \uD0A4\uC6CC\uB4DC\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
+  }
+  const searchUrl = new URL("https://thefishing.kr/search/result.php");
+  searchUrl.searchParams.set("cat", "reservation");
+  searchUrl.searchParams.set("msearch_text", portKeyword);
+  const searchHtml = await fetchHtml(searchUrl, "https://thefishing.kr/", USER_FETCH_CONTEXT);
+  const $2 = load(searchHtml);
+  const uidCandidates = /* @__PURE__ */ new Map();
+  $2('a.search_list_card_item_link, a[href*="reservation/list.php?uid="]').each((_idx, el) => {
+    const anchor = $2(el);
+    const href = anchor.attr("href") || "";
+    const uidMatch = href.match(/uid=(\d+)/);
+    if (!uidMatch) return;
+    const uid = uidMatch[1];
+    if (uidCandidates.has(uid)) return;
+    const rawHtml = anchor.html() || "";
+    const lines = rawHtml.split(/<br\s*\/?>/i).map((part) => cleanText(load(part).text())).filter(Boolean);
+    let operatorName = lines[0] || "";
+    let region = regionOverride?.trim() || "";
+    let port2 = portKeyword;
+    const breadcrumbLine = lines.find((line2) => line2.includes(">"));
+    if (breadcrumbLine) {
+      const parts = breadcrumbLine.split(">").map((p) => cleanText(p)).filter(Boolean);
+      if (!region && parts.length >= 2) {
+        region = normalizeRegionLabel(parts[1]);
+      }
+      if (parts.length >= 4) {
+        port2 = parts[parts.length - 1].replace(/항$/, "") || portKeyword;
+      }
+    }
+    if (!operatorName || operatorName.includes(">")) {
+      operatorName = port2 + " \uC608\uC57D\uCC98 " + uid;
+    }
+    uidCandidates.set(uid, {
+      uid,
+      operatorName,
+      region: region || "\uCDA9\uB0A8",
+      port: port2
+    });
+  });
+  const existingSources = await listConfiguredSources();
+  const existingHosts = /* @__PURE__ */ new Set();
+  for (const src of existingSources) {
+    try {
+      existingHosts.add(new URL(src.sourceUrl).hostname.replace(/^www\./i, "").toLowerCase());
+    } catch {
+      existingHosts.add(src.sourceUrl.toLowerCase());
+    }
+  }
+  const siteCandidates = /* @__PURE__ */ new Map();
+  const skippedExisting = [];
+  const failed = [];
+  for (const item of uidCandidates.values()) {
+    try {
+      const detailUrl = new URL("https://thefishing.kr/reservation/list.php?uid=" + item.uid);
+      const detailHtml = await fetchHtml(detailUrl, searchUrl.toString(), USER_FETCH_CONTEXT);
+      const $d = load(detailHtml);
+      const siteHref = $d("a.site").attr("href") || "";
+      const normUrl = normalizeProbeUrl(siteHref);
+      if (!normUrl) continue;
+      const parsedSite = new URL(normUrl);
+      if (parsedSite.hostname.endsWith("thefishing.kr")) continue;
+      const hostKey = parsedSite.hostname.replace(/^www\./i, "").toLowerCase();
+      const originUrl = parsedSite.protocol + "//" + parsedSite.hostname;
+      const titleText = cleanText($d("title").first().text());
+      const bracketMatch = titleText.match(/\[([^\]]+)\]/);
+      const cleanOperatorName = bracketMatch ? cleanText(bracketMatch[1]) : item.operatorName;
+      if (existingHosts.has(hostKey)) {
+        if (!skippedExisting.includes(cleanOperatorName)) {
+          skippedExisting.push(cleanOperatorName);
+        }
+        continue;
+      }
+      if (!siteCandidates.has(hostKey)) {
+        siteCandidates.set(hostKey, {
+          baseUrl: originUrl,
+          name: cleanOperatorName,
+          region: item.region,
+          port: item.port
+        });
+      }
+    } catch (err) {
+      failed.push({
+        name: item.operatorName,
+        url: "https://thefishing.kr/reservation/list.php?uid=" + item.uid,
+        reason: err instanceof Error ? err.message : "\uC0C1\uC138 \uD398\uC774\uC9C0 \uC870\uD68C \uC2E4\uD328"
+      });
+    }
+  }
+  const added = [];
+  for (const [hostKey, candidate] of siteCandidates.entries()) {
+    try {
+      const detected = await detectSource(candidate.baseUrl);
+      const finalName = cleanText(candidate.name || detected?.suggestedName || candidate.baseUrl);
+      const finalUrl = detected?.workingUrl || candidate.baseUrl;
+      const vessels = detected?.vessels ?? [];
+      const [created] = await db.insert(fishingSourcesTable).values({
+        name: finalName,
+        region: candidate.region,
+        port: candidate.port,
+        sourceUrl: finalUrl,
+        enabled: true
+      }).onConflictDoNothing().returning();
+      if (!created) {
+        skippedExisting.push(finalName);
+        continue;
+      }
+      if (vessels.length > 0) {
+        await db.insert(fishingSourceVesselsTable).values(
+          vessels.map((vName) => ({
+            sourceId: created.id,
+            name: vName,
+            departurePort: candidate.port,
+            address: ""
+          }))
+        ).onConflictDoNothing();
+      }
+      existingHosts.add(hostKey);
+      added.push({
+        id: created.id,
+        name: created.name,
+        region: created.region,
+        port: created.port,
+        sourceUrl: created.sourceUrl,
+        vessels
+      });
+    } catch (err) {
+      failed.push({
+        name: candidate.name,
+        url: candidate.baseUrl,
+        reason: err instanceof Error ? err.message : "\uB4F1\uB85D \uC2E4\uD328"
+      });
+    }
+  }
+  if (added.length > 0) {
+    clearSourceCache();
+    resetSourceHealth();
+  }
+  return {
+    portKeyword,
+    scannedUids: uidCandidates.size,
+    candidateSites: siteCandidates.size,
+    added,
+    skippedExisting,
+    failed
+  };
+}
 
 // src/routes/fishing.ts
 var router2 = (0, import_express2.Router)();
@@ -103056,7 +103227,35 @@ router2.post("/fishing/sources/detect", async (req, res) => {
     res.status(400).json({ error: "\uC62C\uBC14\uB978 \uC608\uC57D\uCC98 URL\uC774 \uC544\uB2D9\uB2C8\uB2E4. http:// \uB610\uB294 https://\uB85C \uC2DC\uC791\uD558\uB294 \uC8FC\uC18C\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694." });
     return;
   }
-  res.json(DetectFishingSourceResponse.parse(result));
+  const registered = await listConfiguredSources();
+  const haystack = `${result.suggestedName ?? ""} ${result.workingUrl ?? parsed.data.url}`;
+  const matched = registered.filter((item) => {
+    const base = item.port.replace(/항$/, "");
+    return base.length > 0 && haystack.includes(base);
+  });
+  const ports = [...new Set(matched.map((item) => item.port))];
+  const suggestedPort = ports.length === 1 ? ports[0] : null;
+  const regions = [...new Set(matched.filter((item) => item.port === suggestedPort).map((item) => item.region))];
+  const suggestedRegion = suggestedPort && regions.length === 1 ? regions[0] : null;
+  res.json(DetectFishingSourceResponse.parse({ ...result, suggestedPort, suggestedRegion }));
+});
+router2.post("/fishing/sources/discover", async (req, res) => {
+  const portKeyword = typeof req.body?.portKeyword === "string" ? req.body.portKeyword.trim() : "";
+  const region = typeof req.body?.region === "string" ? req.body.region.trim() : void 0;
+  if (!portKeyword) {
+    res.status(400).json({ error: "\uAC80\uC0C9\uD560 \uD56D\uAD6C \uC774\uB984(\uC608: \uC0BC\uAE38\uD3EC, \uC624\uCC9C, \uC601\uBAA9)\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694." });
+    return;
+  }
+  try {
+    const result = await discoverSourcesByPort(portKeyword, region);
+    clearFishingSourceCache();
+    res.json(result);
+  } catch (error40) {
+    req.log.error({ err: error40, portKeyword }, "Port source discovery failed");
+    res.status(502).json({
+      error: error40 instanceof Error ? error40.message : "\uD56D\uAD6C\uBCC4 \uC120\uC0AC \uC2A4\uCE94 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4."
+    });
+  }
 });
 var fishing_default = router2;
 

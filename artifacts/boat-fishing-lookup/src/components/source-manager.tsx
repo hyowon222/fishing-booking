@@ -350,6 +350,94 @@ function downloadSourcesAsText(sources: FishingSource[]) {
   URL.revokeObjectURL(url);
 }
 
+
+function PortAutoDiscovery({ onChanged }: { onChanged: () => void }) {
+  const [portKeyword, setPortKeyword] = useState("");
+  const [region, setRegion] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
+  const [resultMsg, setResultMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  async function handleScan(e: FormEvent) {
+    e.preventDefault();
+    const keyword = portKeyword.trim();
+    if (!keyword || isScanning) return;
+    setIsScanning(true);
+    setResultMsg(null);
+    setErrorMsg(null);
+    try {
+      const response = await fetch("/api/fishing/sources/discover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portKeyword: keyword, region: region.trim() || undefined }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setErrorMsg(data?.error || "항구 스캔에 실패했습니다.");
+      } else {
+        const addedNames = (data.added || []).map((item: { name: string; vessels?: string[] }) =>
+          item.vessels?.length ? `${item.name}(${item.vessels.length}척)` : item.name
+        );
+        const summary = [
+          `신규 등록 ${data.added?.length ?? 0}곳${addedNames.length ? ": " + addedNames.join(", ") : ""}`,
+          data.skippedExisting?.length ? `이미 등록됨 ${data.skippedExisting.length}곳 제외` : null,
+        ].filter(Boolean).join(" · ");
+        setResultMsg(summary || "스캔이 완료되었습니다.");
+        if ((data.added?.length ?? 0) > 0) {
+          onChanged();
+        }
+      }
+    } catch {
+      setErrorMsg("서버와 통신하는 중 오류가 발생했습니다.");
+    } finally {
+      setIsScanning(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleScan} className="mb-5 rounded-2xl border border-primary/25 bg-primary/[0.04] p-5">
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+            <Wand2 size={16} className="text-primary" /> 항구별 선사 자동 스캔 및 일괄 등록 (더피싱 연동)
+          </div>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            항구 이름(예: 삼길포, 오천, 영목, 녹동)만 입력하면 더피싱에 등록된 해당 항구 선사 홈페이지와 소속 선박을 자동으로 찾아 일괄 등록합니다.
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_140px_auto]">
+        <input
+          type="text"
+          value={portKeyword}
+          onChange={(e) => setPortKeyword(e.target.value)}
+          placeholder="항구 키워드 입력 (예: 삼길포, 오천, 영목)"
+          className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          disabled={isScanning}
+        />
+        <input
+          type="text"
+          value={region}
+          onChange={(e) => setRegion(e.target.value)}
+          placeholder="지역 (비워두면 자동)"
+          className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          disabled={isScanning}
+        />
+        <button
+          type="submit"
+          disabled={!portKeyword.trim() || isScanning}
+          className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-xs font-bold text-primary-foreground transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isScanning ? <LoaderCircle size={14} className="animate-spin" /> : <Wand2 size={14} />}
+          {isScanning ? "스캔 및 선박 감지 중..." : "항구 자동 스캔·등록"}
+        </button>
+      </div>
+      {resultMsg && <p className="mt-2.5 text-xs font-semibold text-primary">{resultMsg}</p>}
+      {errorMsg && <p className="mt-2.5 text-xs font-semibold text-destructive">{errorMsg}</p>}
+    </form>
+  );
+}
+
 function VesselBulkImport({
   sources,
   selectedSourceId,
@@ -625,6 +713,7 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
+      <PortAutoDiscovery onChanged={refreshData} />
       <VesselBulkImport
         sources={sources}
         selectedSourceId={selectedSourceId ?? sources[0]?.id}

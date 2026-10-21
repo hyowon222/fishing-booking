@@ -1502,3 +1502,233 @@ export function getFilterOptions(
 export function getSourceLabel(sources: SourceConfig[]): string {
   return sources.length === 1 ? sources[0].baseUrl : `${sources.length}개 예약처`;
 }
+
+export type DiscoveredPortSource = {
+  id: number;
+  name: string;
+  region: string;
+  port: string;
+  sourceUrl: string;
+  vessels: string[];
+};
+
+export type DiscoverByPortResult = {
+  portKeyword: string;
+  scannedUids: number;
+  candidateSites: number;
+  added: DiscoveredPortSource[];
+  skippedExisting: string[];
+  failed: Array<{ name: string; url: string; reason: string }>;
+};
+
+const REGION_SHORT_MAP: Record<string, string> = {
+  "충청남도": "충남",
+  "충청북도": "충북",
+  "전라남도": "전남",
+  "전라북도": "전북",
+  "전북특별자치도": "전북",
+  "경상남도": "경남",
+  "경상북도": "경북",
+  "강원특별자치도": "강원",
+  "강원도": "강원",
+  "제주특별자치도": "제주",
+  "제주도": "제주",
+  "경기도": "경기",
+  "인천광역시": "인천",
+  "부산광역시": "부산",
+  "울산광역시": "울산",
+};
+
+function normalizeRegionLabel(raw: string): string {
+  const cleaned = cleanText(raw);
+  return REGION_SHORT_MAP[cleaned] || cleaned.replace(/(특별자치도|특별시|광역시|도)$/, "") || "기타";
+}
+
+export async function discoverSourcesByPort(
+  rawKeyword: string,
+  regionOverride?: string,
+): Promise<DiscoverByPortResult> {
+  const portKeyword = cleanText(rawKeyword).replace(/항$/, "");
+  if (!portKeyword) {
+    throw new Error("항구 키워드를 입력해 주세요.");
+  }
+
+  const searchUrl = new URL("https://thefishing.kr/search/result.php");
+  searchUrl.searchParams.set("cat", "reservation");
+  searchUrl.searchParams.set("msearch_text", portKeyword);
+
+  const searchHtml = await fetchHtml(searchUrl, "https://thefishing.kr/", USER_FETCH_CONTEXT);
+  const $ = cheerio.load(searchHtml);
+
+  const uidCandidates = new Map<string, { uid: string; operatorName: string; region: string; port: string }>();
+
+  $("a.search_list_card_item_link, a[href*=\"reservation/list.php?uid=\"]").each((_idx, el) => {
+    const anchor = $(el);
+    const href = anchor.attr("href") || "";
+    const uidMatch = href.match(/uid=(\d+)/);
+    if (!uidMatch) return;
+    const uid = uidMatch[1];
+    if (uidCandidates.has(uid)) return;
+
+    const rawHtml = anchor.html() || "";
+    const lines = rawHtml
+      .split(/<br\s*\/?>/i)
+      .map((part) => cleanText(cheerio.load(part).text()))
+      .filter(Boolean);
+
+    let operatorName = lines[0] || "";
+    let region = regionOverride?.trim() || "";
+    let port = portKeyword;
+
+    const breadcrumbLine = lines.find((line) => line.includes(">"));
+    if (breadcrumbLine) {
+      const parts = breadcrumbLine.split(">").map((p) => cleanText(p)).filter(Boolean);
+      if (!region && parts.length >= 2) {
+        region = normalizeRegionLabel(parts[1]);
+      }
+      if (parts.length >= 4) {
+        port = parts[parts.length - 1].replace(/항$/, "") || portKeyword;
+      }
+    }
+
+    if (!operatorName || operatorName.includes(">")) {
+      operatorName = port + " 예약처 " + uid;
+    }
+
+    uidCandidates.set(uid, {
+      uid,
+      operatorName,
+      region: region || "충남",
+      port,
+    });
+  });
+
+  const existingSources = await listConfiguredSources();
+  const existingHosts = new Set<string>();
+  for (const src of existingSources) {
+    try {
+      existingHosts.add(new URL(src.sourceUrl).hostname.replace(/^www\./i, "").toLowerCase());
+    } catch {
+      existingHosts.add(src.sourceUrl.toLowerCase());
+    }
+  }
+
+  const siteCandidates = new Map<string, { baseUrl: string; name: string; region: string; port: string }>();
+  const skippedExisting: string[] = [];
+  const failed: Array<{ name: string; url: string; reason: string }> = [];
+
+  for (const item of uidCandidates.values()) {
+    try {
+      const detailUrl = new URL("https://thefishing.kr/reservation/list.php?uid=" + item.uid);
+      const detailHtml = await fetchHtml(detailUrl, searchUrl.toString(), USER_FETCH_CONTEXT);
+      const $d = cheerio.load(detailHtml);
+
+      const siteHref = $d("a.site").attr("href") || "";
+      const normUrl = normalizeProbeUrl(siteHref);
+      if (!normUrl) continue;
+
+      const parsedSite = new URL(normUrl);
+      if (parsedSite.hostname.endsWith("thefishing.kr")) continue;
+      const hostKey = parsedSite.hostname.replace(/^www\./i, "").toLowerCase();
+      const originUrl = parsedSite.protocol + "//" + parsedSite.hostname;
+
+      const titleText = cleanText($d("title").first().text());
+      const bracketMatch = titleText.match(/\[([^\]]+)\]/);
+      const cleanOperatorName = bracketMatch ? cleanText(bracketMatch[1]) : item.operatorName;
+
+      if (existingHosts.has(hostKey)) {
+        if (!skippedExisting.includes(cleanOperatorName)) {
+          skippedExisting.push(cleanOperatorName);
+        }
+        continue;
+      }
+
+      if (!siteCandidates.has(hostKey)) {
+        siteCandidates.set(hostKey, {
+          baseUrl: originUrl,
+          name: cleanOperatorName,
+          region: item.region,
+          port: item.port,
+        });
+      }
+    } catch (err) {
+      failed.push({
+        name: item.operatorName,
+        url: "https://thefishing.kr/reservation/list.php?uid=" + item.uid,
+        reason: err instanceof Error ? err.message : "상세 페이지 조회 실패",
+      });
+    }
+  }
+
+  const added: DiscoveredPortSource[] = [];
+
+  for (const [hostKey, candidate] of siteCandidates.entries()) {
+    try {
+      const detected = await detectSource(candidate.baseUrl);
+      const finalName = cleanText(candidate.name || detected?.suggestedName || candidate.baseUrl);
+      const finalUrl = detected?.workingUrl || candidate.baseUrl;
+      const vessels = detected?.vessels ?? [];
+
+      const [created] = await db
+        .insert(fishingSourcesTable)
+        .values({
+          name: finalName,
+          region: candidate.region,
+          port: candidate.port,
+          sourceUrl: finalUrl,
+          enabled: true,
+        })
+        .onConflictDoNothing()
+        .returning();
+
+      if (!created) {
+        skippedExisting.push(finalName);
+        continue;
+      }
+
+      if (vessels.length > 0) {
+        await db
+          .insert(fishingSourceVesselsTable)
+          .values(
+            vessels.map((vName) => ({
+              sourceId: created.id,
+              name: vName,
+              departurePort: candidate.port,
+              address: "",
+            })),
+          )
+          .onConflictDoNothing();
+      }
+
+      existingHosts.add(hostKey);
+      added.push({
+        id: created.id,
+        name: created.name,
+        region: created.region,
+        port: created.port,
+        sourceUrl: created.sourceUrl,
+        vessels,
+      });
+    } catch (err) {
+      failed.push({
+        name: candidate.name,
+        url: candidate.baseUrl,
+        reason: err instanceof Error ? err.message : "등록 실패",
+      });
+    }
+  }
+
+  if (added.length > 0) {
+    clearSourceCache();
+    resetSourceHealth();
+  }
+
+  return {
+    portKeyword,
+    scannedUids: uidCandidates.size,
+    candidateSites: siteCandidates.size,
+    added,
+    skippedExisting,
+    failed,
+  };
+}
