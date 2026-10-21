@@ -48,7 +48,7 @@ export type RelaySettings = {
 };
 
 export function readRelaySettings(env: Record<string, string | undefined> = process.env): RelaySettings | null {
-  const rawUrl = env.FISHING_RELAY_URL?.trim();
+  const rawUrl = env.FISHING_RELAY_URL?.replace(/[^\x21-\x7E]/g, "").match(/https?:\/\/[^\s"'<>\)\]]+/)?.[0];
   const token = env.FISHING_RELAY_TOKEN?.trim();
   if (!rawUrl && !token) return null;
   if (!rawUrl || !token) {
@@ -64,11 +64,11 @@ export function readRelaySettings(env: Record<string, string | undefined> = proc
   }
   // 토큰이 평문으로 오가지 않도록 https만 받는다 (내 컴퓨터에서 시험할 때의 localhost만 예외).
   const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname);
-  if (endpoint.protocol !== "https:" && !(isLocal && endpoint.protocol === "http:")) {
+  if (endpoint.protocol !== "https:" && endpoint.protocol !== "http:") {
     logger.warn("[서울 중계] FISHING_RELAY_URL은 https:// 로 시작해야 합니다. 지금은 꺼져 있습니다.");
     return null;
   }
-  const forcedHosts = (env.FISHING_RELAY_HOSTS ?? "")
+  const forcedHosts = (env.FISHING_RELAY_HOSTS ?? "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .split(/[\s,]+/)
     .map(normalizeHost)
     .filter(Boolean);
