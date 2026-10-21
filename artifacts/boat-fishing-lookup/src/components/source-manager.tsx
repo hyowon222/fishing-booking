@@ -754,15 +754,34 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
           ) : sources.length === 0 && !sourcesQuery.isLoading ? (
             <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-16 text-center text-sm text-muted-foreground">등록된 예약처가 없습니다. 항구를 추가해 주세요.</div>
           ) : (
-            <div className="space-y-3">
-              {sources.map((source) => (
-                <SourceCard
-                  key={source.id}
-                  source={source}
-                  onEdit={startEdit}
-                  onDelete={remove}
-                />
-              ))}
+            <div className="space-y-5">
+              {Object.entries(
+                sources.reduce<Record<string, FishingSource[]>>((groups, source) => {
+                  const key = source.port?.trim() || '기타';
+                  if (!groups[key]) groups[key] = [];
+                  groups[key].push(source);
+                  return groups;
+                }, {}),
+              )
+                .sort(([a], [b]) => a.localeCompare(b, 'ko'))
+                .map(([port, items]) => (
+                  <details key={port} open>
+                    <summary className="mb-2 flex cursor-pointer select-none items-center gap-2 text-sm font-bold">
+                      {port}
+                      <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-secondary-foreground">{items.length}</span>
+                    </summary>
+                    <div className="space-y-3">
+                      {items.map((source) => (
+                        <SourceCard
+                          key={source.id}
+                          source={source}
+                          onEdit={startEdit}
+                          onDelete={remove}
+                        />
+                      ))}
+                    </div>
+                  </details>
+                ))}
             </div>
           )}
         </section>

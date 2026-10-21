@@ -250,7 +250,7 @@ function SearchForm({
   // 항구를 선택하면 지역이, 지역을 선택하면 항구가 잠깁니다. 선박을 하나라도
   // 선택하면 두 조건 모두 잠겨서 지금 보고 있는 선박 기준을 벗어나지 않게 합니다.
   const portDisabled = regionSelected || shipSelected;
-  const regionDisabled = portSelected || shipSelected;
+  const regionDisabled = shipSelected;
   const resolveShips = (port: string | undefined, regions: string[]) => {
     const portShips = port ? options?.shipsByPort?.[port] ?? [] : options?.ships ?? [];
     if (!regions.length) return portShips;
@@ -390,39 +390,16 @@ function SearchForm({
               <p className="mt-1.5 text-[11px] text-muted-foreground">하루만 이용하시려면 같은 날짜를 두 번 선택한 뒤 확인을 눌러주세요.</p>
               {dateError && <p className="mt-1.5 flex items-center gap-1 text-xs text-destructive"><CircleAlert size={12} />{dateError}</p>}
             </div>
-            <div>
-              <FieldLabel icon={MapPin}>출항 항구</FieldLabel>
-              <select
-                value={criteria.port ?? ''}
-                disabled={portDisabled}
-                 onChange={(event) => {
-                   const port = event.target.value || undefined;
-                   // 항구를 선택하면 지역 조건은 비활성화되므로 값도 함께 비웁니다.
-                   const ships = resolveShips(port, []);
-                   setCriteria({ ...criteria, port, region: [], ship: (criteria.ship ?? []).filter((ship) => ships.includes(ship)) });
-                 }}
-                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
-                data-testid="select-port"
-              >
-                <option value="">전체 항구</option>
-                {options?.ports?.map((port) => <option value={port} key={port}>{port}</option>)}
-              </select>
-              {portDisabled && (
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  {shipSelected ? '선박 선택을 해제하면 다시 고를 수 있어요.' : '지역 선택을 해제하면 다시 고를 수 있어요.'}
-                </p>
-              )}
-            </div>
             <FilterColumn
-              title="지역"
+              title="출항 항구"
               values={options?.regions ?? []}
                selected={selectedRegions}
               onToggle={(value) => updateList('region', value)}
                onSelectAll={() => setCriteria({ ...criteria, region: [], ship: (criteria.ship ?? []).filter((ship) => resolveShips(criteria.port, []).includes(ship)) })}
-              emptyText={isOptionsLoading ? '목록 불러오는 중' : '사용 가능한 지역 없음'}
+              emptyText={isOptionsLoading ? '목록 불러오는 중' : '사용 가능한 출항 항구 없음'}
               testPrefix="region"
               disabled={regionDisabled}
-              disabledHint={shipSelected ? '선박 선택을 해제하면 다시 고를 수 있어요.' : '항구 선택을 해제하면 다시 고를 수 있어요.'}
+              disabledHint={'선박 선택을 해제하면 다시 고를 수 있어요.'}
               layout="grid"
             />
             <FilterColumn
@@ -648,7 +625,7 @@ function ScheduleResults({
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card px-6 py-20 text-center">
         <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Search size={25} /></div>
         <h3 className="font-bold">검색 조건을 설정해 주세요</h3>
-        <p className="mt-1 max-w-sm text-sm leading-6 text-muted-foreground">기간과 항구·지역·선박 조건을 정한 뒤 '자리 찾기'를 누르면 출항 일정을 조회합니다.</p>
+        <p className="mt-1 max-w-sm text-sm leading-6 text-muted-foreground">기간과 출항 항구·선박 조건을 정한 뒤 '자리 찾기'를 누르면 출항 일정을 조회합니다.</p>
       </div>
     );
   }
@@ -671,7 +648,7 @@ function ScheduleResults({
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card px-6 py-20 text-center">
         <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Compass size={25} /></div>
         <h3 className="font-bold">조건에 맞는 배가 없습니다</h3>
-        <p className="mt-1 max-w-sm text-sm leading-6 text-muted-foreground">기간을 넓히거나 지역·선박 필터를 하나씩 해제하면 더 많은 출항을 확인할 수 있습니다.</p>
+        <p className="mt-1 max-w-sm text-sm leading-6 text-muted-foreground">기간을 넓히거나 출항 항구·선박 필터를 하나씩 해제하면 더 많은 출항을 확인할 수 있습니다.</p>
         {/* 일부 예약처를 못 불러왔거나 응답이 늦은 경우, 결과가 0건이어도 그 이유를 같이 보여 준다 */}
         {data?.warning && <div className="mt-5 flex max-w-md items-start gap-2 rounded-lg border border-accent/30 bg-accent/10 px-4 py-3 text-left text-xs leading-5 text-[#765019]" data-testid="text-empty-warning"><Info size={15} className="mt-0.5 shrink-0" />{data.warning}</div>}
         <UnavailableSourceLinks sources={data?.unavailableSources ?? []} centered />
