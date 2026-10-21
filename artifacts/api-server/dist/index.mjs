@@ -102770,44 +102770,60 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
   if (!portKeyword) {
     throw new Error("\uD56D\uAD6C \uD0A4\uC6CC\uB4DC\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
   }
-  const searchUrl = new URL("https://thefishing.kr/search/result.php");
-  searchUrl.searchParams.set("cat", "reservation");
-  searchUrl.searchParams.set("msearch_text", portKeyword);
-  const searchHtml = await fetchHtml(searchUrl, "https://thefishing.kr/", USER_FETCH_CONTEXT);
-  const $2 = load(searchHtml);
   const uidCandidates = /* @__PURE__ */ new Map();
-  $2('a.search_list_card_item_link, a[href*="reservation/list.php?uid="]').each((_idx, el) => {
-    const anchor = $2(el);
-    const href = anchor.attr("href") || "";
-    const uidMatch = href.match(/uid=(\d+)/);
-    if (!uidMatch) return;
-    const uid = uidMatch[1];
-    if (uidCandidates.has(uid)) return;
-    const rawHtml = anchor.html() || "";
-    const lines = rawHtml.split(/<br\s*\/?>/i).map((part) => cleanText(load(part).text())).filter(Boolean);
-    let operatorName = lines[0] || "";
-    let region = regionOverride?.trim() || "";
-    let port2 = portKeyword;
-    const breadcrumbLine = lines.find((line2) => line2.includes(">"));
-    if (breadcrumbLine) {
-      const parts = breadcrumbLine.split(">").map((p) => cleanText(p)).filter(Boolean);
-      if (!region && parts.length >= 2) {
-        region = normalizeRegionLabel(parts[1]);
-      }
-      if (parts.length >= 4) {
-        port2 = parts[parts.length - 1].replace(/항$/, "") || portKeyword;
-      }
+  let currentPage = 1;
+  let maxPages = 15;
+  while (currentPage <= maxPages) {
+    const searchUrl = new URL("https://thefishing.kr/search/result.php");
+    searchUrl.searchParams.set("cat", "reservation");
+    searchUrl.searchParams.set("msearch_text", portKeyword);
+    searchUrl.searchParams.set("page", String(currentPage));
+    let searchHtml = "";
+    try {
+      searchHtml = await fetchHtml(searchUrl, "https://thefishing.kr/", USER_FETCH_CONTEXT);
+    } catch {
+      break;
     }
-    if (!operatorName || operatorName.includes(">")) {
-      operatorName = port2 + " \uC608\uC57D\uCC98 " + uid;
-    }
-    uidCandidates.set(uid, {
-      uid,
-      operatorName,
-      region: region || "\uCDA9\uB0A8",
-      port: port2
+    const $2 = load(searchHtml);
+    const foundUidsOnPage = /* @__PURE__ */ new Set();
+    $2('a.search_list_card_item_link, a[href*="reservation/list.php?uid="]').each((_idx, el) => {
+      const anchor = $2(el);
+      const href = anchor.attr("href") || "";
+      const uidMatch = href.match(/uid=(\d+)/);
+      if (!uidMatch) return;
+      const uid = uidMatch[1];
+      foundUidsOnPage.add(uid);
+      if (uidCandidates.has(uid)) return;
+      const rawHtml = anchor.html() || "";
+      const lines = rawHtml.split(/<br\s*\/?>/i).map((part) => cleanText(load(part).text())).filter(Boolean);
+      let operatorName = lines[0] || "";
+      let region = regionOverride?.trim() || "";
+      let port2 = portKeyword;
+      const breadcrumbLine = lines.find((line2) => line2.includes(">"));
+      if (breadcrumbLine) {
+        const parts = breadcrumbLine.split(">").map((p) => cleanText(p)).filter(Boolean);
+        if (!region && parts.length >= 2) {
+          region = normalizeRegionLabel(parts[1]);
+        }
+        if (parts.length >= 4) {
+          port2 = parts[parts.length - 1].replace(/항$/, "") || portKeyword;
+        }
+      }
+      if (!operatorName || operatorName.includes(">")) {
+        operatorName = port2 + " \uC608\uC57D\uCC98 " + uid;
+      }
+      uidCandidates.set(uid, {
+        uid,
+        operatorName,
+        region: region || "\uCDA9\uB0A8",
+        port: port2
+      });
     });
-  });
+    if (foundUidsOnPage.size === 0) {
+      break;
+    }
+    currentPage++;
+  }
   const existingSources = await listConfiguredSources();
   const existingHosts = /* @__PURE__ */ new Set();
   for (const src of existingSources) {
@@ -102823,7 +102839,7 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
   for (const item of uidCandidates.values()) {
     try {
       const detailUrl = new URL("https://thefishing.kr/reservation/list.php?uid=" + item.uid);
-      const detailHtml = await fetchHtml(detailUrl, searchUrl.toString(), USER_FETCH_CONTEXT);
+      const detailHtml = await fetchHtml(detailUrl, "https://thefishing.kr/", USER_FETCH_CONTEXT);
       const $d = load(detailHtml);
       const siteHref = $d("a.site").attr("href") || "";
       const normUrl = normalizeProbeUrl(siteHref);

@@ -1544,6 +1544,42 @@ function normalizeRegionLabel(raw: string): string {
   return REGION_SHORT_MAP[cleaned] || cleaned.replace(/(특별자치도|특별시|광역시|도)$/, "") || "기타";
 }
 
+export type DiscoveredPortSource = {
+  id: number;
+  name: string;
+  region: string;
+  port: string;
+  sourceUrl: string;
+  vessels: string[];
+};
+
+export type DiscoverByPortResult = {
+  portKeyword: string;
+  scannedUids: number;
+  candidateSites: number;
+  added: DiscoveredPortSource[];
+  skippedExisting: string[];
+  failed: Array<{ name: string; url: string; reason: string }>;
+};
+
+export type DiscoveredPortSource = {
+  id: number;
+  name: string;
+  region: string;
+  port: string;
+  sourceUrl: string;
+  vessels: string[];
+};
+
+export type DiscoverByPortResult = {
+  portKeyword: string;
+  scannedUids: number;
+  candidateSites: number;
+  added: DiscoveredPortSource[];
+  skippedExisting: string[];
+  failed: Array<{ name: string; url: string; reason: string }>;
+};
+
 export async function discoverSourcesByPort(
   rawKeyword: string,
   regionOverride?: string,
@@ -1553,55 +1589,75 @@ export async function discoverSourcesByPort(
     throw new Error("항구 키워드를 입력해 주세요.");
   }
 
-  const searchUrl = new URL("https://thefishing.kr/search/result.php");
-  searchUrl.searchParams.set("cat", "reservation");
-  searchUrl.searchParams.set("msearch_text", portKeyword);
-
-  const searchHtml = await fetchHtml(searchUrl, "https://thefishing.kr/", USER_FETCH_CONTEXT);
-  const $ = cheerio.load(searchHtml);
-
   const uidCandidates = new Map<string, { uid: string; operatorName: string; region: string; port: string }>();
+  let currentPage = 1;
+  let maxPages = 15; // 안전 상한선
 
-  $("a.search_list_card_item_link, a[href*=\"reservation/list.php?uid=\"]").each((_idx, el) => {
-    const anchor = $(el);
-    const href = anchor.attr("href") || "";
-    const uidMatch = href.match(/uid=(\d+)/);
-    if (!uidMatch) return;
-    const uid = uidMatch[1];
-    if (uidCandidates.has(uid)) return;
+  while (currentPage <= maxPages) {
+    const searchUrl = new URL("https://thefishing.kr/search/result.php");
+    searchUrl.searchParams.set("cat", "reservation");
+    searchUrl.searchParams.set("msearch_text", portKeyword);
+    searchUrl.searchParams.set("page", String(currentPage));
 
-    const rawHtml = anchor.html() || "";
-    const lines = rawHtml
-      .split(/<br\s*\/?>/i)
-      .map((part) => cleanText(cheerio.load(part).text()))
-      .filter(Boolean);
-
-    let operatorName = lines[0] || "";
-    let region = regionOverride?.trim() || "";
-    let port = portKeyword;
-
-    const breadcrumbLine = lines.find((line) => line.includes(">"));
-    if (breadcrumbLine) {
-      const parts = breadcrumbLine.split(">").map((p) => cleanText(p)).filter(Boolean);
-      if (!region && parts.length >= 2) {
-        region = normalizeRegionLabel(parts[1]);
-      }
-      if (parts.length >= 4) {
-        port = parts[parts.length - 1].replace(/항$/, "") || portKeyword;
-      }
+    let searchHtml = "";
+    try {
+      searchHtml = await fetchHtml(searchUrl, "https://thefishing.kr/", USER_FETCH_CONTEXT);
+    } catch {
+      break;
     }
 
-    if (!operatorName || operatorName.includes(">")) {
-      operatorName = port + " 예약처 " + uid;
-    }
+    const $ = cheerio.load(searchHtml);
+    const foundUidsOnPage = new Set<string>();
 
-    uidCandidates.set(uid, {
-      uid,
-      operatorName,
-      region: region || "충남",
-      port,
+    $("a.search_list_card_item_link, a[href*=\"reservation/list.php?uid=\"]").each((_idx, el) => {
+      const anchor = $(el);
+      const href = anchor.attr("href") || "";
+      const uidMatch = href.match(/uid=(\d+)/);
+      if (!uidMatch) return;
+      const uid = uidMatch[1];
+      foundUidsOnPage.add(uid);
+
+      if (uidCandidates.has(uid)) return;
+
+      const rawHtml = anchor.html() || "";
+      const lines = rawHtml
+        .split(/<br\s*\/?>/i)
+        .map((part) => cleanText(cheerio.load(part).text()))
+        .filter(Boolean);
+
+      let operatorName = lines[0] || "";
+      let region = regionOverride?.trim() || "";
+      let port = portKeyword;
+
+      const breadcrumbLine = lines.find((line) => line.includes(">"));
+      if (breadcrumbLine) {
+        const parts = breadcrumbLine.split(">").map((p) => cleanText(p)).filter(Boolean);
+        if (!region && parts.length >= 2) {
+          region = normalizeRegionLabel(parts[1]);
+        }
+        if (parts.length >= 4) {
+          port = parts[parts.length - 1].replace(/항$/, "") || portKeyword;
+        }
+      }
+
+      if (!operatorName || operatorName.includes(">")) {
+        operatorName = port + " 예약처 " + uid;
+      }
+
+      uidCandidates.set(uid, {
+        uid,
+        operatorName,
+        region: region || "충남",
+        port,
+      });
     });
-  });
+
+    // 더 이상 검색 결과가 없으면 중단
+    if (foundUidsOnPage.size === 0) {
+      break;
+    }
+    currentPage++;
+  }
 
   const existingSources = await listConfiguredSources();
   const existingHosts = new Set<string>();
@@ -1620,7 +1676,7 @@ export async function discoverSourcesByPort(
   for (const item of uidCandidates.values()) {
     try {
       const detailUrl = new URL("https://thefishing.kr/reservation/list.php?uid=" + item.uid);
-      const detailHtml = await fetchHtml(detailUrl, searchUrl.toString(), USER_FETCH_CONTEXT);
+      const detailHtml = await fetchHtml(detailUrl, "https://thefishing.kr/", USER_FETCH_CONTEXT);
       const $d = cheerio.load(detailHtml);
 
       const siteHref = $d("a.site").attr("href") || "";
@@ -1732,3 +1788,4 @@ export async function discoverSourcesByPort(
     failed,
   };
 }
+
