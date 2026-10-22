@@ -1634,6 +1634,8 @@ function sourceDedupKey(rawUrl: string): string {
 export async function discoverSourcesByPort(
   rawKeyword: string,
   regionOverride?: string,
+  scanSources: { thefishing: boolean; sunsang24: boolean } = { thefishing: true, sunsang24: true },
+  signal?: AbortSignal,
 ): Promise<DiscoverByPortResult> {
   const portKeyword = cleanText(rawKeyword).replace(/항$/, "");
   if (!portKeyword) {
@@ -1671,9 +1673,9 @@ export async function discoverSourcesByPort(
   // PART 1: 더피싱 전수 스캔
   const uidCandidates = new Map<string, { uid: string; operatorName: string; region: string; port: string }>();
   let currentPage = 1;
-  const maxPages = 15;
+  const maxPages = scanSources.thefishing ? 15 : 0;
 
-  while (currentPage <= maxPages) {
+  while (currentPage <= maxPages && !signal?.aborted) {
     const searchUrl = new URL("https://thefishing.kr/search/result.php");
     searchUrl.searchParams.set("cat", "reservation");
     searchUrl.searchParams.set("msearch_text", portKeyword);
@@ -1739,6 +1741,7 @@ export async function discoverSourcesByPort(
   totalScannedCount += uidCandidates.size;
 
   for (const item of uidCandidates.values()) {
+    if (signal?.aborted) break;
     try {
       const detailUrl = new URL("https://thefishing.kr/reservation/list.php?uid=" + item.uid);
       const detailHtml = await fetchHtml(detailUrl, "https://thefishing.kr/", USER_FETCH_CONTEXT);
@@ -1783,9 +1786,9 @@ export async function discoverSourcesByPort(
 
   // PART 2: 선상24 공식 API 스캔
   const sunsangShips = new Map<number, { no: number; name: string; region: string; port: string }>();
-  for (const kw of [portKeyword + "항", portKeyword]) {
+  for (const kw of scanSources.sunsang24 ? [portKeyword + "항", portKeyword] : []) {
     let sPage = 1;
-    while (sPage <= 10) {
+    while (sPage <= 10 && !signal?.aborted) {
       try {
         const listUrl = new URL("https://api.sunsang24.com/ship/list");
         listUrl.searchParams.set("page", String(sPage));
@@ -1828,6 +1831,7 @@ export async function discoverSourcesByPort(
   const processedGroupNos = new Set<number>();
 
   for (const ship of sunsangShips.values()) {
+    if (signal?.aborted) break;
     if (processedGroupNos.has(ship.no)) continue;
 
     let groupVessels: string[] = [ship.name];
@@ -1884,6 +1888,7 @@ export async function discoverSourcesByPort(
   const added: DiscoveredPortSource[] = [];
 
   for (const [dedupKey, candidate] of siteCandidates.entries()) {
+    if (signal?.aborted) break;
     try {
       let finalName = cleanText(candidate.name);
       let finalUrl = candidate.baseUrl;

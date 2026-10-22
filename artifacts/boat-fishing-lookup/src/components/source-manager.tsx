@@ -356,19 +356,29 @@ function PortAutoDiscovery({ onChanged }: { onChanged: () => void }) {
   const [isScanning, setIsScanning] = useState(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [useTheFishing, setUseTheFishing] = useState(true);
+  const [useSunsang, setUseSunsang] = useState(true);
+  const abortRef = useRef<AbortController | null>(null);
 
   async function handleScan(e: FormEvent) {
     e.preventDefault();
     const keyword = portKeyword.trim();
-    if (!keyword || isScanning) return;
+    if (!keyword || isScanning || (!useTheFishing && !useSunsang)) return;
     setIsScanning(true);
     setResultMsg(null);
     setErrorMsg(null);
     try {
+      const controller = new AbortController();
+      abortRef.current = controller;
       const response = await fetch("/api/fishing/sources/discover", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ portKeyword: keyword, region: region.trim() || undefined }),
+        body: JSON.stringify({
+          portKeyword: keyword,
+          region: region.trim() || undefined,
+          sources: [...(useTheFishing ? ["thefishing"] : []), ...(useSunsang ? ["sunsang24"] : [])],
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -386,9 +396,15 @@ function PortAutoDiscovery({ onChanged }: { onChanged: () => void }) {
           onChanged();
         }
       }
-    } catch {
-      setErrorMsg("서버와 통신하는 중 오류가 발생했습니다.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setResultMsg("스캔을 중지했습니다. 중지하기 전에 등록된 예약처는 그대로 유지됩니다.");
+        onChanged();
+      } else {
+        setErrorMsg("서버와 통신하는 중 오류가 발생했습니다.");
+      }
     } finally {
+      abortRef.current = null;
       setIsScanning(false);
     }
   }
@@ -398,10 +414,10 @@ function PortAutoDiscovery({ onChanged }: { onChanged: () => void }) {
       <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
         <div>
           <div className="flex items-center gap-2 text-sm font-bold text-foreground">
-            <Wand2 size={16} className="text-primary" /> 항구별 선사 자동 스캔 및 일괄 등록 (더피싱 연동)
+            <Wand2 size={16} className="text-primary" /> 항구별 선사 자동 스캔 및 일괄 등록
           </div>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            항구 이름(예: 삼길포, 오천, 영목, 녹동)만 입력하면 더피싱에 등록된 해당 항구 선사 홈페이지와 소속 선박을 자동으로 찾아 일괄 등록합니다.
+            항구 이름(예: 삼길포, 오천, 영목, 녹동)을 입력하고 조회할 사이트를 선택하면, 해당 항구의 선사와 소속 선박을 자동으로 찾아 일괄 등록합니다.
           </p>
         </div>
       </div>
@@ -424,12 +440,33 @@ function PortAutoDiscovery({ onChanged }: { onChanged: () => void }) {
         />
         <button
           type="submit"
-          disabled={!portKeyword.trim() || isScanning}
+          disabled={!portKeyword.trim() || isScanning || (!useTheFishing && !useSunsang)}
           className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-xs font-bold text-primary-foreground transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isScanning ? <LoaderCircle size={14} className="animate-spin" /> : <Wand2 size={14} />}
           {isScanning ? "스캔 및 선박 감지 중..." : "항구 자동 스캔·등록"}
         </button>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-semibold text-foreground">
+        <span className="text-muted-foreground">조회 사이트</span>
+        <label className="flex cursor-pointer items-center gap-1.5">
+          <input type="checkbox" checked={useTheFishing} onChange={(e) => setUseTheFishing(e.target.checked)} disabled={isScanning} className="h-4 w-4 accent-primary" />
+          더피싱
+        </label>
+        <label className="flex cursor-pointer items-center gap-1.5">
+          <input type="checkbox" checked={useSunsang} onChange={(e) => setUseSunsang(e.target.checked)} disabled={isScanning} className="h-4 w-4 accent-primary" />
+          선상24
+        </label>
+        {!useTheFishing && !useSunsang && <span className="text-destructive">하나 이상 선택해 주세요.</span>}
+        {isScanning && (
+          <button
+            type="button"
+            onClick={() => abortRef.current?.abort()}
+            className="ml-auto flex h-8 items-center gap-1.5 rounded-lg border border-destructive/40 px-3 text-xs font-bold text-destructive transition hover:bg-destructive/10"
+          >
+            <X size={13} /> 스캔 중지
+          </button>
+        )}
       </div>
       {resultMsg && <p className="mt-2.5 text-xs font-semibold text-primary">{resultMsg}</p>}
       {errorMsg && <p className="mt-2.5 text-xs font-semibold text-destructive">{errorMsg}</p>}

@@ -438,7 +438,17 @@ router.post("/fishing/sources/discover", async (req, res) => {
     return;
   }
   try {
-    const result = await discoverSourcesByPort(portKeyword, region);
+    const rawSources: unknown[] = Array.isArray(req.body?.sources) ? req.body.sources : ["thefishing", "sunsang24"];
+    const scanSources = { thefishing: rawSources.includes("thefishing"), sunsang24: rawSources.includes("sunsang24") };
+    if (!scanSources.thefishing && !scanSources.sunsang24) {
+      res.status(400).json({ error: "조회할 사이트를 하나 이상 선택해 주세요." });
+      return;
+    }
+    const controller = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) controller.abort();
+    });
+    const result = await discoverSourcesByPort(portKeyword, region, scanSources, controller.signal);
     clearFishingSourceCache();
     res.json(result);
   } catch (error: unknown) {

@@ -102838,7 +102838,7 @@ function sourceDedupKey(rawUrl) {
     return rawUrl.trim().toLowerCase();
   }
 }
-async function discoverSourcesByPort(rawKeyword, regionOverride) {
+async function discoverSourcesByPort(rawKeyword, regionOverride, scanSources = { thefishing: true, sunsang24: true }, signal) {
   const portKeyword = cleanText(rawKeyword).replace(/항$/, "");
   if (!portKeyword) {
     throw new Error("\uD56D\uAD6C \uD0A4\uC6CC\uB4DC\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
@@ -102861,8 +102861,8 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
   let totalScannedCount = 0;
   const uidCandidates = /* @__PURE__ */ new Map();
   let currentPage = 1;
-  const maxPages = 15;
-  while (currentPage <= maxPages) {
+  const maxPages = scanSources.thefishing ? 15 : 0;
+  while (currentPage <= maxPages && !signal?.aborted) {
     const searchUrl = new URL("https://thefishing.kr/search/result.php");
     searchUrl.searchParams.set("cat", "reservation");
     searchUrl.searchParams.set("msearch_text", portKeyword);
@@ -102913,6 +102913,7 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
   }
   totalScannedCount += uidCandidates.size;
   for (const item of uidCandidates.values()) {
+    if (signal?.aborted) break;
     try {
       const detailUrl = new URL("https://thefishing.kr/reservation/list.php?uid=" + item.uid);
       const detailHtml = await fetchHtml(detailUrl, "https://thefishing.kr/", USER_FETCH_CONTEXT);
@@ -102950,9 +102951,9 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
     }
   }
   const sunsangShips = /* @__PURE__ */ new Map();
-  for (const kw of [portKeyword + "\uD56D", portKeyword]) {
+  for (const kw of scanSources.sunsang24 ? [portKeyword + "\uD56D", portKeyword] : []) {
     let sPage = 1;
-    while (sPage <= 10) {
+    while (sPage <= 10 && !signal?.aborted) {
       try {
         const listUrl = new URL("https://api.sunsang24.com/ship/list");
         listUrl.searchParams.set("page", String(sPage));
@@ -102989,6 +102990,7 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
   totalScannedCount += sunsangShips.size;
   const processedGroupNos = /* @__PURE__ */ new Set();
   for (const ship of sunsangShips.values()) {
+    if (signal?.aborted) break;
     if (processedGroupNos.has(ship.no)) continue;
     let groupVessels = [ship.name];
     let primaryNo = ship.no;
@@ -103038,6 +103040,7 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
   }
   const added = [];
   for (const [dedupKey, candidate] of siteCandidates.entries()) {
+    if (signal?.aborted) break;
     try {
       let finalName = cleanText(candidate.name);
       let finalUrl = candidate.baseUrl;
@@ -103434,7 +103437,17 @@ router2.post("/fishing/sources/discover", async (req, res) => {
     return;
   }
   try {
-    const result = await discoverSourcesByPort(portKeyword, region);
+    const rawSources = Array.isArray(req.body?.sources) ? req.body.sources : ["thefishing", "sunsang24"];
+    const scanSources = { thefishing: rawSources.includes("thefishing"), sunsang24: rawSources.includes("sunsang24") };
+    if (!scanSources.thefishing && !scanSources.sunsang24) {
+      res.status(400).json({ error: "\uC870\uD68C\uD560 \uC0AC\uC774\uD2B8\uB97C \uD558\uB098 \uC774\uC0C1 \uC120\uD0DD\uD574 \uC8FC\uC138\uC694." });
+      return;
+    }
+    const controller = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) controller.abort();
+    });
+    const result = await discoverSourcesByPort(portKeyword, region, scanSources, controller.signal);
     clearFishingSourceCache();
     res.json(result);
   } catch (error40) {
