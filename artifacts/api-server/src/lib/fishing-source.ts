@@ -720,6 +720,18 @@ function parseSunsangDayBlock(
   return items;
 }
 
+function extractSunsangShipNo(baseUrl: string): string | null {
+  try {
+    const parsed = new URL(baseUrl);
+    const paramNo = parsed.searchParams.get("ship_no");
+    if (paramNo && /^\d+$/.test(paramNo)) return paramNo;
+    const pathMatch = parsed.pathname.match(/\/(?:schedule_fleet_list|simple_info|group)\/(\d+)/);
+    return pathMatch ? pathMatch[1] : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchSunsangMonth(
   year: number,
   month: number,
@@ -727,8 +739,73 @@ async function fetchSunsangMonth(
   ctx: FetchContext = USER_FETCH_CONTEXT,
 ): Promise<FishingSchedule[]> {
   const monthValue = `${year}${String(month).padStart(2, "0")}`;
-  const url = new URL(`/ship/schedule_fleet/${monthValue}`, config.baseUrl);
+  const shipNo = extractSunsangShipNo(config.baseUrl);
 
+  // 선상24 공식 JSON API 방식 (ship_no 기반)
+  if (shipNo) {
+    const apiUrl = new URL(`https://api.sunsang24.com/ship/schedule_fleet_list/${shipNo}/${monthValue}?simple=&possible=&eyyyymm=`);
+    const rawJson = await fetchHtml(apiUrl, "https://www.sunsang24.com/", ctx);
+    const parseStartedAt = performance.now();
+    let list: any[] = [];
+    try {
+      const parsed = JSON.parse(rawJson);
+      if (Array.isArray(parsed)) list = parsed;
+    } catch {
+      list = [];
+    }
+
+    const items: FishingSchedule[] = [];
+    const seenDates = new Set<string>();
+
+    for (const row of list) {
+      const departureDate = typeof row?.sdate === "string" ? row.sdate : "";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(departureDate)) continue;
+      seenDates.add(departureDate);
+
+      const vessel = cleanText(row?.ship?.name || config.name);
+      if (!vessel || isExcludedVessel(vessel)) continue;
+
+      const isClosed = row?.status_code === "END" || row?.is_reservation_possible === 0;
+      const remain = isClosed ? 0 : Number(row?.remain_embarkation_num ?? 0);
+      if (!Number.isFinite(remain) || remain <= 0) continue;
+
+      const weekday = WEEKDAY_KO[new Date(`${departureDate}T00:00:00Z`).getUTCDay()];
+      const tide = cleanText(row?.tide_water || "") || "미정";
+      const genre = cleanText(row?.fish_type || "") || "선상 낚시";
+      const scheduleNo = String(row?.schedule_no || "schedule");
+      const bookingUrl = `https://www.sunsang24.com/ship/schedule?sdate=${departureDate}&ship_no=${row?.ship?.no || shipNo}`;
+      const id = `${departureDate}-${vessel}-${scheduleNo}`
+        .replace(/[^0-9A-Za-z가-힣-]+/g, "-")
+        .toLowerCase();
+
+      items.push({
+        id,
+        departureDate,
+        weekday,
+        region: config.region,
+        port: config.port,
+        tide,
+        tideStrengthPercent: null,
+        genre,
+        operator: cleanText(config.name),
+        vessel,
+        remainingSeats: remain,
+        operatorUrl: config.baseUrl,
+        bookingUrl,
+        source: bookingUrl,
+      });
+    }
+
+    if (ctx.trace) {
+      ctx.trace.parseMs = Math.round(performance.now() - parseStartedAt);
+      ctx.trace.blocks = seenDates.size;
+      ctx.trace.items = items.length;
+    }
+    return items;
+  }
+
+  // 기존 *.sunsang24.com 서브도메인 HTML 파싱 방식
+  const url = new URL(`/ship/schedule_fleet/${monthValue}`, config.baseUrl);
   const html = await fetchHtml(url, config.baseUrl, ctx);
   const parseStartedAt = performance.now();
   const $ = cheerio.load(html);
@@ -1541,44 +1618,18 @@ const REGION_SHORT_MAP: Record<string, string> = {
 
 function normalizeRegionLabel(raw: string): string {
   const cleaned = cleanText(raw);
-  return REGION_SHORT_MAP[cleaned] || cleaned.replace(/(특별자치도|특별시|광역시|도)$/, "") || "기타";
+  return REGION_SHORT_MAP[cleaned] || cleaned.replace(/(특별자치도|특별시|광역시|도)$/, "") || "충남";
 }
 
-export type DiscoveredPortSource = {
-  id: number;
-  name: string;
-  region: string;
-  port: string;
-  sourceUrl: string;
-  vessels: string[];
-};
-
-export type DiscoverByPortResult = {
-  portKeyword: string;
-  scannedUids: number;
-  candidateSites: number;
-  added: DiscoveredPortSource[];
-  skippedExisting: string[];
-  failed: Array<{ name: string; url: string; reason: string }>;
-};
-
-export type DiscoveredPortSource = {
-  id: number;
-  name: string;
-  region: string;
-  port: string;
-  sourceUrl: string;
-  vessels: string[];
-};
-
-export type DiscoverByPortResult = {
-  portKeyword: string;
-  scannedUids: number;
-  candidateSites: number;
-  added: DiscoveredPortSource[];
-  skippedExisting: string[];
-  failed: Array<{ name: string; url: string; reason: string }>;
-};
+function sourceDedupKey(rawUrl: string): string {
+  const shipNo = extractSunsangShipNo(rawUrl);
+  if (shipNo) return "sunsang24:" + shipNo;
+  try {
+    return new URL(rawUrl).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return rawUrl.trim().toLowerCase();
+  }
+}
 
 export async function discoverSourcesByPort(
   rawKeyword: string,
@@ -1589,9 +1640,38 @@ export async function discoverSourcesByPort(
     throw new Error("항구 키워드를 입력해 주세요.");
   }
 
+  const existingSources = await listConfiguredSources();
+  const existingKeys = new Set<string>();
+  const existingNamesByPort = new Set<string>();
+  for (const src of existingSources) {
+    existingKeys.add(sourceDedupKey(src.sourceUrl));
+    if (src.port.replace(/항$/, "") === portKeyword) {
+      existingNamesByPort.add(cleanText(src.name).replace(/\s+/g, ""));
+      for (const v of src.vessels) {
+        existingNamesByPort.add(cleanText(v.name).replace(/\s+/g, ""));
+      }
+    }
+  }
+
+  const siteCandidates = new Map<
+    string,
+    {
+      baseUrl: string;
+      name: string;
+      region: string;
+      port: string;
+      preVessels?: string[];
+      skipDetect?: boolean;
+    }
+  >();
+  const skippedExisting: string[] = [];
+  const failed: Array<{ name: string; url: string; reason: string }> = [];
+  let totalScannedCount = 0;
+
+  // PART 1: 더피싱 전수 스캔
   const uidCandidates = new Map<string, { uid: string; operatorName: string; region: string; port: string }>();
   let currentPage = 1;
-  let maxPages = 15; // 안전 상한선
+  const maxPages = 15;
 
   while (currentPage <= maxPages) {
     const searchUrl = new URL("https://thefishing.kr/search/result.php");
@@ -1625,7 +1705,7 @@ export async function discoverSourcesByPort(
         .map((part) => cleanText(cheerio.load(part).text()))
         .filter(Boolean);
 
-      let operatorName = lines[0] || "";
+      let operatorName = cleanText(anchor.find(".card_item_content_stname").text()) || lines[0] || "";
       let region = regionOverride?.trim() || "";
       let port = portKeyword;
 
@@ -1652,26 +1732,11 @@ export async function discoverSourcesByPort(
       });
     });
 
-    // 더 이상 검색 결과가 없으면 중단
-    if (foundUidsOnPage.size === 0) {
-      break;
-    }
+    if (foundUidsOnPage.size === 0) break;
     currentPage++;
   }
 
-  const existingSources = await listConfiguredSources();
-  const existingHosts = new Set<string>();
-  for (const src of existingSources) {
-    try {
-      existingHosts.add(new URL(src.sourceUrl).hostname.replace(/^www\./i, "").toLowerCase());
-    } catch {
-      existingHosts.add(src.sourceUrl.toLowerCase());
-    }
-  }
-
-  const siteCandidates = new Map<string, { baseUrl: string; name: string; region: string; port: string }>();
-  const skippedExisting: string[] = [];
-  const failed: Array<{ name: string; url: string; reason: string }> = [];
+  totalScannedCount += uidCandidates.size;
 
   for (const item of uidCandidates.values()) {
     try {
@@ -1692,7 +1757,7 @@ export async function discoverSourcesByPort(
       const bracketMatch = titleText.match(/\[([^\]]+)\]/);
       const cleanOperatorName = bracketMatch ? cleanText(bracketMatch[1]) : item.operatorName;
 
-      if (existingHosts.has(hostKey)) {
+      if (existingKeys.has(hostKey)) {
         if (!skippedExisting.includes(cleanOperatorName)) {
           skippedExisting.push(cleanOperatorName);
         }
@@ -1711,19 +1776,125 @@ export async function discoverSourcesByPort(
       failed.push({
         name: item.operatorName,
         url: "https://thefishing.kr/reservation/list.php?uid=" + item.uid,
-        reason: err instanceof Error ? err.message : "상세 페이지 조회 실패",
+        reason: err instanceof Error ? err.message : "더피싱 상세 조회 실패",
       });
     }
   }
 
+  // PART 2: 선상24 공식 API 스캔
+  const sunsangShips = new Map<number, { no: number; name: string; region: string; port: string }>();
+  for (const kw of [portKeyword + "항", portKeyword]) {
+    let sPage = 1;
+    while (sPage <= 10) {
+      try {
+        const listUrl = new URL("https://api.sunsang24.com/ship/list");
+        listUrl.searchParams.set("page", String(sPage));
+        listUrl.searchParams.set("type", "general");
+        listUrl.searchParams.set("keyword", kw);
+
+        const raw = await fetchHtml(listUrl, "https://www.sunsang24.com/", USER_FETCH_CONTEXT);
+        const data = JSON.parse(raw);
+        const rows = Array.isArray(data?.list) ? data.list : [];
+        if (rows.length === 0) break;
+
+        for (const row of rows) {
+          const shipNo = Number(row?.ship?.no);
+          const shipName = cleanText(row?.ship?.name || "");
+          const rowPort = cleanText(row?.port_name || "").replace(/항$/, "");
+          if (!shipNo || !shipName) continue;
+          if (rowPort && !rowPort.includes(portKeyword) && !portKeyword.includes(rowPort)) continue;
+
+          if (!sunsangShips.has(shipNo)) {
+            const areaMain = cleanText(row?.ship?.area_main || "");
+            sunsangShips.set(shipNo, {
+              no: shipNo,
+              name: shipName,
+              region: regionOverride?.trim() || (areaMain ? normalizeRegionLabel(areaMain) : "충남"),
+              port: rowPort || portKeyword,
+            });
+          }
+        }
+
+        if (data?.is_data_end || rows.length < 15) break;
+        sPage++;
+      } catch {
+        break;
+      }
+    }
+    if (sunsangShips.size > 0) break;
+  }
+
+  totalScannedCount += sunsangShips.size;
+  const processedGroupNos = new Set<number>();
+
+  for (const ship of sunsangShips.values()) {
+    if (processedGroupNos.has(ship.no)) continue;
+
+    let groupVessels: string[] = [ship.name];
+    let primaryNo = ship.no;
+
+    try {
+      const grpUrl = new URL("https://api.sunsang24.com/ship/group/" + ship.no + "/M");
+      const grpRaw = await fetchHtml(grpUrl, "https://www.sunsang24.com/", USER_FETCH_CONTEXT);
+      const grpList = JSON.parse(grpRaw);
+      if (Array.isArray(grpList) && grpList.length > 0) {
+        const nos: number[] = [];
+        const names: string[] = [];
+        for (const g of grpList) {
+          const gNo = Number(g?.no);
+          const gName = cleanText(g?.name || "");
+          if (gNo) {
+            nos.push(gNo);
+            processedGroupNos.add(gNo);
+          }
+          if (gName && !isExcludedVessel(gName) && !names.includes(gName)) {
+            names.push(gName);
+          }
+        }
+        if (nos.length > 0) primaryNo = nos[0];
+        if (names.length > 0) groupVessels = names;
+      }
+    } catch {}
+    processedGroupNos.add(ship.no);
+
+    const dedupKey = "sunsang24:" + primaryNo;
+    const displayOperatorName = ship.port + "항 " + groupVessels[0] + " (선상24)";
+
+    const alreadyInPort = groupVessels.some((v) => existingNamesByPort.has(cleanText(v).replace(/\s+/g, "")));
+    if (existingKeys.has(dedupKey) || alreadyInPort) {
+      if (!skippedExisting.includes(displayOperatorName)) {
+        skippedExisting.push(displayOperatorName);
+      }
+      continue;
+    }
+
+    if (!siteCandidates.has(dedupKey)) {
+      siteCandidates.set(dedupKey, {
+        baseUrl: "https://www.sunsang24.com/ship/schedule?ship_no=" + primaryNo,
+        name: displayOperatorName,
+        region: ship.region,
+        port: ship.port,
+        preVessels: groupVessels,
+        skipDetect: true,
+      });
+    }
+  }
+
+  // PART 3: DB 등록
   const added: DiscoveredPortSource[] = [];
 
-  for (const [hostKey, candidate] of siteCandidates.entries()) {
+  for (const [dedupKey, candidate] of siteCandidates.entries()) {
     try {
-      const detected = await detectSource(candidate.baseUrl);
-      const finalName = cleanText(candidate.name || detected?.suggestedName || candidate.baseUrl);
-      const finalUrl = detected?.workingUrl || candidate.baseUrl;
-      const vessels = detected?.vessels ?? [];
+      let finalName = cleanText(candidate.name);
+      let finalUrl = candidate.baseUrl;
+      let vessels = candidate.preVessels ?? [];
+
+      if (!candidate.skipDetect) {
+        const detected = await detectSource(candidate.baseUrl);
+        finalName = cleanText(candidate.name || detected?.suggestedName || candidate.baseUrl);
+        finalUrl = detected?.workingUrl || candidate.baseUrl;
+        vessels = detected?.vessels ?? [];
+      }
 
       const [created] = await db
         .insert(fishingSourcesTable)
@@ -1738,7 +1909,7 @@ export async function discoverSourcesByPort(
         .returning();
 
       if (!created) {
-        skippedExisting.push(finalName);
+        if (!skippedExisting.includes(finalName)) skippedExisting.push(finalName);
         continue;
       }
 
@@ -1756,7 +1927,11 @@ export async function discoverSourcesByPort(
           .onConflictDoNothing();
       }
 
-      existingHosts.add(hostKey);
+      existingKeys.add(dedupKey);
+      for (const v of vessels) {
+        existingNamesByPort.add(cleanText(v).replace(/\s+/g, ""));
+      }
+
       added.push({
         id: created.id,
         name: created.name,
@@ -1781,11 +1956,10 @@ export async function discoverSourcesByPort(
 
   return {
     portKeyword,
-    scannedUids: uidCandidates.size,
+    scannedUids: totalScannedCount,
     candidateSites: siteCandidates.size,
     added,
     skippedExisting,
     failed,
   };
 }
-

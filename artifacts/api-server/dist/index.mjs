@@ -102215,8 +102215,72 @@ function parseSunsangDayBlock($2, dayTable, config2) {
   });
   return items;
 }
+function extractSunsangShipNo(baseUrl) {
+  try {
+    const parsed = new URL(baseUrl);
+    const paramNo = parsed.searchParams.get("ship_no");
+    if (paramNo && /^\d+$/.test(paramNo)) return paramNo;
+    const pathMatch = parsed.pathname.match(/\/(?:schedule_fleet_list|simple_info|group)\/(\d+)/);
+    return pathMatch ? pathMatch[1] : null;
+  } catch {
+    return null;
+  }
+}
 async function fetchSunsangMonth(year, month, config2, ctx = USER_FETCH_CONTEXT) {
   const monthValue = `${year}${String(month).padStart(2, "0")}`;
+  const shipNo = extractSunsangShipNo(config2.baseUrl);
+  if (shipNo) {
+    const apiUrl = new URL(`https://api.sunsang24.com/ship/schedule_fleet_list/${shipNo}/${monthValue}?simple=&possible=&eyyyymm=`);
+    const rawJson = await fetchHtml(apiUrl, "https://www.sunsang24.com/", ctx);
+    const parseStartedAt2 = performance2.now();
+    let list = [];
+    try {
+      const parsed = JSON.parse(rawJson);
+      if (Array.isArray(parsed)) list = parsed;
+    } catch {
+      list = [];
+    }
+    const items = [];
+    const seenDates = /* @__PURE__ */ new Set();
+    for (const row of list) {
+      const departureDate = typeof row?.sdate === "string" ? row.sdate : "";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(departureDate)) continue;
+      seenDates.add(departureDate);
+      const vessel = cleanText(row?.ship?.name || config2.name);
+      if (!vessel || isExcludedVessel(vessel)) continue;
+      const isClosed = row?.status_code === "END" || row?.is_reservation_possible === 0;
+      const remain = isClosed ? 0 : Number(row?.remain_embarkation_num ?? 0);
+      if (!Number.isFinite(remain) || remain <= 0) continue;
+      const weekday = WEEKDAY_KO[(/* @__PURE__ */ new Date(`${departureDate}T00:00:00Z`)).getUTCDay()];
+      const tide = cleanText(row?.tide_water || "") || "\uBBF8\uC815";
+      const genre = cleanText(row?.fish_type || "") || "\uC120\uC0C1 \uB09A\uC2DC";
+      const scheduleNo = String(row?.schedule_no || "schedule");
+      const bookingUrl = `https://www.sunsang24.com/ship/schedule?sdate=${departureDate}&ship_no=${row?.ship?.no || shipNo}`;
+      const id = `${departureDate}-${vessel}-${scheduleNo}`.replace(/[^0-9A-Za-z가-힣-]+/g, "-").toLowerCase();
+      items.push({
+        id,
+        departureDate,
+        weekday,
+        region: config2.region,
+        port: config2.port,
+        tide,
+        tideStrengthPercent: null,
+        genre,
+        operator: cleanText(config2.name),
+        vessel,
+        remainingSeats: remain,
+        operatorUrl: config2.baseUrl,
+        bookingUrl,
+        source: bookingUrl
+      });
+    }
+    if (ctx.trace) {
+      ctx.trace.parseMs = Math.round(performance2.now() - parseStartedAt2);
+      ctx.trace.blocks = seenDates.size;
+      ctx.trace.items = items.length;
+    }
+    return items;
+  }
   const url2 = new URL(`/ship/schedule_fleet/${monthValue}`, config2.baseUrl);
   const html3 = await fetchHtml(url2, config2.baseUrl, ctx);
   const parseStartedAt = performance2.now();
@@ -102763,16 +102827,41 @@ var REGION_SHORT_MAP = {
 };
 function normalizeRegionLabel(raw) {
   const cleaned = cleanText(raw);
-  return REGION_SHORT_MAP[cleaned] || cleaned.replace(/(특별자치도|특별시|광역시|도)$/, "") || "\uAE30\uD0C0";
+  return REGION_SHORT_MAP[cleaned] || cleaned.replace(/(특별자치도|특별시|광역시|도)$/, "") || "\uCDA9\uB0A8";
+}
+function sourceDedupKey(rawUrl) {
+  const shipNo = extractSunsangShipNo(rawUrl);
+  if (shipNo) return "sunsang24:" + shipNo;
+  try {
+    return new URL(rawUrl).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return rawUrl.trim().toLowerCase();
+  }
 }
 async function discoverSourcesByPort(rawKeyword, regionOverride) {
   const portKeyword = cleanText(rawKeyword).replace(/항$/, "");
   if (!portKeyword) {
     throw new Error("\uD56D\uAD6C \uD0A4\uC6CC\uB4DC\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.");
   }
+  const existingSources = await listConfiguredSources();
+  const existingKeys = /* @__PURE__ */ new Set();
+  const existingNamesByPort = /* @__PURE__ */ new Set();
+  for (const src of existingSources) {
+    existingKeys.add(sourceDedupKey(src.sourceUrl));
+    if (src.port.replace(/항$/, "") === portKeyword) {
+      existingNamesByPort.add(cleanText(src.name).replace(/\s+/g, ""));
+      for (const v of src.vessels) {
+        existingNamesByPort.add(cleanText(v.name).replace(/\s+/g, ""));
+      }
+    }
+  }
+  const siteCandidates = /* @__PURE__ */ new Map();
+  const skippedExisting = [];
+  const failed = [];
+  let totalScannedCount = 0;
   const uidCandidates = /* @__PURE__ */ new Map();
   let currentPage = 1;
-  let maxPages = 15;
+  const maxPages = 15;
   while (currentPage <= maxPages) {
     const searchUrl = new URL("https://thefishing.kr/search/result.php");
     searchUrl.searchParams.set("cat", "reservation");
@@ -102796,7 +102885,7 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
       if (uidCandidates.has(uid)) return;
       const rawHtml = anchor.html() || "";
       const lines = rawHtml.split(/<br\s*\/?>/i).map((part) => cleanText(load(part).text())).filter(Boolean);
-      let operatorName = lines[0] || "";
+      let operatorName = cleanText(anchor.find(".card_item_content_stname").text()) || lines[0] || "";
       let region = regionOverride?.trim() || "";
       let port2 = portKeyword;
       const breadcrumbLine = lines.find((line2) => line2.includes(">"));
@@ -102819,23 +102908,10 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
         port: port2
       });
     });
-    if (foundUidsOnPage.size === 0) {
-      break;
-    }
+    if (foundUidsOnPage.size === 0) break;
     currentPage++;
   }
-  const existingSources = await listConfiguredSources();
-  const existingHosts = /* @__PURE__ */ new Set();
-  for (const src of existingSources) {
-    try {
-      existingHosts.add(new URL(src.sourceUrl).hostname.replace(/^www\./i, "").toLowerCase());
-    } catch {
-      existingHosts.add(src.sourceUrl.toLowerCase());
-    }
-  }
-  const siteCandidates = /* @__PURE__ */ new Map();
-  const skippedExisting = [];
-  const failed = [];
+  totalScannedCount += uidCandidates.size;
   for (const item of uidCandidates.values()) {
     try {
       const detailUrl = new URL("https://thefishing.kr/reservation/list.php?uid=" + item.uid);
@@ -102851,7 +102927,7 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
       const titleText = cleanText($d("title").first().text());
       const bracketMatch = titleText.match(/\[([^\]]+)\]/);
       const cleanOperatorName = bracketMatch ? cleanText(bracketMatch[1]) : item.operatorName;
-      if (existingHosts.has(hostKey)) {
+      if (existingKeys.has(hostKey)) {
         if (!skippedExisting.includes(cleanOperatorName)) {
           skippedExisting.push(cleanOperatorName);
         }
@@ -102869,17 +102945,109 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
       failed.push({
         name: item.operatorName,
         url: "https://thefishing.kr/reservation/list.php?uid=" + item.uid,
-        reason: err instanceof Error ? err.message : "\uC0C1\uC138 \uD398\uC774\uC9C0 \uC870\uD68C \uC2E4\uD328"
+        reason: err instanceof Error ? err.message : "\uB354\uD53C\uC2F1 \uC0C1\uC138 \uC870\uD68C \uC2E4\uD328"
+      });
+    }
+  }
+  const sunsangShips = /* @__PURE__ */ new Map();
+  for (const kw of [portKeyword + "\uD56D", portKeyword]) {
+    let sPage = 1;
+    while (sPage <= 10) {
+      try {
+        const listUrl = new URL("https://api.sunsang24.com/ship/list");
+        listUrl.searchParams.set("page", String(sPage));
+        listUrl.searchParams.set("type", "general");
+        listUrl.searchParams.set("keyword", kw);
+        const raw = await fetchHtml(listUrl, "https://www.sunsang24.com/", USER_FETCH_CONTEXT);
+        const data2 = JSON.parse(raw);
+        const rows = Array.isArray(data2?.list) ? data2.list : [];
+        if (rows.length === 0) break;
+        for (const row of rows) {
+          const shipNo = Number(row?.ship?.no);
+          const shipName = cleanText(row?.ship?.name || "");
+          const rowPort = cleanText(row?.port_name || "").replace(/항$/, "");
+          if (!shipNo || !shipName) continue;
+          if (rowPort && !rowPort.includes(portKeyword) && !portKeyword.includes(rowPort)) continue;
+          if (!sunsangShips.has(shipNo)) {
+            const areaMain = cleanText(row?.ship?.area_main || "");
+            sunsangShips.set(shipNo, {
+              no: shipNo,
+              name: shipName,
+              region: regionOverride?.trim() || (areaMain ? normalizeRegionLabel(areaMain) : "\uCDA9\uB0A8"),
+              port: rowPort || portKeyword
+            });
+          }
+        }
+        if (data2?.is_data_end || rows.length < 15) break;
+        sPage++;
+      } catch {
+        break;
+      }
+    }
+    if (sunsangShips.size > 0) break;
+  }
+  totalScannedCount += sunsangShips.size;
+  const processedGroupNos = /* @__PURE__ */ new Set();
+  for (const ship of sunsangShips.values()) {
+    if (processedGroupNos.has(ship.no)) continue;
+    let groupVessels = [ship.name];
+    let primaryNo = ship.no;
+    try {
+      const grpUrl = new URL("https://api.sunsang24.com/ship/group/" + ship.no + "/M");
+      const grpRaw = await fetchHtml(grpUrl, "https://www.sunsang24.com/", USER_FETCH_CONTEXT);
+      const grpList = JSON.parse(grpRaw);
+      if (Array.isArray(grpList) && grpList.length > 0) {
+        const nos = [];
+        const names = [];
+        for (const g of grpList) {
+          const gNo = Number(g?.no);
+          const gName = cleanText(g?.name || "");
+          if (gNo) {
+            nos.push(gNo);
+            processedGroupNos.add(gNo);
+          }
+          if (gName && !isExcludedVessel(gName) && !names.includes(gName)) {
+            names.push(gName);
+          }
+        }
+        if (nos.length > 0) primaryNo = nos[0];
+        if (names.length > 0) groupVessels = names;
+      }
+    } catch {
+    }
+    processedGroupNos.add(ship.no);
+    const dedupKey = "sunsang24:" + primaryNo;
+    const displayOperatorName = ship.port + "\uD56D " + groupVessels[0] + " (\uC120\uC0C124)";
+    const alreadyInPort = groupVessels.some((v) => existingNamesByPort.has(cleanText(v).replace(/\s+/g, "")));
+    if (existingKeys.has(dedupKey) || alreadyInPort) {
+      if (!skippedExisting.includes(displayOperatorName)) {
+        skippedExisting.push(displayOperatorName);
+      }
+      continue;
+    }
+    if (!siteCandidates.has(dedupKey)) {
+      siteCandidates.set(dedupKey, {
+        baseUrl: "https://www.sunsang24.com/ship/schedule?ship_no=" + primaryNo,
+        name: displayOperatorName,
+        region: ship.region,
+        port: ship.port,
+        preVessels: groupVessels,
+        skipDetect: true
       });
     }
   }
   const added = [];
-  for (const [hostKey, candidate] of siteCandidates.entries()) {
+  for (const [dedupKey, candidate] of siteCandidates.entries()) {
     try {
-      const detected = await detectSource(candidate.baseUrl);
-      const finalName = cleanText(candidate.name || detected?.suggestedName || candidate.baseUrl);
-      const finalUrl = detected?.workingUrl || candidate.baseUrl;
-      const vessels = detected?.vessels ?? [];
+      let finalName = cleanText(candidate.name);
+      let finalUrl = candidate.baseUrl;
+      let vessels = candidate.preVessels ?? [];
+      if (!candidate.skipDetect) {
+        const detected = await detectSource(candidate.baseUrl);
+        finalName = cleanText(candidate.name || detected?.suggestedName || candidate.baseUrl);
+        finalUrl = detected?.workingUrl || candidate.baseUrl;
+        vessels = detected?.vessels ?? [];
+      }
       const [created] = await db.insert(fishingSourcesTable).values({
         name: finalName,
         region: candidate.region,
@@ -102888,7 +103056,7 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
         enabled: true
       }).onConflictDoNothing().returning();
       if (!created) {
-        skippedExisting.push(finalName);
+        if (!skippedExisting.includes(finalName)) skippedExisting.push(finalName);
         continue;
       }
       if (vessels.length > 0) {
@@ -102901,7 +103069,10 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
           }))
         ).onConflictDoNothing();
       }
-      existingHosts.add(hostKey);
+      existingKeys.add(dedupKey);
+      for (const v of vessels) {
+        existingNamesByPort.add(cleanText(v).replace(/\s+/g, ""));
+      }
       added.push({
         id: created.id,
         name: created.name,
@@ -102924,7 +103095,7 @@ async function discoverSourcesByPort(rawKeyword, regionOverride) {
   }
   return {
     portKeyword,
-    scannedUids: uidCandidates.size,
+    scannedUids: totalScannedCount,
     candidateSites: siteCandidates.size,
     added,
     skippedExisting,
