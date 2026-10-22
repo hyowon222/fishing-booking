@@ -709,7 +709,7 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
         onChanged={refreshData}
       />
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)]">
+      <div className="grid gap-5">
         <section>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-bold">등록된 예약처 <span className="ml-1 text-primary">{sources.length}</span></h2>
@@ -773,7 +773,9 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
           )}
         </section>
         {showForm && (
-          <SourceForm
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" role="dialog" aria-modal="true">
+            <div className="w-full max-w-lg">
+              <SourceForm
             editing={editing}
             form={form}
             setForm={setForm}
@@ -783,6 +785,8 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
             error={formError}
             onDetectedVessels={setDetectedVessels}
           />
+            </div>
+          </div>
         )}
       </div>
     </main>
