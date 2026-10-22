@@ -184,7 +184,7 @@ function FilterColumn({
       </div>
       <div
         className={`max-h-40 overflow-y-auto pr-1 ${disabled ? 'opacity-70' : ''} ${
-          layout === 'grid' ? 'grid grid-cols-2 gap-x-1 gap-y-0.5 sm:grid-cols-3' : layout === 'grid2' ? 'grid grid-cols-2 gap-x-2 gap-y-0.5' : 'space-y-0.5'
+          layout === 'grid' ? 'grid grid-cols-2 gap-x-1 gap-y-0.5 sm:grid-cols-3' : layout === 'grid2' ? 'grid grid-cols-2 gap-x-4 gap-y-0.5' : 'space-y-0.5'
         }`}
       >
         {values?.length ? (
@@ -340,7 +340,7 @@ function SearchForm({
         </div>
 
         <div className={`${mobileOpen ? 'block' : 'hidden'} space-y-5 p-4 sm:block sm:p-5`}>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1.25fr_1.25fr_1fr_1fr]">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[0.9fr_1.1fr_2.2fr]">
             <div>
               <FieldLabel icon={CalendarDays}>출항 기간</FieldLabel>
               <Popover open={rangeOpen} onOpenChange={openRangePicker}>
