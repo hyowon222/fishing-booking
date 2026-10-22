@@ -101829,6 +101829,15 @@ function resetSourceHealth() {
   sourceHealth.clear();
 }
 function toSourceConfig(source) {
+  const base = toSourceConfigRaw(source);
+  const label = normalizePortLabel(base.port || source.port || "");
+  return label ? { ...base, port: label, region: label } : base;
+}
+function normalizePortLabel(raw) {
+  const base = raw.replace(/\s+/g, " ").trim().replace(/항$/, "");
+  return base ? base + "\uD56D" : "";
+}
+function toSourceConfigRaw(source) {
   return {
     id: source.id,
     name: source.name,

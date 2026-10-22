@@ -790,8 +790,8 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
               )
                 .sort(([a], [b]) => a.localeCompare(b, 'ko'))
                 .map(([port, items]) => (
-                  <details key={port} open>
-                    <summary className="mb-2 flex cursor-pointer select-none items-center gap-2 border-b border-border pb-1.5 text-base font-bold">{port}{items.some((item) => item.port?.trim().endsWith('항')) ? '항' : ''}
+                  <details key={port}>
+                    <summary className="mb-2 flex cursor-pointer select-none items-center gap-2 border-b border-border pb-1.5 text-base font-bold">{port === '기타' ? port : port + '항'}
                       <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-secondary-foreground">{items.length}</span>
                     </summary>
                     <div className="space-y-3">

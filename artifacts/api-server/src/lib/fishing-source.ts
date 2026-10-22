@@ -195,6 +195,18 @@ export function resetSourceHealth(): void {
 export type FishingSourceWithVessels = FishingSourceRecord & { vessels: FishingSourceVesselRecord[] };
 
 export function toSourceConfig(source: FishingSourceWithVessels): SourceConfig {
+  const base = toSourceConfigRaw(source);
+  const label = normalizePortLabel(base.port || source.port || "");
+  return label ? { ...base, port: label, region: label } : base;
+}
+
+// "오천", "오천항" 처럼 끝의 "항" 유무만 다른 이름을 하나의 항구("오천항")로 통일한다.
+function normalizePortLabel(raw: string): string {
+  const base = raw.replace(/\s+/g, " ").trim().replace(/항$/, "");
+  return base ? base + "항" : "";
+}
+
+function toSourceConfigRaw(source: FishingSourceWithVessels): SourceConfig {
   return {
     id: source.id,
     name: source.name,
