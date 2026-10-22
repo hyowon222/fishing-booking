@@ -184,8 +184,7 @@ function SourceForm({
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="예약처 이름" value={form.name} onChange={(name) => updateDetectedField('name', name)} placeholder="예: 삼길포 헤르메스" autoFilled={autoFilledFields.name} />
-        <Field label="지역" value={form.region} onChange={(region) => updateDetectedField('region', region)} placeholder="예: 충남" autoFilled={autoFilledFields.region} />
-        <Field label="출항 항구" value={form.port} onChange={(port) => updateDetectedField('port', port)} placeholder="예: 삼길포" autoFilled={autoFilledFields.port} />
+        <Field label="출항 항구" value={form.port} onChange={(port) => { updateDetectedField('port', port); setForm((current) => ({ ...current, region: port })); }} placeholder="예: 삼길포" autoFilled={autoFilledFields.port} />
         <div>
           <div className="flex items-end gap-2">
             <div className="flex-1">
@@ -553,9 +552,9 @@ function SourceCard({
   onDelete: (source: FishingSource) => void;
 }) {
   return (
-    <article className={`rounded-2xl border bg-card p-4 transition ${source.enabled ? 'border-border' : 'border-dashed border-border/70 opacity-70'}`}>
+    <article className={`rounded-xl border bg-card px-4 py-3 transition ${source.enabled ? 'border-border' : 'border-dashed border-border/70 opacity-70'}`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-bold">{source.name}</h3>
             {source.enabled ? (
@@ -564,29 +563,20 @@ function SourceCard({
               <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">일시 중지</span>
             )}
           </div>
-          <p className="mono mt-3 truncate text-[11px] text-muted-foreground">{source.sourceUrl}</p>
           {source.vessels.length > 0 && (
-            <div className="mt-4 overflow-hidden rounded-lg border border-border/70 text-[11px]">
-              <div className="grid grid-cols-[1.1fr_0.9fr_1.4fr] border-b border-border/70 bg-muted/45 font-bold text-foreground">
-                <span className="px-2 py-1.5">선박명</span>
-                <span className="border-l border-border/70 px-2 py-1.5">출항지</span>
-                <span className="border-l border-border/70 px-2 py-1.5">주소</span>
-              </div>
+            <div className="mt-3 overflow-hidden rounded-lg border border-border/70 text-[11px]">
+              <div className="border-b border-border/70 bg-muted/45 px-2 py-1.5 font-bold text-foreground">선박명</div>
               {source.vessels.map((vessel) => (
-                <div key={vessel.id} className="grid grid-cols-[1.1fr_0.9fr_1.4fr] border-b border-border/50 last:border-0">
-                  <span className="truncate px-2 py-1.5 font-medium">{vessel.name}</span>
-                  <span className="truncate border-l border-border/70 px-2 py-1.5 text-muted-foreground">{vessel.departurePort || source.port}</span>
-                  <span className="truncate border-l border-border/70 px-2 py-1.5 text-muted-foreground">{vessel.address || '-'}</span>
-                </div>
+                <div key={vessel.id} className="truncate border-b border-border/50 px-2 py-1.5 font-medium last:border-0">{vessel.name}</div>
               ))}
             </div>
           )}
         </div>
         <div className="flex shrink-0 gap-1">
-          <button type="button" onClick={() => onEdit(source)} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`${source.port} 수정`}>
+          <button type="button" onClick={() => onEdit(source)} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`${source.name} 수정`}>
             <Pencil size={15} />
           </button>
-          <button type="button" onClick={() => onDelete(source)} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`${source.port} 삭제`}>
+          <button type="button" onClick={() => onDelete(source)} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`${source.name} 삭제`}>
             <Trash2 size={15} />
           </button>
         </div>
@@ -764,7 +754,7 @@ export default function SourceManager({ onBack }: { onBack: () => void }) {
                 .sort(([a], [b]) => a.localeCompare(b, 'ko'))
                 .map(([port, items]) => (
                   <details key={port} open>
-                    <summary className="mb-2 flex cursor-pointer select-none items-center gap-2 border-b border-border pb-1.5 text-base font-bold">$1{port}{items.some((item) => item.port?.trim().endsWith('항')) ? '항' : ''}
+                    <summary className="mb-2 flex cursor-pointer select-none items-center gap-2 border-b border-border pb-1.5 text-base font-bold">{port}{items.some((item) => item.port?.trim().endsWith('항')) ? '항' : ''}
                       <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-secondary-foreground">{items.length}</span>
                     </summary>
                     <div className="space-y-3">
