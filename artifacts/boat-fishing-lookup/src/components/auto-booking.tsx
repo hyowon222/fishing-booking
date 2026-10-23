@@ -23,6 +23,11 @@ type Job = {
   error?: string;
 };
 
+const SITES: { id: string; label: string; url: string; hint: string }[] = [
+  { id: 'mscu', label: '미스쿠 낚시', url: 'http://www.mscufishing.com', hint: '배 이름으로 선택, 좌석 지정 가능' },
+  { id: 'dokhan', label: '독한놈호 (더피싱)', url: 'https://dokhan.thefishing.kr', hint: '배가 한 척이면 배 이름을 비워두세요' },
+  { id: 'custom', label: '직접 입력 (더피싱 계열)', url: '', hint: '예: https://xxx.thefishing.kr' },
+];
 const KNOWN_SHIPS = ['승주호', '헌터호', '골드피싱', '으리호', '블루오션', '바다호', '영스타호', '뚜기호', '유리호', '나대세호', '아산호', '박찬호', '히트호', '헤르메스호', '만석호'];
 const STATUS_LABEL: Record<Job['status'], string> = { waiting: '오픈 대기', polling: '배 찾는 중', done: '입력 준비 완료', failed: '실패', stopped: '중지됨' };
 const STATUS_STYLE: Record<Job['status'], string> = {
@@ -64,7 +69,11 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const [needKey, setNeedKey] = useState(false);
   const [relayOk, setRelayOk] = useState<boolean | null>(null);
 
-  const [date, setDate] = useState('');
+  const [site, setSite] = useState(() => load('autoBooking.site', 'mscu'));
+  const [customSite, setCustomSite] = useState(() => load('autoBooking.customSite'));
+  const [dates, setDates] = useState<string[]>([]);
+  const [dateInput, setDateInput] = useState('');
+  const [stopOthers, setStopOthers] = useState(false);
   const [ships, setShips] = useState<string[]>(() => {
     try {
       const v = JSON.parse(load(LS.ships, '[]'));
@@ -126,20 +135,24 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   async function start() {
     setError('');
     const list = ships.map((s) => s.trim()).filter(Boolean);
-    if (!date) return setError('날짜를 선택하세요');
-    if (!list.length) return setError('배를 한 척 이상 입력하세요');
+    const baseUrl = site === 'custom' ? customSite.trim() : (SITES.find((x) => x.id === site)?.url ?? '');
+    if (!baseUrl) return setError('예약처 주소를 입력하세요');
+    if (!dates.length) return setError('날짜를 한 개 이상 추가하세요');
     if (!name.trim()) return setError('예약자명을 입력하세요');
     if (!phone.trim()) return setError('휴대폰 번호를 입력하세요');
     save(LS.name, name);
     save(LS.phone, phone);
     save(LS.ships, JSON.stringify(list));
+    save('autoBooking.site', site);
+    save('autoBooking.customSite', customSite);
     setBusy(true);
     try {
       await api('/jobs', {
         method: 'POST',
         body: JSON.stringify({
-          baseUrl: 'http://www.mscufishing.com',
-          date: date.replace(/-/g, ''),
+          baseUrl,
+          dates: dates.map((d) => d.replace(/-/g, '')),
+          stopOthersOnSuccess: stopOthers,
           ships: list.map((n) => ({ name: n })),
           people,
           seatMode,
@@ -205,25 +218,67 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
       )}
 
       <section className="space-y-4 rounded-xl border p-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={label}>출조 날짜</label>
-            <input type="date" className={input} value={date} onChange={(e) => setDate(e.target.value)} />
-          </div>
-          <div>
-            <label className={label}>인원</label>
-            <select className={input} value={people} onChange={(e) => setPeople(Number(e.target.value))}>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
-                <option key={n} value={n}>
-                  {n}명
-                </option>
-              ))}
-            </select>
-          </div>
+        <div>
+          <label className={label}>예약처</label>
+          <select className={input} value={site} onChange={(e) => setSite(e.target.value)}>
+            {SITES.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.label}
+              </option>
+            ))}
+          </select>
+          {site === 'custom' && <input className={`${input} mt-2`} placeholder="https://xxx.thefishing.kr" value={customSite} onChange={(e) => setCustomSite(e.target.value)} />}
+          <p className="mt-1 text-[11px] text-muted-foreground">{SITES.find((x) => x.id === site)?.hint}</p>
         </div>
 
         <div>
-          <label className={label}>배 (위에 있을수록 우선) — 예약처: 미스쿠 낚시</label>
+          <label className={label}>출조 날짜 (여러 날짜를 추가하면 날짜마다 동시에 진행해요, 최대 10개)</label>
+          <div className="flex gap-2">
+            <input type="date" className={input} value={dateInput} onChange={(e) => setDateInput(e.target.value)} />
+            <button
+              type="button"
+              className="shrink-0 rounded-lg border px-3 text-sm"
+              onClick={() => {
+                if (dateInput && !dates.includes(dateInput) && dates.length < 10) setDates((d) => [...d, dateInput].sort());
+                setDateInput('');
+              }}
+            >
+              추가
+            </button>
+          </div>
+          {dates.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {dates.map((d) => (
+                <span key={d} className="flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs">
+                  {d.slice(5).replace('-', '/')}
+                  <button type="button" onClick={() => setDates((x) => x.filter((v) => v !== d))} aria-label="날짜 삭제">
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {dates.length > 1 && (
+            <label className="mt-2 flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={stopOthers} onChange={(e) => setStopOthers(e.target.checked)} />
+              한 날짜가 준비되면 나머지 날짜는 중지
+            </label>
+          )}
+        </div>
+
+        <div>
+          <label className={label}>인원</label>
+          <select className={input} value={people} onChange={(e) => setPeople(Number(e.target.value))}>
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>
+                {n}명
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className={label}>배 (위에 있을수록 우선, 비워두면 열린 배 아무거나)</label>
           <div className="space-y-2">
             {ships.map((s, i) => (
               <div key={i} className="flex gap-2">
@@ -238,7 +293,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
             ))}
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {KNOWN_SHIPS.map((k) => (
+            {(site === 'mscu' ? KNOWN_SHIPS : []).map((k) => (
               <button key={k} type="button" onClick={() => addShip(k)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-accent">
                 {k}
               </button>

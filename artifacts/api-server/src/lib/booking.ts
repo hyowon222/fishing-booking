@@ -29,6 +29,8 @@ export type BookingConfig = {
   pollMs?: number;
   maxPollMinutes?: number;
   seedUids?: string[]; // 배 목록을 열기 위한 "아무 배 번호"
+  groupId?: string; // 여러 날짜를 한 번에 시작했을 때 같은 값
+  stopOthersOnSuccess?: boolean; // 하나 준비되면 같은 묶음의 나머지 작업을 중지
 };
 
 export type JobStatus = "waiting" | "polling" | "done" | "failed" | "stopped";
@@ -52,6 +54,7 @@ export type Job = {
   createdAt: number;
   status: JobStatus;
   summary: string;
+  groupId?: string;
   log: string[];
   result?: BookingResult;
   error?: string;
@@ -415,6 +418,7 @@ export async function discoverOpenShips(sess: Session, date: string, seeds: stri
 const norm = (s: string) => s.replace(/\s+/g, "");
 
 export function pickShip(open: Choice[], wishes: ShipWish[]): { choice: Choice; wish: ShipWish } | null {
+  if (!wishes.length) return open.length ? { choice: open[0], wish: { name: "" } } : null;
   for (const w of wishes) {
     const hit = open.find((o) => (w.uid ? o.value === w.uid : norm(o.label).includes(norm(w.name))));
     if (hit) return { choice: hit, wish: w };
@@ -435,15 +439,26 @@ export function guessUid(w: ShipWish): string | undefined {
   return SHIP_UIDS.find(([k]) => n.includes(k))?.[1];
 }
 
+// 예약 목록 페이지에서 배 번호들을 모읍니다 (사이트마다 배 번호가 달라서 미리 알 수 없을 때)
+export async function discoverSeeds(sess: Session, date: string): Promise<string[]> {
+  try {
+    const r = await sess.request("GET", `/index.php?mid=bk&year=${date.slice(0, 4)}&month=${Number(date.slice(4, 6))}&day=${Number(date.slice(6))}`);
+    return [...new Set([...r.text.matchAll(/PA_N_UID=(\d+)/g)].map((m) => m[1]))];
+  } catch {
+    return [];
+  }
+}
+
 const step1Url = (date: string, uid: string, psUid?: string) =>
   `${MODULE}/popup.step1.php?date=${date}&PA_N_UID=${uid}&PH_N_UID=0${psUid ? `&PS_N_UID=${psUid}` : ""}`;
 const ajaxBody = (cfg: BookingConfig, uid: string, psUid: string, naun: string) =>
   `date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0&PS_N_UID=${psUid}&BI_IN=${cfg.people}&BI_SO_IN=N&pay_method=&naun=${naun}`;
 
 // 오픈 전에 미리: 각 배의 낚시 종류 번호와 naun 값을 알아 둡니다 (오픈 순간에는 요청 한 번으로 끝내기 위함)
-export async function prewarm(sess: Session, cfg: BookingConfig, log: (m: string) => void): Promise<Map<string, Warm>> {
+export async function prewarm(sess: Session, cfg: BookingConfig, log: (m: string) => void, extra: string[] = []): Promise<Map<string, Warm>> {
   const out = new Map<string, Warm>();
-  const uids = [...new Set(cfg.ships.map(guessUid).filter(Boolean) as string[])].slice(0, 4);
+  const wished = cfg.ships.map(guessUid).filter(Boolean) as string[];
+  const uids = [...new Set(cfg.ships.length ? wished : extra)].slice(0, 4);
   if (!uids.length) return out;
   try {
     const pages = await sess.batch(uids.map((uid) => ({ method: "GET" as const, path: step1Url(cfg.date, uid) })));
@@ -547,7 +562,8 @@ function seatValuesFor(html: string, date: string, uid: string, chosen: Set<numb
 
 // ------------------------------------------------------------------ 작업(Job) 관리
 const jobs = new Map<string, Job>();
-const MAX_JOBS = 20;
+const MAX_JOBS = 40;
+const MAX_ACTIVE = 12;
 
 export function listJobs(): Job[] {
   return [...jobs.values()].sort((a, b) => b.createdAt - a.createdAt).map(publicJob);
@@ -568,15 +584,39 @@ export function stopJob(id: string): boolean {
   return true;
 }
 
-export function validateConfig(raw: any): BookingConfig {
-  const base = String(raw?.baseUrl ?? "http://www.mscufishing.com").replace(/\/$/, "");
-  if (!/^https?:\/\/(www\.)?mscufishing\.com$/i.test(base) && base !== process.env.BOOKING_TEST_BASE) throw new Error("지원하지 않는 예약처입니다");
-  const date = String(raw?.date ?? "").replace(/\D/g, "");
-  if (!/^\d{8}$/.test(date)) throw new Error("날짜는 YYYYMMDD 형식이어야 합니다");
+// 지원하는 예약처: 미스쿠 낚시, 더피싱 계열(*.thefishing.kr) — 같은 예약 모듈(reservation_boat_v5.2_seat1)을 쓰는 사이트
+export function normalizeBase(input: unknown): string {
+  const raw = String(input ?? "http://www.mscufishing.com").trim();
+  let u: URL;
+  try {
+    u = new URL(/^https?:\/\//i.test(raw) ? raw : `http://${raw}`);
+  } catch {
+    throw new Error("예약처 주소가 올바르지 않습니다");
+  }
+  const base = `${u.protocol}//${u.host}`;
+  const host = u.hostname.toLowerCase();
+  const ok = /(^|\.)mscufishing\.com$/.test(host) || /(^|\.)thefishing\.kr$/.test(host) || base === process.env.BOOKING_TEST_BASE;
+  if (!ok) throw new Error("지원하지 않는 예약처입니다 (미스쿠 낚시·더피싱 계열만 가능)");
+  return base;
+}
+
+function parseDates(raw: any): string[] {
+  const list: unknown[] = Array.isArray(raw?.dates) ? raw.dates : raw?.date ? [raw.date] : [];
+  const out = [...new Set(list.map((d) => String(d).replace(/\D/g, "")))];
+  if (!out.length) throw new Error("날짜를 한 개 이상 선택하세요");
+  if (out.length > 10) throw new Error("날짜는 한 번에 10개까지입니다");
+  for (const d of out) if (!/^\d{8}$/.test(d)) throw new Error("날짜는 YYYYMMDD 형식이어야 합니다");
+  return out.sort();
+}
+
+// 날짜가 여러 개면 날짜마다 설정을 하나씩 만든다 (각각 독립적으로, 동시에 진행)
+export function validateConfigs(raw: any): BookingConfig[] {
+  const base = normalizeBase(raw?.baseUrl);
+  const dates = parseDates(raw);
   const ships: ShipWish[] = (Array.isArray(raw?.ships) ? raw.ships : [])
     .map((s: any) => ({ name: String(s?.name ?? "").trim(), uid: s?.uid ? String(s.uid) : undefined, preferredSeats: Array.isArray(s?.preferredSeats) ? s.preferredSeats.map(Number).filter(Number.isFinite) : undefined }))
     .filter((s: ShipWish) => s.name || s.uid);
-  if (!ships.length) throw new Error("배를 한 척 이상 입력하세요");
+  // 배를 비워두면 "열린 배 아무거나" (배가 한 척뿐인 사이트용)
   const people = Number(raw?.people);
   if (!Number.isInteger(people) || people < 1 || people > 20) throw new Error("인원은 1~20명");
   const name = String(raw?.name ?? "").trim();
@@ -588,7 +628,8 @@ export function validateConfig(raw: any): BookingConfig {
     if (!Number.isFinite(t)) throw new Error("오픈 시각 형식이 올바르지 않습니다");
     openAt = new Date(t).toISOString();
   }
-  return {
+  const groupId = dates.length > 1 ? crypto.randomBytes(4).toString("hex") : undefined;
+  return dates.map((date) => ({
     baseUrl: base,
     date,
     ships,
@@ -603,11 +644,23 @@ export function validateConfig(raw: any): BookingConfig {
     pollMs: Math.max(500, Number(raw?.pollMs ?? 700)), // 선사 서버 부담을 줄이기 위해 0.5초 미만으로는 조회하지 않음
     maxPollMinutes: Math.min(60, Math.max(1, Number(raw?.maxPollMinutes ?? 10))),
     seedUids: Array.isArray(raw?.seedUids) && raw.seedUids.length ? raw.seedUids.map(String) : undefined,
-  };
+    groupId,
+    stopOthersOnSuccess: Boolean(raw?.stopOthersOnSuccess) && dates.length > 1,
+  }));
+}
+
+// 이전 호출 방식(날짜 1개) 호환
+export function validateConfig(raw: any): BookingConfig {
+  return validateConfigs(raw)[0];
+}
+
+export function startJobs(cfgs: BookingConfig[]): Job[] {
+  const active = [...jobs.values()].filter((j) => ["waiting", "polling"].includes(j.status)).length;
+  if (active + cfgs.length > MAX_ACTIVE) throw new Error(`동시에 진행할 수 있는 작업은 ${MAX_ACTIVE}개까지입니다 (현재 ${active}개 진행 중)`);
+  return cfgs.map(startJob);
 }
 
 export function startJob(cfg: BookingConfig): Job {
-  if ([...jobs.values()].filter((j) => ["waiting", "polling"].includes(j.status)).length >= 3) throw new Error("동시에 진행 중인 작업은 3개까지입니다");
   if (jobs.size >= MAX_JOBS) {
     const oldest = [...jobs.values()].filter((j) => !["waiting", "polling"].includes(j.status)).sort((a, b) => a.createdAt - b.createdAt)[0];
     if (oldest) jobs.delete(oldest.id);
@@ -617,7 +670,8 @@ export function startJob(cfg: BookingConfig): Job {
     id,
     createdAt: Date.now(),
     status: "waiting",
-    summary: `${cfg.date} ${cfg.ships.map((s) => s.name || s.uid).join(" > ")} · ${cfg.people}명`,
+    summary: `${cfg.date.slice(4, 6)}/${cfg.date.slice(6)} ${new URL(cfg.baseUrl).hostname.replace(/^www\./, "")} · ${cfg.ships.length ? cfg.ships.map((s) => s.name || s.uid).join(" > ") : "열린 배 아무거나"} · ${cfg.people}명`,
+    groupId: cfg.groupId,
     log: [],
     stopRequested: false,
   };
@@ -644,10 +698,12 @@ async function runJob(job: Job, cfg: BookingConfig) {
     }
     job.status = "polling";
     const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 60_000;
-    const seeds = [...new Set([...(cfg.ships.map(guessUid).filter(Boolean) as string[]), ...(cfg.seedUids ?? KNOWN_SEEDS)])];
+    const listSeeds = await discoverSeeds(sess, cfg.date);
+    if (listSeeds.length) log(`예약 목록에서 배 번호 ${listSeeds.length}개 확인`);
+    const seeds = [...new Set([...(cfg.ships.map(guessUid).filter(Boolean) as string[]), ...listSeeds, ...(cfg.seedUids ?? KNOWN_SEEDS)])];
     let warm = new Map<string, Warm>();
     try {
-      warm = await prewarm(sess, cfg, log);
+      warm = await prewarm(sess, cfg, log, listSeeds);
     } catch {
       /* 미리 준비는 실패해도 일반 방식으로 진행 */
     }
@@ -679,6 +735,9 @@ async function runJob(job: Job, cfg: BookingConfig) {
         job.status = "done";
         log(`입력 준비 완료 — ${job.result.ship.name}, ${job.result.species}, ${job.result.people}명, 좌석: ${job.result.seats.join(",") || "미선택"}`);
         log("테스트 모드이므로 제출하지 않았습니다.");
+        if (cfg.stopOthersOnSuccess && cfg.groupId) {
+          for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job.id) stopJob(o.id);
+        }
         return;
       }
       if (attempt % 10 === 1 && open.length) log(`원하는 배가 아직 안 열렸습니다 (열린 배: ${open.map((o) => o.label).join(", ")})`);

@@ -6,7 +6,7 @@
 
 import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
-import { getJob, listJobs, startJob, stopJob, validateConfig } from "../lib/booking";
+import { getJob, listJobs, startJobs, stopJob, validateConfigs } from "../lib/booking";
 
 export const bookingRouter = Router();
 
@@ -42,8 +42,8 @@ bookingRouter.get("/booking/jobs/:id", guard, (req, res) => {
 
 bookingRouter.post("/booking/jobs", guard, (req, res) => {
   try {
-    const cfg = validateConfig(req.body);
-    res.json({ job: startJob(cfg) });
+    const jobs = startJobs(validateConfigs(req.body));
+    res.json({ jobs, job: jobs[0] });
   } catch (e: any) {
     res.status(400).json({ error: e?.message ?? "요청이 올바르지 않습니다" });
   }
