@@ -5160,9 +5160,9 @@ var require_lib = __commonJS({
       var trail = decoder.end();
       return trail ? res + trail : res;
     };
-    module.exports.encodingExists = function encodingExists(enc) {
+    module.exports.encodingExists = function encodingExists(enc2) {
       try {
-        module.exports.getCodec(enc);
+        module.exports.getCodec(enc2);
         return true;
       } catch (e) {
         return false;
@@ -5177,36 +5177,36 @@ var require_lib = __commonJS({
         module.exports.encodings = { __proto__: null };
         mergeModules(module.exports.encodings, raw);
       }
-      var enc = module.exports._canonicalizeEncoding(encoding);
+      var enc2 = module.exports._canonicalizeEncoding(encoding);
       var codecOptions = {};
       while (true) {
-        var codec = module.exports._codecDataCache[enc];
+        var codec = module.exports._codecDataCache[enc2];
         if (codec) {
           return codec;
         }
-        var codecDef = module.exports.encodings[enc];
+        var codecDef = module.exports.encodings[enc2];
         switch (typeof codecDef) {
           case "string":
-            enc = codecDef;
+            enc2 = codecDef;
             break;
           case "object":
             for (var key in codecDef) {
               codecOptions[key] = codecDef[key];
             }
             if (!codecOptions.encodingName) {
-              codecOptions.encodingName = enc;
+              codecOptions.encodingName = enc2;
             }
-            enc = codecDef.type;
+            enc2 = codecDef.type;
             break;
           case "function":
             if (!codecOptions.encodingName) {
-              codecOptions.encodingName = enc;
+              codecOptions.encodingName = enc2;
             }
             codec = new codecDef(codecOptions, module.exports);
             module.exports._codecDataCache[codecOptions.encodingName] = codec;
             return codec;
           default:
-            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc + "')");
+            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc2 + "')");
         }
       }
     };
@@ -18994,14 +18994,14 @@ var require_etag = __commonJS({
   "../../node_modules/.pnpm/etag@1.8.1/node_modules/etag/index.js"(exports, module) {
     "use strict";
     module.exports = etag;
-    var crypto2 = __require("crypto");
+    var crypto3 = __require("crypto");
     var Stats = __require("fs").Stats;
     var toString2 = Object.prototype.toString;
     function entitytag(entity) {
       if (entity.length === 0) {
         return '"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"';
       }
-      var hash = crypto2.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
+      var hash = crypto3.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
       var len = typeof entity === "string" ? Buffer.byteLength(entity, "utf8") : entity.length;
       return '"' + len.toString(16) + "-" + hash + '"';
     }
@@ -20724,11 +20724,11 @@ var require_router = __commonJS({
     var slice2 = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router4;
+    module.exports = Router5;
     module.exports.Route = Route;
-    function Router4(options) {
-      if (!(this instanceof Router4)) {
-        return new Router4(options);
+    function Router5(options) {
+      if (!(this instanceof Router5)) {
+        return new Router5(options);
       }
       const opts = options || {};
       function router4(req, res, next2) {
@@ -20742,9 +20742,9 @@ var require_router = __commonJS({
       router4.stack = [];
       return router4;
     }
-    Router4.prototype = function() {
+    Router5.prototype = function() {
     };
-    Router4.prototype.param = function param(name, fn) {
+    Router5.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20764,7 +20764,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router4.prototype.handle = function handle(req, res, callback) {
+    Router5.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20891,7 +20891,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router4.prototype.use = function use(handler) {
+    Router5.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -20924,7 +20924,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router4.prototype.route = function route(path) {
+    Router5.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -20939,7 +20939,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router4.prototype[method] = function(path) {
+      Router5.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice2.call(arguments, 1));
         return this;
@@ -21122,7 +21122,7 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router4 = require_router();
+    var Router5 = require_router();
     var slice2 = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
@@ -21138,7 +21138,7 @@ var require_application = __commonJS({
         enumerable: true,
         get: function getrouter() {
           if (router4 === null) {
-            router4 = new Router4({
+            router4 = new Router5({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
@@ -22412,17 +22412,17 @@ var require_content_disposition = __commonJS({
 // ../../node_modules/.pnpm/cookie-signature@1.2.2/node_modules/cookie-signature/index.js
 var require_cookie_signature = __commonJS({
   "../../node_modules/.pnpm/cookie-signature@1.2.2/node_modules/cookie-signature/index.js"(exports) {
-    var crypto2 = __require("crypto");
+    var crypto3 = __require("crypto");
     exports.sign = function(val2, secret) {
       if ("string" != typeof val2) throw new TypeError("Cookie value must be provided as a string.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
-      return val2 + "." + crypto2.createHmac("sha256", secret).update(val2).digest("base64").replace(/\=+$/, "");
+      return val2 + "." + crypto3.createHmac("sha256", secret).update(val2).digest("base64").replace(/\=+$/, "");
     };
     exports.unsign = function(input, secret) {
       if ("string" != typeof input) throw new TypeError("Signed cookie string must be provided.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
       var tentativeValue = input.slice(0, input.lastIndexOf(".")), expectedInput = exports.sign(tentativeValue, secret), expectedBuffer = Buffer.from(expectedInput), inputBuffer = Buffer.from(input);
-      return expectedBuffer.length === inputBuffer.length && crypto2.timingSafeEqual(expectedBuffer, inputBuffer) ? tentativeValue : false;
+      return expectedBuffer.length === inputBuffer.length && crypto3.timingSafeEqual(expectedBuffer, inputBuffer) ? tentativeValue : false;
     };
   }
 });
@@ -22492,14 +22492,14 @@ var require_cookie = __commonJS({
       return min;
     }
     function serialize3(name, val2, opt) {
-      var enc = opt && opt.encode || encodeURIComponent;
-      if (typeof enc !== "function") {
+      var enc2 = opt && opt.encode || encodeURIComponent;
+      if (typeof enc2 !== "function") {
         throw new TypeError("option encode is invalid");
       }
       if (!cookieNameRegExp.test(name)) {
         throw new TypeError("argument name is invalid");
       }
-      var value = enc(val2);
+      var value = enc2(val2);
       if (!cookieValueRegExp.test(value)) {
         throw new TypeError("argument val is invalid");
       }
@@ -23731,7 +23731,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router4 = require_router();
+    var Router5 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23753,8 +23753,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router4.Route;
-    exports.Router = Router4;
+    exports.Route = Router5.Route;
+    exports.Router = Router5;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -25190,7 +25190,7 @@ var require_atomic_sleep = __commonJS({
   "../../node_modules/.pnpm/atomic-sleep@1.0.0/node_modules/atomic-sleep/index.js"(exports, module) {
     "use strict";
     if (typeof SharedArrayBuffer !== "undefined" && typeof Atomics !== "undefined") {
-      let sleep = function(ms) {
+      let sleep2 = function(ms) {
         const valid = ms > 0 && ms < Infinity;
         if (valid === false) {
           if (typeof ms !== "number" && typeof ms !== "bigint") {
@@ -25201,9 +25201,9 @@ var require_atomic_sleep = __commonJS({
         Atomics.wait(nil, 0, 0, Number(ms));
       };
       const nil = new Int32Array(new SharedArrayBuffer(4));
-      module.exports = sleep;
+      module.exports = sleep2;
     } else {
-      let sleep = function(ms) {
+      let sleep2 = function(ms) {
         const valid = ms > 0 && ms < Infinity;
         if (valid === false) {
           if (typeof ms !== "number" && typeof ms !== "bigint") {
@@ -25215,7 +25215,7 @@ var require_atomic_sleep = __commonJS({
         while (target > Date.now()) {
         }
       };
-      module.exports = sleep;
+      module.exports = sleep2;
     }
   }
 });
@@ -25228,7 +25228,7 @@ var require_sonic_boom = __commonJS({
     var EventEmitter = __require("events");
     var inherits = __require("util").inherits;
     var path = __require("path");
-    var sleep = require_atomic_sleep();
+    var sleep2 = require_atomic_sleep();
     var assert2 = __require("assert");
     var BUSY_WRITE_TIMEOUT = 100;
     var kEmptyBuffer = Buffer.allocUnsafe(0);
@@ -25374,7 +25374,7 @@ var require_sonic_boom = __commonJS({
           if ((err.code === "EAGAIN" || err.code === "EBUSY") && this.retryEAGAIN(err, this._writingBuf.length, this._len - this._writingBuf.length)) {
             if (this.sync) {
               try {
-                sleep(BUSY_WRITE_TIMEOUT);
+                sleep2(BUSY_WRITE_TIMEOUT);
                 this.release(void 0, 0);
               } catch (err2) {
                 this.release(err2);
@@ -25687,7 +25687,7 @@ var require_sonic_boom = __commonJS({
           if (shouldRetry && !this.retryEAGAIN(err, buf.length, this._len - buf.length)) {
             throw err;
           }
-          sleep(BUSY_WRITE_TIMEOUT);
+          sleep2(BUSY_WRITE_TIMEOUT);
         }
       }
       try {
@@ -25724,7 +25724,7 @@ var require_sonic_boom = __commonJS({
           if (shouldRetry && !this.retryEAGAIN(err, buf.length, this._len - buf.length)) {
             throw err;
           }
-          sleep(BUSY_WRITE_TIMEOUT);
+          sleep2(BUSY_WRITE_TIMEOUT);
         }
       }
     }
@@ -26465,7 +26465,7 @@ var require_transport = __commonJS({
     var { createRequire } = __require("module");
     var getCallers = require_caller();
     var { join, isAbsolute, sep } = __require("node:path");
-    var sleep = require_atomic_sleep();
+    var sleep2 = require_atomic_sleep();
     var onExit = require_on_exit_leak_free();
     var ThreadStream = require_thread_stream();
     function setupOnExit(stream) {
@@ -26499,7 +26499,7 @@ var require_transport = __commonJS({
           return;
         }
         stream.flushSync();
-        sleep(100);
+        sleep2(100);
         stream.end();
       }
       return stream;
@@ -29929,7 +29929,7 @@ var require_cert_signatures = __commonJS({
 var require_sasl = __commonJS({
   "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/crypto/sasl.js"(exports, module) {
     "use strict";
-    var crypto2 = require_utils5();
+    var crypto3 = require_utils5();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
     function saslprep(password) {
       const nonAsciiSpace = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
@@ -29947,7 +29947,7 @@ var require_sasl = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-      const clientNonce = crypto2.randomBytes(18).toString("base64");
+      const clientNonce = crypto3.randomBytes(18).toString("base64");
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream ? "y" : "n";
       return {
         mechanism,
@@ -29989,20 +29989,20 @@ var require_sasl = __commonJS({
         const peerCert = stream.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-        const certHash = await crypto2.hashByName(hashName, peerCert);
+        const certHash = await crypto3.hashByName(hashName, peerCert);
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-      const saltedPassword = await crypto2.deriveKey(saslprep(password), saltBytes, sv.iteration);
-      const clientKey = await crypto2.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto2.sha256(clientKey);
-      const clientSignature = await crypto2.hmacSha256(storedKey, authMessage);
+      const saltedPassword = await crypto3.deriveKey(saslprep(password), saltBytes, sv.iteration);
+      const clientKey = await crypto3.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto3.sha256(clientKey);
+      const clientSignature = await crypto3.hmacSha256(storedKey, authMessage);
       const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
-      const serverKey = await crypto2.hmacSha256(saltedPassword, "Server Key");
-      const serverSignatureBytes = await crypto2.hmacSha256(serverKey, authMessage);
+      const serverKey = await crypto3.hmacSha256(saltedPassword, "Server Key");
+      const serverSignatureBytes = await crypto3.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -31939,7 +31939,7 @@ var require_split2 = __commonJS({
     var { StringDecoder } = __require("string_decoder");
     var kLast = /* @__PURE__ */ Symbol("last");
     var kDecoder = /* @__PURE__ */ Symbol("decoder");
-    function transform2(chunk, enc, cb) {
+    function transform2(chunk, enc2, cb) {
       let list;
       if (this.overflow) {
         const buf = this[kDecoder].write(chunk);
@@ -32236,7 +32236,7 @@ var require_client = __commonJS({
     var Query2 = require_query();
     var defaults2 = require_defaults();
     var Connection2 = require_connection();
-    var crypto2 = require_utils5();
+    var crypto3 = require_utils5();
     var activeQueryDeprecationNotice = nodeUtils.deprecate(
       () => {
       },
@@ -32491,7 +32491,7 @@ var require_client = __commonJS({
       _handleAuthMD5Password(msg) {
         this._getPassword(async () => {
           try {
-            const hashedPassword = await crypto2.postgresMd5PasswordHash(this.user, this.password, msg.salt);
+            const hashedPassword = await crypto3.postgresMd5PasswordHash(this.user, this.password, msg.salt);
             this.connection.password(hashedPassword);
           } catch (e) {
             this.emit("error", e);
@@ -37800,12 +37800,12 @@ var require_encodings2 = __commonJS({
     ];
     for (i = 0; i < modules.length; i++) {
       module = modules[i];
-      for (enc in module)
-        if (Object.prototype.hasOwnProperty.call(module, enc))
-          exports[enc] = module[enc];
+      for (enc2 in module)
+        if (Object.prototype.hasOwnProperty.call(module, enc2))
+          exports[enc2] = module[enc2];
     }
     var module;
-    var enc;
+    var enc2;
     var i;
   }
 });
@@ -37935,9 +37935,9 @@ var require_lib6 = __commonJS({
       var trail = decoder.end();
       return trail ? res + trail : res;
     };
-    iconv2.encodingExists = function encodingExists(enc) {
+    iconv2.encodingExists = function encodingExists(enc2) {
       try {
-        iconv2.getCodec(enc);
+        iconv2.getCodec(enc2);
         return true;
       } catch (e) {
         return false;
@@ -37949,32 +37949,32 @@ var require_lib6 = __commonJS({
     iconv2.getCodec = function getCodec(encoding) {
       if (!iconv2.encodings)
         iconv2.encodings = require_encodings2();
-      var enc = iconv2._canonicalizeEncoding(encoding);
+      var enc2 = iconv2._canonicalizeEncoding(encoding);
       var codecOptions = {};
       while (true) {
-        var codec = iconv2._codecDataCache[enc];
+        var codec = iconv2._codecDataCache[enc2];
         if (codec)
           return codec;
-        var codecDef = iconv2.encodings[enc];
+        var codecDef = iconv2.encodings[enc2];
         switch (typeof codecDef) {
           case "string":
-            enc = codecDef;
+            enc2 = codecDef;
             break;
           case "object":
             for (var key in codecDef)
               codecOptions[key] = codecDef[key];
             if (!codecOptions.encodingName)
-              codecOptions.encodingName = enc;
-            enc = codecDef.type;
+              codecOptions.encodingName = enc2;
+            enc2 = codecDef.type;
             break;
           case "function":
             if (!codecOptions.encodingName)
-              codecOptions.encodingName = enc;
+              codecOptions.encodingName = enc2;
             codec = new codecDef(codecOptions, iconv2);
             iconv2._codecDataCache[codecOptions.encodingName] = codec;
             return codec;
           default:
-            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc + "')");
+            throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '" + enc2 + "')");
         }
       }
     };
@@ -52050,8 +52050,8 @@ var require_snapshot_utils = __commonJS({
         match: new Set(matchHeaders.map((header) => caseSensitive ? header : header.toLowerCase()))
       };
     }
-    var crypto2 = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
-    var hashId = crypto2?.hash ? (value) => crypto2.hash("sha256", value, "base64url") : (value) => Buffer.from(value).toString("base64url");
+    var crypto3 = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
+    var hashId = crypto3?.hash ? (value) => crypto3.hash("sha256", value, "base64url") : (value) => Buffer.from(value).toString("base64url");
     function isUndiciHeaders(headers) {
       return Array.isArray(headers) && (headers.length & 1) === 0;
     }
@@ -57436,8 +57436,8 @@ var require_headers = __commonJS({
       static getHeadersGuard(o) {
         return o.#guard;
       }
-      static setHeadersGuard(o, guard) {
-        o.#guard = guard;
+      static setHeadersGuard(o, guard2) {
+        o.#guard = guard2;
       }
       /**
        * @param {Headers} o
@@ -57860,13 +57860,13 @@ var require_response2 = __commonJS({
         }
       }
     }
-    function fromInnerResponse(innerResponse, guard) {
+    function fromInnerResponse(innerResponse, guard2) {
       const response = new Response2(kConstruct);
       setResponseState(response, innerResponse);
       const headers = new Headers(kConstruct);
       setResponseHeaders(response, headers);
       setHeadersList(headers, innerResponse.headersList);
-      setHeadersGuard(headers, guard);
+      setHeadersGuard(headers, guard2);
       if (innerResponse.urlList.length !== 0 && innerResponse.body?.stream) {
         streamRegistry.register(response, new WeakRef(innerResponse.body.stream));
       }
@@ -58540,7 +58540,7 @@ var require_request3 = __commonJS({
       }
       return newRequest;
     }
-    function fromInnerRequest(innerRequest, dispatcher, signal, guard) {
+    function fromInnerRequest(innerRequest, dispatcher, signal, guard2) {
       const request = new Request(kConstruct);
       setRequestState(request, innerRequest);
       setRequestDispatcher(request, dispatcher);
@@ -58548,7 +58548,7 @@ var require_request3 = __commonJS({
       const headers = new Headers(kConstruct);
       setRequestHeaders(request, headers);
       setHeadersList(headers, innerRequest.headersList);
-      setHeadersGuard(headers, guard);
+      setHeadersGuard(headers, guard2);
       return request;
     }
     Object.defineProperties(Request.prototype, {
@@ -58693,10 +58693,10 @@ var require_subresource_integrity = __commonJS({
     var assert2 = __require("node:assert");
     var { runtimeFeatures } = require_runtime_features();
     var validSRIHashAlgorithmTokenSet = /* @__PURE__ */ new Map([["sha256", 0], ["sha384", 1], ["sha512", 2]]);
-    var crypto2;
+    var crypto3;
     if (runtimeFeatures.has("crypto")) {
-      crypto2 = __require("node:crypto");
-      const cryptoHashes = crypto2.getHashes();
+      crypto3 = __require("node:crypto");
+      const cryptoHashes = crypto3.getHashes();
       if (cryptoHashes.length === 0) {
         validSRIHashAlgorithmTokenSet.clear();
       }
@@ -58786,7 +58786,7 @@ var require_subresource_integrity = __commonJS({
       return result;
     }
     var applyAlgorithmToBytes = (algorithm, bytes) => {
-      return crypto2.hash(algorithm, bytes, "base64");
+      return crypto3.hash(algorithm, bytes, "base64");
     };
     function caseSensitiveMatch(actualValue, expectedValue) {
       let actualValueLength = actualValue.length;
@@ -61769,7 +61769,7 @@ var require_connection2 = __commonJS({
     var { WebsocketFrameSend } = require_frame();
     var assert2 = __require("node:assert");
     var { runtimeFeatures } = require_runtime_features();
-    var crypto2 = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
+    var crypto3 = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
     var warningEmitted = false;
     function establishWebSocketConnection(url2, protocols, client, handler, options) {
       const requestURL = url2;
@@ -61789,7 +61789,7 @@ var require_connection2 = __commonJS({
         const headersList = getHeadersList(new Headers(options.headers));
         request.headersList = headersList;
       }
-      const keyValue = crypto2.randomBytes(16).toString("base64");
+      const keyValue = crypto3.randomBytes(16).toString("base64");
       request.headersList.append("sec-websocket-key", keyValue, true);
       request.headersList.append("sec-websocket-version", "13", true);
       for (const protocol of protocols) {
@@ -61829,7 +61829,7 @@ var require_connection2 = __commonJS({
             return;
           }
           const secWSAccept = response.headersList.get("Sec-WebSocket-Accept");
-          const digest = crypto2.hash("sha1", keyValue + uid, "base64");
+          const digest = crypto3.hash("sha1", keyValue + uid, "base64");
           if (secWSAccept !== digest) {
             failWebsocketConnection(handler, 1002, "Incorrect hash received in Sec-WebSocket-Accept header.");
             return;
@@ -64533,12 +64533,12 @@ var require_mime_type = __commonJS({
 });
 
 // src/app.ts
-var import_express4 = __toESM(require_express2(), 1);
+var import_express5 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express3 = __toESM(require_express2(), 1);
+var import_express4 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -84722,13 +84722,13 @@ function _promise(Class2, innerType) {
   });
 }
 function _custom(Class2, fn, _params) {
-  const norm = normalizeParams(_params);
-  norm.abort ?? (norm.abort = true);
+  const norm2 = normalizeParams(_params);
+  norm2.abort ?? (norm2.abort = true);
   const schema = new Class2({
     type: "custom",
     check: "custom",
     fn,
-    ...norm
+    ...norm2
   });
   return schema;
 }
@@ -91141,8 +91141,8 @@ var attributeRules = {
     if (shouldIgnoreCase(data2, options)) {
       value = value.toLowerCase();
       return (elem) => {
-        const attr2 = adapter2.getAttributeValue(elem, name);
-        return attr2 != null && attr2.length === value.length && attr2.toLowerCase() === value && next2(elem);
+        const attr3 = adapter2.getAttributeValue(elem, name);
+        return attr3 != null && attr3.length === value.length && attr3.toLowerCase() === value && next2(elem);
       };
     }
     return (elem) => adapter2.getAttributeValue(elem, name) === value && next2(elem);
@@ -91155,13 +91155,13 @@ var attributeRules = {
     if (shouldIgnoreCase(data2, options)) {
       value = value.toLowerCase();
       return function hyphenIC(elem) {
-        const attr2 = adapter2.getAttributeValue(elem, name);
-        return attr2 != null && (attr2.length === len || attr2.charAt(len) === "-") && attr2.substr(0, len).toLowerCase() === value && next2(elem);
+        const attr3 = adapter2.getAttributeValue(elem, name);
+        return attr3 != null && (attr3.length === len || attr3.charAt(len) === "-") && attr3.substr(0, len).toLowerCase() === value && next2(elem);
       };
     }
     return function hyphen(elem) {
-      const attr2 = adapter2.getAttributeValue(elem, name);
-      return attr2 != null && (attr2.length === len || attr2.charAt(len) === "-") && attr2.substr(0, len) === value && next2(elem);
+      const attr3 = adapter2.getAttributeValue(elem, name);
+      return attr3 != null && (attr3.length === len || attr3.charAt(len) === "-") && attr3.substr(0, len) === value && next2(elem);
     };
   },
   element(next2, data2, options) {
@@ -91172,8 +91172,8 @@ var attributeRules = {
     }
     const regex = new RegExp(`(?:^|\\s)${escapeRegex2(value)}(?:$|\\s)`, shouldIgnoreCase(data2, options) ? "i" : "");
     return function element(elem) {
-      const attr2 = adapter2.getAttributeValue(elem, name);
-      return attr2 != null && attr2.length >= value.length && regex.test(attr2) && next2(elem);
+      const attr3 = adapter2.getAttributeValue(elem, name);
+      return attr3 != null && attr3.length >= value.length && regex.test(attr3) && next2(elem);
     };
   },
   exists(next2, { name }, { adapter: adapter2 }) {
@@ -91190,8 +91190,8 @@ var attributeRules = {
     if (shouldIgnoreCase(data2, options)) {
       value = value.toLowerCase();
       return (elem) => {
-        const attr2 = adapter2.getAttributeValue(elem, name);
-        return attr2 != null && attr2.length >= len && attr2.substr(0, len).toLowerCase() === value && next2(elem);
+        const attr3 = adapter2.getAttributeValue(elem, name);
+        return attr3 != null && attr3.length >= len && attr3.substr(0, len).toLowerCase() === value && next2(elem);
       };
     }
     return (elem) => {
@@ -91228,8 +91228,8 @@ var attributeRules = {
     if (shouldIgnoreCase(data2, options)) {
       const regex = new RegExp(escapeRegex2(value), "i");
       return function anyIC(elem) {
-        const attr2 = adapter2.getAttributeValue(elem, name);
-        return attr2 != null && attr2.length >= value.length && regex.test(attr2) && next2(elem);
+        const attr3 = adapter2.getAttributeValue(elem, name);
+        return attr3 != null && attr3.length >= value.length && regex.test(attr3) && next2(elem);
       };
     }
     return (elem) => {
@@ -91246,8 +91246,8 @@ var attributeRules = {
     } else if (shouldIgnoreCase(data2, options)) {
       value = value.toLowerCase();
       return (elem) => {
-        const attr2 = adapter2.getAttributeValue(elem, name);
-        return (attr2 == null || attr2.length !== value.length || attr2.toLowerCase() !== value) && next2(elem);
+        const attr3 = adapter2.getAttributeValue(elem, name);
+        return (attr3 == null || attr3.length !== value.length || attr3.toLowerCase() !== value) && next2(elem);
       };
     }
     return (elem) => adapter2.getAttributeValue(elem, name) !== value && next2(elem);
@@ -97519,7 +97519,7 @@ var defaultTreeAdapter = {
     }
   },
   adoptAttributes(recipient, attrs) {
-    const recipientAttrsMap = new Set(recipient.attrs.map((attr2) => attr2.name));
+    const recipientAttrsMap = new Set(recipient.attrs.map((attr3) => attr3.name));
     for (let j = 0; j < attrs.length; j++) {
       if (!recipientAttrsMap.has(attrs[j].name)) {
         recipient.attrs.push(attrs[j]);
@@ -97761,7 +97761,7 @@ var SVG_ATTRS_ADJUSTMENT_MAP = new Map([
   "xChannelSelector",
   "yChannelSelector",
   "zoomAndPan"
-].map((attr2) => [attr2.toLowerCase(), attr2]));
+].map((attr3) => [attr3.toLowerCase(), attr3]));
 var XML_ATTRS_ADJUSTMENT_MAP = /* @__PURE__ */ new Map([
   ["xlink:actuate", { prefix: "xlink", name: "actuate", namespace: NS.XLINK }],
   ["xlink:arcrole", { prefix: "xlink", name: "arcrole", namespace: NS.XLINK }],
@@ -101036,33 +101036,33 @@ function serializeElement(node, options) {
 }
 function serializeAttributes(node, { treeAdapter }) {
   let html3 = "";
-  for (const attr2 of treeAdapter.getAttrList(node)) {
+  for (const attr3 of treeAdapter.getAttrList(node)) {
     html3 += " ";
-    if (attr2.namespace) {
-      switch (attr2.namespace) {
+    if (attr3.namespace) {
+      switch (attr3.namespace) {
         case NS.XML: {
-          html3 += `xml:${attr2.name}`;
+          html3 += `xml:${attr3.name}`;
           break;
         }
         case NS.XMLNS: {
-          if (attr2.name !== "xmlns") {
+          if (attr3.name !== "xmlns") {
             html3 += "xmlns:";
           }
-          html3 += attr2.name;
+          html3 += attr3.name;
           break;
         }
         case NS.XLINK: {
-          html3 += `xlink:${attr2.name}`;
+          html3 += `xlink:${attr3.name}`;
           break;
         }
         default: {
-          html3 += `${attr2.prefix}:${attr2.name}`;
+          html3 += `${attr3.prefix}:${attr3.name}`;
         }
       }
     } else {
-      html3 += attr2.name;
+      html3 += attr3.name;
     }
-    html3 += `="${escapeAttribute2(attr2.value)}"`;
+    html3 += `="${escapeAttribute2(attr3.value)}"`;
   }
   return html3;
 }
@@ -102558,21 +102558,21 @@ function tideLocationIdFor(port2) {
 }
 function prefetchTideStrength(sources, months) {
   const byPort = /* @__PURE__ */ new Map();
-  const jobs = [];
+  const jobs2 = [];
   for (const port2 of new Set(sources.map((source) => source.port))) {
     const locationId = tideLocationIdFor(port2);
     if (!locationId) continue;
     const merged = /* @__PURE__ */ new Map();
     byPort.set(port2, merged);
     for (const { year, month } of months) {
-      jobs.push(
+      jobs2.push(
         fetchTideStrengthMonth(locationId, year, month).then((days) => {
           if (days) for (const [date6, percent] of days) merged.set(date6, percent);
         })
       );
     }
   }
-  return { byPort, done: Promise.all(jobs).then(() => void 0) };
+  return { byPort, done: Promise.all(jobs2).then(() => void 0) };
 }
 function applyTideStrength(items, byPort) {
   for (const item of items) {
@@ -103468,14 +103468,535 @@ router2.post("/fishing/sources/discover", async (req, res) => {
 });
 var fishing_default = router2;
 
+// src/routes/booking.ts
+var import_express3 = __toESM(require_express2(), 1);
+
+// src/lib/booking.ts
+import crypto2 from "node:crypto";
+var SPECIES_WORDS = ["\uCB48\uAFB8\uBBF8", "\uC8FC\uAFB8\uBBF8", "\uAC11\uC624\uC9D5\uC5B4", "\uCB48\uAC11"];
+var MODULE = "/_core/module/reservation_boat_v5.2_seat1";
+var KNOWN_SEEDS = ["2955", "4443", "2954", "5866", "5579", "3570", "2961", "2956", "2950", "6407", "5578", "4920", "5679", "5891", "3571"];
+var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function relayCall(url2, method, opts) {
+  const relayUrl = process.env.BOOKING_RELAY_URL;
+  const token = process.env.BOOKING_RELAY_TOKEN;
+  if (relayUrl && token) {
+    const key = crypto2.createHash("sha256").update(token).digest();
+    const iv = crypto2.randomBytes(12);
+    const c = crypto2.createCipheriv("aes-256-gcm", key, iv);
+    const plain = JSON.stringify({
+      ts: Math.floor(Date.now() / 1e3),
+      url: url2,
+      method,
+      headers: opts.headers ?? {},
+      body: opts.body ?? "",
+      referer: opts.referer ?? "",
+      cookie: opts.cookie ?? ""
+    });
+    const ct = Buffer.concat([c.update(plain, "utf8"), c.final()]);
+    const res2 = await fetch(relayUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ iv: iv.toString("base64"), tag: c.getAuthTag().toString("base64"), ct: ct.toString("base64") }),
+      signal: AbortSignal.timeout(3e4)
+    });
+    const text4 = await res2.text();
+    const errCode = res2.headers.get("x-relay-error");
+    let j;
+    try {
+      j = JSON.parse(text4);
+    } catch {
+      throw new Error(`\uC911\uACC4\uAE30 \uC751\uB2F5\uC744 \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 (HTTP ${res2.status}). \uC8FC\uC18C\xB7\uC5C5\uB85C\uB4DC\uB97C \uD655\uC778\uD558\uC138\uC694.`);
+    }
+    if (errCode) throw new Error(`\uC911\uACC4\uAE30 \uC624\uB958(${errCode}): ${j?.error ?? ""}`);
+    const d = crypto2.createDecipheriv("aes-256-gcm", key, Buffer.from(j.iv, "base64"));
+    d.setAuthTag(Buffer.from(j.tag, "base64"));
+    const p = JSON.parse(Buffer.concat([d.update(Buffer.from(j.ct, "base64")), d.final()]).toString("utf8"));
+    return {
+      status: p.status,
+      location: p.location ?? "",
+      contentType: p.contentType ?? "",
+      setCookies: p.setCookies ?? [],
+      body: Buffer.from(p.bodyBase64 ?? "", "base64")
+    };
+  }
+  const headers = { "user-agent": UA, "accept-language": "ko-KR,ko;q=0.9", ...opts.headers ?? {} };
+  if (opts.referer) headers.referer = opts.referer;
+  if (opts.cookie) headers.cookie = opts.cookie;
+  const res = await fetch(url2, { method, headers, body: method === "POST" ? opts.body ?? "" : void 0, redirect: "manual", signal: AbortSignal.timeout(2e4) });
+  return {
+    status: res.status,
+    location: res.headers.get("location") ?? "",
+    contentType: res.headers.get("content-type") ?? "",
+    setCookies: res.headers.getSetCookie?.() ?? [],
+    body: Buffer.from(await res.arrayBuffer())
+  };
+}
+function decodeBody(r) {
+  const ct = /charset=([\w-]+)/i.exec(r.contentType)?.[1];
+  const head = r.body.subarray(0, 2e3).toString("latin1");
+  const meta = /charset=["']?([\w-]+)/i.exec(head)?.[1];
+  const label = (ct ?? meta ?? "utf-8").toLowerCase();
+  try {
+    return new TextDecoder(label === "ks_c_5601-1987" ? "euc-kr" : label).decode(r.body);
+  } catch {
+    return r.body.toString("utf8");
+  }
+}
+var Session = class {
+  jar = /* @__PURE__ */ new Map();
+  base;
+  constructor(base) {
+    this.base = base;
+  }
+  cookieHeader() {
+    return [...this.jar].map(([k, v]) => `${k}=${v}`).join("; ");
+  }
+  store(setCookies) {
+    for (const sc of setCookies) {
+      const [pair] = sc.split(";");
+      const eq3 = pair.indexOf("=");
+      if (eq3 > 0) this.jar.set(pair.slice(0, eq3).trim(), pair.slice(eq3 + 1).trim());
+    }
+  }
+  async request(method, path, opts = {}) {
+    let url2 = path.startsWith("http") ? path : this.base + path;
+    let m = method;
+    let body = opts.body;
+    for (let hop = 0; hop < 5; hop++) {
+      const headers = {};
+      if (m === "POST") headers["content-type"] = "application/x-www-form-urlencoded; charset=UTF-8";
+      if (opts.ajax) headers["x-requested-with"] = "XMLHttpRequest";
+      const r = await relayCall(url2, m, { body, headers, referer: opts.referer ?? this.base + "/", cookie: this.cookieHeader() });
+      this.store(r.setCookies);
+      if ([301, 302, 303, 307, 308].includes(r.status) && r.location) {
+        url2 = new URL(r.location, url2).toString();
+        if (r.status !== 307 && r.status !== 308) {
+          m = "GET";
+          body = void 0;
+        }
+        continue;
+      }
+      return { status: r.status, text: decodeBody(r), url: url2 };
+    }
+    throw new Error("\uC774\uB3D9(\uB9AC\uB2E4\uC774\uB809\uD2B8)\uC774 \uB108\uBB34 \uB9CE\uC2B5\uB2C8\uB2E4");
+  }
+};
+var stripTags = (s) => s.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&middot;|&#183;/g, "\xB7").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+var attr2 = (tag, name) => {
+  const m = new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag);
+  return m ? m[2] ?? m[3] ?? m[4] : void 0;
+};
+function parseRadios(html3, name) {
+  const out = [];
+  for (const m of html3.matchAll(/<input\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (attr2(tag, "type")?.toLowerCase() !== "radio" || attr2(tag, "name") !== name) continue;
+    const id = attr2(tag, "id");
+    let label = "";
+    if (id) {
+      const lm = new RegExp(`<label[^>]*\\sfor\\s*=\\s*["']?${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["']?[^>]*>([\\s\\S]*?)</label>`, "i").exec(html3);
+      if (lm) label = stripTags(lm[1]);
+    }
+    out.push({ value: attr2(tag, "value") ?? "", label });
+  }
+  return out;
+}
+function parseSeats(html3) {
+  const marks = [...html3.matchAll(/<div class="(res_ship_seat_(?:head|side|back)[^"]*)">/g)];
+  const cells = [];
+  marks.forEach((m, i) => {
+    const cls = m[1];
+    const section = cls.includes("res_ship_seat_back") ? "back" : cls.includes("res_ship_seat_side") ? "side" : "head";
+    const side = /_r(\s|$)/.test(cls) ? "r" : /_l(\s|$)/.test(cls) ? "l" : "";
+    const start = m.index + m[0].length;
+    let end2 = i + 1 < marks.length ? marks[i + 1].index : html3.length;
+    const notice = html3.indexOf("res_ship_seat_notice", start);
+    if (notice > 0 && notice < end2) end2 = notice;
+    const chunk = html3.slice(start, end2);
+    const found = [];
+    for (const sm of chunk.matchAll(/<span([^>]*)>\s*(\d+)\s*<\/span>/g)) {
+      const cl = (attr2(sm[1], "class") ?? "").split(/\s+/);
+      if (!cl.some((c) => c.startsWith("res_num_view"))) continue;
+      found.push({ seat: Number(sm[2]), available: cl.includes("res_num_view") });
+    }
+    found.forEach((f, idx) => cells.push({ ...f, section, side, index: idx, count: found.length }));
+  });
+  return cells;
+}
+function sternOrder(cells, sternSide = "right") {
+  const first2 = sternSide === "right" ? "r" : "l";
+  const key = (c) => {
+    const tie = c.side === first2 ? 0 : 1;
+    if (c.section === "back") return [0, c.index, tie];
+    if (c.section === "side") return [1, c.count - 1 - c.index, tie];
+    return [2, c.index, tie];
+  };
+  return [...cells].sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2];
+  }).map((c) => c.seat);
+}
+function chooseSeats(available, n, preferred, order) {
+  const chosen = [];
+  const take = (s) => {
+    if (available.has(s) && !chosen.includes(s) && chosen.length < n) chosen.push(s);
+  };
+  preferred.forEach(take);
+  order.forEach(take);
+  [...available].sort((a, b) => a - b).forEach(take);
+  return chosen;
+}
+function parseForm(html3) {
+  const fm = /<form\b[^>]*\bid\s*=\s*["']insert_form["'][^>]*>([\s\S]*?)<\/form>/i.exec(html3);
+  if (!fm) return null;
+  const action = attr2(fm[0], "action") ?? `${MODULE}/action/popup.step1.action.php`;
+  const body = fm[1];
+  const fields = [];
+  const re = /<input\b[^>]*>|<select\b[^>]*>[\s\S]*?<\/select>|<textarea\b[^>]*>[\s\S]*?<\/textarea>/gi;
+  for (const m of body.matchAll(re)) {
+    const tag = m[0];
+    const lower = tag.slice(0, 9).toLowerCase();
+    const name = attr2(tag, "name");
+    if (!name) continue;
+    if (lower.startsWith("<select")) {
+      const opts = [...tag.matchAll(/<option\b([^>]*)>/gi)].map((o) => ({ value: attr2(o[1], "value") ?? "", selected: /\sselected\b/i.test(o[1]) }));
+      fields.push({ name, type: "select", value: "", checked: false, options: opts });
+    } else if (lower.startsWith("<textarea")) {
+      fields.push({ name, type: "textarea", value: stripTags(tag), checked: false });
+    } else {
+      const type = (attr2(tag, "type") ?? "text").toLowerCase();
+      if (["button", "submit", "image", "reset", "file"].includes(type)) continue;
+      fields.push({ name, type, value: attr2(tag, "value") ?? "", checked: /\schecked\b/i.test(tag) });
+    }
+  }
+  return { action, fields };
+}
+var enc = (s) => encodeURIComponent(s).replace(/%20/g, "+");
+var AGREE_NAME = /^(agree|BI_3JA|BI_AD|all_agree)/;
+function buildPayload(form, v) {
+  const digits = v.phone.replace(/\D/g, "");
+  const m = /^(\d{3})(\d{3,4})(\d{4})$/.exec(digits);
+  if (!m) throw new Error("\uD734\uB300\uD3F0 \uBC88\uD638 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4");
+  const set2 = {
+    BI_IN: String(v.people),
+    BI_NAME: v.name,
+    BI_TEL1: m[1],
+    BI_TEL2: m[2],
+    BI_TEL3: m[3],
+    temp_bi_stat: v.tempStat,
+    PA_N_UID: v.shipUid,
+    PS_N_UID: v.typeUid
+  };
+  const once = /* @__PURE__ */ new Set();
+  const pairs = [];
+  const unresolved = [];
+  const radioDone = /* @__PURE__ */ new Set();
+  let seatIdx = 0;
+  const groups = /* @__PURE__ */ new Map();
+  for (const f of form.fields) if (f.type === "radio") groups.set(f.name, [...groups.get(f.name) ?? [], f.value]);
+  const radioNames = new Set(form.fields.filter((f) => f.type === "radio").map((f) => f.name));
+  for (const f of form.fields) {
+    if (f.name === "PA_N_UID" || f.name === "PS_N_UID") {
+      if (!once.has(f.name)) pairs.push([f.name, set2[f.name]]);
+      once.add(f.name);
+      continue;
+    }
+    if (f.name === "seat[]") {
+      pairs.push([f.name, v.seatValues[seatIdx++] ?? ""]);
+      continue;
+    }
+    if (f.type === "select") {
+      const val2 = f.name in set2 ? set2[f.name] : (f.options?.find((o) => o.selected) ?? f.options?.[0])?.value ?? "";
+      pairs.push([f.name, val2]);
+    } else if (f.type === "checkbox") {
+      if (v.agreeAll && AGREE_NAME.test(f.name)) pairs.push([f.name, f.value || "Y"]);
+      else if (f.checked) pairs.push([f.name, f.value || "on"]);
+    } else if (f.type === "radio") {
+      if (v.agreeAll && AGREE_NAME.test(f.name)) {
+        if (!radioDone.has(f.name)) {
+          const vals = groups.get(f.name) ?? [];
+          pairs.push([f.name, vals.find((x) => x.toUpperCase() === "Y") ?? vals[0] ?? "Y"]);
+          radioDone.add(f.name);
+        }
+      } else if (f.checked) {
+        pairs.push([f.name, f.value]);
+        radioDone.add(f.name);
+      }
+    } else {
+      pairs.push([f.name, f.name in set2 ? set2[f.name] : f.value]);
+    }
+  }
+  for (const n of radioNames) if (!radioDone.has(n) && n !== "PA_N_UID" && n !== "PS_N_UID") unresolved.push(`${n} (\uC120\uD0DD\uB41C \uAC12 \uC5C6\uC74C)`);
+  return { payload: pairs.map(([k, val2]) => `${enc(k)}=${enc(val2)}`).join("&"), unresolved };
+}
+async function discoverOpenShips(sess, date6, seeds) {
+  for (const uid of seeds) {
+    const r = await sess.request("GET", `${MODULE}/popup.step1.php?date=${date6}&PA_N_UID=${uid}`);
+    if (!/id\s*=\s*["']insert_form["']/.test(r.text)) continue;
+    return { seed: uid, ships: parseRadios(r.text, "PA_N_UID"), html: r.text };
+  }
+  return null;
+}
+var norm = (s) => s.replace(/\s+/g, "");
+function pickShip(open, wishes) {
+  for (const w of wishes) {
+    const hit = open.find((o) => w.uid ? o.value === w.uid : norm(o.label).includes(norm(w.name)));
+    if (hit) return { choice: hit, wish: w };
+  }
+  return null;
+}
+async function prepareBooking(sess, cfg, found, log) {
+  const { choice, wish } = found;
+  const uid = choice.value;
+  let page = await sess.request("GET", `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0`);
+  const types3 = parseRadios(page.text, "PS_N_UID");
+  log(`\uB09A\uC2DC \uC885\uB958: ${types3.map((t) => t.label).join(" | ") || "\uC5C6\uC74C"}`);
+  const type = types3.find((t) => SPECIES_WORDS.some((w) => t.label.includes(w)));
+  if (!type) throw new Error(`${choice.label}: \uCB48\uAFB8\uBBF8/\uAC11\uC624\uC9D5\uC5B4 \uB09A\uC2DC\uC885\uB958\uAC00 \uC5C6\uC5B4 \uC911\uB2E8\uD569\uB2C8\uB2E4`);
+  page = await sess.request("GET", `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0&PS_N_UID=${type.value}`);
+  const html3 = page.text;
+  const naun = /naun=(\d+)/.exec(html3)?.[1] ?? "1";
+  const ajax = await sess.request("POST", `${MODULE}/action/popup.step1.ajax.php`, {
+    ajax: true,
+    body: `date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0&PS_N_UID=${type.value}&BI_IN=${cfg.people}&BI_SO_IN=N&pay_method=&naun=${naun}`
+  });
+  const parts = ajax.text.split("|^|");
+  const price = (parts[1] ?? parts[0] ?? "").trim();
+  const status = (parts[2] ?? "").trim();
+  if (status !== "\uD655\uC778") throw new Error(`\uC778\uC6D0 ${cfg.people}\uBA85 \uC0C1\uD0DC: "${status || "\uC751\uB2F5 \uC5C6\uC74C"}" (\uB0A8\uC740 \uC790\uB9AC \uBD80\uC871\xB7\uB300\uAE30\uC790) \u2014 \uC911\uB2E8\uD569\uB2C8\uB2E4`);
+  const cells = parseSeats(html3);
+  let seats = [];
+  let seatNote = "";
+  if (cfg.seatMode === "none" || cells.length === 0) {
+    seatNote = cells.length === 0 ? "\uC88C\uC11D \uC120\uD0DD\uC774 \uC5C6\uB294 \uBC30" : "\uC88C\uC11D \uC120\uD0DD \uC548 \uD568";
+  } else {
+    const free = new Set(cells.filter((c) => c.available).map((c) => c.seat));
+    const order = sternOrder(cells, cfg.sternSide ?? "right");
+    seats = chooseSeats(free, cfg.people, [...wish.preferredSeats ?? [], ...cfg.preferredSeats ?? []], order);
+    if (seats.length < cfg.people) throw new Error(`\uBE48 \uC88C\uC11D \uBD80\uC871: \uD544\uC694 ${cfg.people}, \uAC00\uB2A5 ${seats.length}`);
+    seatNote = `\uBE48 \uC88C\uC11D ${free.size}\uAC1C \uC911 \uC120\uBBF8 \uC6B0\uC120\uC73C\uB85C \uC120\uD0DD`;
+  }
+  const form = parseForm(html3);
+  if (!form) throw new Error("\uC608\uC57D \uD3FC(#insert_form)\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
+  const seatValues = seatValuesFor(html3, cfg.date, uid, new Set(seats));
+  const { payload, unresolved } = buildPayload(form, { people: cfg.people, name: cfg.name, phone: cfg.phone, seatValues, tempStat: status, agreeAll: true, shipUid: uid, typeUid: type.value });
+  return {
+    ship: { uid, name: choice.label },
+    species: type.label,
+    people: cfg.people,
+    seats,
+    seatNote,
+    status,
+    price,
+    actionUrl: new URL(form.action, sess.base).toString(),
+    payload,
+    unresolved,
+    dryRun: true
+  };
+}
+function seatValuesFor(html3, date6, uid, chosen) {
+  const prefix = `s${date6}${uid}`;
+  const out = [];
+  for (const m of html3.matchAll(/<input\b[^>]*>/gi)) {
+    if (attr2(m[0], "name") !== "seat[]") continue;
+    const id = attr2(m[0], "id") ?? "";
+    const no = id.startsWith(prefix) ? Number(id.slice(prefix.length)) : NaN;
+    out.push(chosen.has(no) ? String(no) : "");
+  }
+  return out;
+}
+var jobs = /* @__PURE__ */ new Map();
+var MAX_JOBS = 20;
+function listJobs() {
+  return [...jobs.values()].sort((a, b) => b.createdAt - a.createdAt).map(publicJob);
+}
+function getJob(id) {
+  const j = jobs.get(id);
+  return j ? publicJob(j) : void 0;
+}
+function publicJob(j) {
+  return { ...j, log: [...j.log] };
+}
+function stopJob(id) {
+  const j = jobs.get(id);
+  if (!j || ["done", "failed", "stopped"].includes(j.status)) return false;
+  j.stopRequested = true;
+  return true;
+}
+function validateConfig(raw) {
+  const base = String(raw?.baseUrl ?? "http://www.mscufishing.com").replace(/\/$/, "");
+  if (!/^https?:\/\/(www\.)?mscufishing\.com$/i.test(base) && base !== process.env.BOOKING_TEST_BASE) throw new Error("\uC9C0\uC6D0\uD558\uC9C0 \uC54A\uB294 \uC608\uC57D\uCC98\uC785\uB2C8\uB2E4");
+  const date6 = String(raw?.date ?? "").replace(/\D/g, "");
+  if (!/^\d{8}$/.test(date6)) throw new Error("\uB0A0\uC9DC\uB294 YYYYMMDD \uD615\uC2DD\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4");
+  const ships = (Array.isArray(raw?.ships) ? raw.ships : []).map((s) => ({ name: String(s?.name ?? "").trim(), uid: s?.uid ? String(s.uid) : void 0, preferredSeats: Array.isArray(s?.preferredSeats) ? s.preferredSeats.map(Number).filter(Number.isFinite) : void 0 })).filter((s) => s.name || s.uid);
+  if (!ships.length) throw new Error("\uBC30\uB97C \uD55C \uCC99 \uC774\uC0C1 \uC785\uB825\uD558\uC138\uC694");
+  const people = Number(raw?.people);
+  if (!Number.isInteger(people) || people < 1 || people > 20) throw new Error("\uC778\uC6D0\uC740 1~20\uBA85");
+  const name = String(raw?.name ?? "").trim();
+  if (!name) throw new Error("\uC608\uC57D\uC790\uBA85\uC744 \uC785\uB825\uD558\uC138\uC694");
+  if (!/^\d{3}\d{3,4}\d{4}$/.test(String(raw?.phone ?? "").replace(/\D/g, ""))) throw new Error("\uD734\uB300\uD3F0 \uBC88\uD638\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4");
+  let openAt;
+  if (raw?.openAt) {
+    const t = new Date(raw.openAt).getTime();
+    if (!Number.isFinite(t)) throw new Error("\uC624\uD508 \uC2DC\uAC01 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4");
+    openAt = new Date(t).toISOString();
+  }
+  return {
+    baseUrl: base,
+    date: date6,
+    ships,
+    people,
+    seatMode: raw?.seatMode === "none" ? "none" : "auto",
+    preferredSeats: Array.isArray(raw?.preferredSeats) ? raw.preferredSeats.map(Number).filter(Number.isFinite) : [],
+    sternSide: raw?.sternSide === "left" ? "left" : "right",
+    name,
+    phone: String(raw.phone),
+    openAt,
+    warmupSeconds: Math.min(60, Math.max(0, Number(raw?.warmupSeconds ?? 5))),
+    pollMs: Math.max(800, Number(raw?.pollMs ?? 1e3)),
+    // 선사 서버 부담을 줄이기 위해 0.8초 미만으로는 조회하지 않음
+    maxPollMinutes: Math.min(60, Math.max(1, Number(raw?.maxPollMinutes ?? 10))),
+    seedUids: Array.isArray(raw?.seedUids) && raw.seedUids.length ? raw.seedUids.map(String) : void 0
+  };
+}
+function startJob(cfg) {
+  if ([...jobs.values()].filter((j) => ["waiting", "polling"].includes(j.status)).length >= 3) throw new Error("\uB3D9\uC2DC\uC5D0 \uC9C4\uD589 \uC911\uC778 \uC791\uC5C5\uC740 3\uAC1C\uAE4C\uC9C0\uC785\uB2C8\uB2E4");
+  if (jobs.size >= MAX_JOBS) {
+    const oldest = [...jobs.values()].filter((j) => !["waiting", "polling"].includes(j.status)).sort((a, b) => a.createdAt - b.createdAt)[0];
+    if (oldest) jobs.delete(oldest.id);
+  }
+  const id = crypto2.randomBytes(6).toString("hex");
+  const job = {
+    id,
+    createdAt: Date.now(),
+    status: "waiting",
+    summary: `${cfg.date} ${cfg.ships.map((s) => s.name || s.uid).join(" > ")} \xB7 ${cfg.people}\uBA85`,
+    log: [],
+    stopRequested: false
+  };
+  jobs.set(id, job);
+  void runJob(job, cfg);
+  return publicJob(job);
+}
+async function runJob(job, cfg) {
+  const log = (m) => {
+    job.log.push(`${(/* @__PURE__ */ new Date()).toLocaleTimeString("ko-KR", { hour12: false, timeZone: "Asia/Seoul" })} ${m}`);
+    if (job.log.length > 200) job.log.splice(0, job.log.length - 200);
+  };
+  const sess = new Session(cfg.baseUrl);
+  try {
+    log("\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC: \uCD5C\uC885 \uC81C\uCD9C\uC740 \uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
+    if (cfg.openAt) {
+      const target = new Date(cfg.openAt).getTime() - (cfg.warmupSeconds ?? 5) * 1e3;
+      log(`\uC624\uD508(${new Date(cfg.openAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}) \uC804\uAE4C\uC9C0 \uB300\uAE30\uD569\uB2C8\uB2E4.`);
+      while (Date.now() < target) {
+        if (job.stopRequested) throw new StopError();
+        await sleep(Math.min(1e3, Math.max(50, target - Date.now())));
+      }
+    }
+    job.status = "polling";
+    const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 6e4;
+    const seeds = [.../* @__PURE__ */ new Set([...cfg.ships.map((s) => s.uid).filter(Boolean), ...cfg.seedUids ?? KNOWN_SEEDS])];
+    let workingSeed = null;
+    let attempt = 0;
+    while (Date.now() < deadline) {
+      if (job.stopRequested) throw new StopError();
+      attempt++;
+      let open = [];
+      try {
+        const r = workingSeed ? await sess.request("GET", `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${workingSeed}`) : null;
+        if (r && /id\s*=\s*["']insert_form["']/.test(r.text)) open = parseRadios(r.text, "PA_N_UID");
+        else {
+          const d = await discoverOpenShips(sess, cfg.date, workingSeed ? [workingSeed, ...seeds] : seeds);
+          workingSeed = d?.seed ?? null;
+          open = d?.ships ?? [];
+          if (!d && attempt % 10 === 1) log("\uC608\uC57D \uD654\uBA74\uC774 \uC544\uC9C1 \uC5F4\uB9AC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uACC4\uC18D \uD655\uC778\uD569\uB2C8\uB2E4.");
+        }
+      } catch (e) {
+        log(`\uC870\uD68C \uC624\uB958: ${e.message}`);
+        if (/중계기 오류\((auth|config)\)/.test(e.message)) throw e;
+      }
+      const hit = pickShip(open, cfg.ships);
+      if (hit) {
+        log(`\uC608\uC57D \uAC00\uB2A5\uD55C \uBC30 \uBC1C\uACAC: ${hit.choice.label} (${hit.choice.value})`);
+        job.result = await prepareBooking(sess, cfg, hit, log);
+        job.status = "done";
+        log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.species}, ${job.result.people}\uBA85, \uC88C\uC11D: ${job.result.seats.join(",") || "\uBBF8\uC120\uD0DD"}`);
+        log("\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC\uC774\uBBC0\uB85C \uC81C\uCD9C\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
+        return;
+      }
+      if (attempt % 10 === 1 && open.length) log(`\uC6D0\uD558\uB294 \uBC30\uAC00 \uC544\uC9C1 \uC548 \uC5F4\uB838\uC2B5\uB2C8\uB2E4 (\uC5F4\uB9B0 \uBC30: ${open.map((o) => o.label).join(", ")})`);
+      await sleep(cfg.pollMs + Math.random() * 300);
+    }
+    throw new Error("\uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uC608\uC57D \uAC00\uB2A5\uD55C \uBC30\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
+  } catch (e) {
+    if (e instanceof StopError) {
+      job.status = "stopped";
+      log("\uC0AC\uC6A9\uC790\uAC00 \uC911\uC9C0\uD588\uC2B5\uB2C8\uB2E4.");
+    } else {
+      job.status = "failed";
+      job.error = e?.message ?? String(e);
+      log(`\uC911\uB2E8: ${job.error}`);
+    }
+  }
+}
+var StopError = class extends Error {
+};
+
+// src/routes/booking.ts
+var bookingRouter = (0, import_express3.Router)();
+function guard(req, res, next2) {
+  const key = process.env.BOOKING_ADMIN_KEY;
+  if (key && req.header("x-booking-key") !== key) {
+    res.status(401).json({ error: "\uC811\uADFC \uD0A4\uAC00 \uB9DE\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4" });
+    return;
+  }
+  next2();
+}
+bookingRouter.get("/booking/status", guard, (_req, res) => {
+  res.json({
+    mode: "test",
+    // 최종 제출 기능은 아직 없음
+    relay: Boolean(process.env.BOOKING_RELAY_URL && process.env.BOOKING_RELAY_TOKEN),
+    keyRequired: Boolean(process.env.BOOKING_ADMIN_KEY)
+  });
+});
+bookingRouter.get("/booking/jobs", guard, (_req, res) => {
+  res.json({ jobs: listJobs() });
+});
+bookingRouter.get("/booking/jobs/:id", guard, (req, res) => {
+  const job = getJob(String(req.params.id));
+  if (!job) {
+    res.status(404).json({ error: "\uC791\uC5C5\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4" });
+    return;
+  }
+  res.json({ job });
+});
+bookingRouter.post("/booking/jobs", guard, (req, res) => {
+  try {
+    const cfg = validateConfig(req.body);
+    res.json({ job: startJob(cfg) });
+  } catch (e) {
+    res.status(400).json({ error: e?.message ?? "\uC694\uCCAD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4" });
+  }
+});
+bookingRouter.post("/booking/jobs/:id/stop", guard, (req, res) => {
+  res.json({ ok: stopJob(String(req.params.id)) });
+});
+var booking_default = bookingRouter;
+
 // src/routes/index.ts
-var router3 = (0, import_express3.Router)();
+var router3 = (0, import_express4.Router)();
 router3.use(health_default);
 router3.use(fishing_default);
+router3.use(booking_default);
 var routes_default = router3;
 
 // src/app.ts
-var app = (0, import_express4.default)();
+var app = (0, import_express5.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -103496,8 +104017,8 @@ app.use(
   })
 );
 app.use((0, import_cors.default)());
-app.use(import_express4.default.json());
-app.use(import_express4.default.urlencoded({ extended: true }));
+app.use(import_express5.default.json());
+app.use(import_express5.default.urlencoded({ extended: true }));
 app.use("/api", routes_default);
 var app_default = app;
 
