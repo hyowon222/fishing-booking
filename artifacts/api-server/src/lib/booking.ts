@@ -79,52 +79,53 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 // ------------------------------------------------------------------ 전송 (중계기 암호화 + 쿠키 + 리다이렉트)
 type RawResponse = { status: number; location: string; contentType: string; setCookies: string[]; body: Buffer };
 
+const relayEnabled = () => Boolean(process.env.BOOKING_RELAY_URL && process.env.BOOKING_RELAY_TOKEN);
+
+// 중계기와 암호화 통신 (AES-256-GCM). payload 에는 단일 요청 또는 batch 가 들어갑니다.
+async function relayExchange(payload: Record<string, unknown>): Promise<any> {
+  const relayUrl = process.env.BOOKING_RELAY_URL as string;
+  const token = process.env.BOOKING_RELAY_TOKEN as string;
+  const key = crypto.createHash("sha256").update(token).digest();
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const plain = JSON.stringify({ ts: Math.floor(Date.now() / 1000), ...payload });
+  const ct = Buffer.concat([c.update(plain, "utf8"), c.final()]);
+  const res = await fetchWhy("중계기", relayUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ iv: iv.toString("base64"), tag: c.getAuthTag().toString("base64"), ct: ct.toString("base64") }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const text = await res.text();
+  const errCode = res.headers.get("x-relay-error");
+  let j: any;
+  try {
+    j = JSON.parse(text);
+  } catch {
+    throw new Error(`중계기 응답을 읽지 못했습니다 (HTTP ${res.status}). 주소·업로드를 확인하세요.`);
+  }
+  if (errCode) throw new Error(`중계기 오류(${errCode}): ${j?.error ?? ""}`);
+  const d = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(j.iv, "base64"));
+  d.setAuthTag(Buffer.from(j.tag, "base64"));
+  return JSON.parse(Buffer.concat([d.update(Buffer.from(j.ct, "base64")), d.final()]).toString("utf8"));
+}
+
+const toRaw = (p: any): RawResponse => ({
+  status: p.status,
+  location: p.location ?? "",
+  contentType: p.contentType ?? "",
+  setCookies: p.setCookies ?? [],
+  body: Buffer.from(p.bodyBase64 ?? "", "base64"),
+});
+
 async function relayCall(
   url: string,
   method: "GET" | "POST",
   opts: { body?: string; headers?: Record<string, string>; referer?: string; cookie?: string },
 ): Promise<RawResponse> {
-  const relayUrl = process.env.BOOKING_RELAY_URL;
-  const token = process.env.BOOKING_RELAY_TOKEN;
-  if (relayUrl && token) {
-    const key = crypto.createHash("sha256").update(token).digest();
-    const iv = crypto.randomBytes(12);
-    const c = crypto.createCipheriv("aes-256-gcm", key, iv);
-    const plain = JSON.stringify({
-      ts: Math.floor(Date.now() / 1000),
-      url,
-      method,
-      headers: opts.headers ?? {},
-      body: opts.body ?? "",
-      referer: opts.referer ?? "",
-      cookie: opts.cookie ?? "",
-    });
-    const ct = Buffer.concat([c.update(plain, "utf8"), c.final()]);
-    const res = await fetchWhy("중계기", relayUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ iv: iv.toString("base64"), tag: c.getAuthTag().toString("base64"), ct: ct.toString("base64") }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    const text = await res.text();
-    const errCode = res.headers.get("x-relay-error");
-    let j: any;
-    try {
-      j = JSON.parse(text);
-    } catch {
-      throw new Error(`중계기 응답을 읽지 못했습니다 (HTTP ${res.status}). 주소·업로드를 확인하세요.`);
-    }
-    if (errCode) throw new Error(`중계기 오류(${errCode}): ${j?.error ?? ""}`);
-    const d = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(j.iv, "base64"));
-    d.setAuthTag(Buffer.from(j.tag, "base64"));
-    const p = JSON.parse(Buffer.concat([d.update(Buffer.from(j.ct, "base64")), d.final()]).toString("utf8"));
-    return {
-      status: p.status,
-      location: p.location ?? "",
-      contentType: p.contentType ?? "",
-      setCookies: p.setCookies ?? [],
-      body: Buffer.from(p.bodyBase64 ?? "", "base64"),
-    };
+  if (relayEnabled()) {
+    const p = await relayExchange({ url, method, headers: opts.headers ?? {}, body: opts.body ?? "", referer: opts.referer ?? "", cookie: opts.cookie ?? "" });
+    return toRaw(p);
   }
   // 직접 요청 (중계기 미설정)
   const headers: Record<string, string> = { "user-agent": UA, "accept-language": "ko-KR,ko;q=0.9", ...(opts.headers ?? {}) };
@@ -191,6 +192,31 @@ export class Session {
       return { status: r.status, text: decodeBody(r), url };
     }
     throw new Error("이동(리다이렉트)이 너무 많습니다");
+  }
+
+  // 여러 요청을 한 번의 중계 왕복으로 처리 (이동·오류가 섞이면 호출한 쪽에서 일반 방식으로 다시 시도)
+  async batch(items: { method: "GET" | "POST"; path: string; body?: string; ajax?: boolean }[]): Promise<{ status: number; text: string }[]> {
+    const reqs = items.map((it) => {
+      const headers: Record<string, string> = {};
+      if (it.method === "POST") headers["content-type"] = "application/x-www-form-urlencoded; charset=UTF-8";
+      if (it.ajax) headers["x-requested-with"] = "XMLHttpRequest";
+      return { url: it.path.startsWith("http") ? it.path : this.base + it.path, method: it.method, headers, body: it.body ?? "", referer: this.base + "/" };
+    });
+    let raws: RawResponse[];
+    if (relayEnabled()) {
+      const out = await relayExchange({ batch: reqs, cookie: this.cookieHeader() });
+      raws = (out.results as any[]).map((p) => {
+        if (p.error) throw new Error(`중계기 오류(${p.error}): ${p.message ?? ""}`);
+        return toRaw(p);
+      });
+    } else {
+      raws = await Promise.all(reqs.map((r) => relayCall(r.url, r.method, { body: r.body, headers: r.headers, referer: r.referer, cookie: this.cookieHeader() })));
+    }
+    return raws.map((r) => {
+      this.store(r.setCookies);
+      if ([301, 302, 303, 307, 308].includes(r.status)) throw new Error("batch 응답에 이동(리다이렉트)이 있습니다");
+      return { status: r.status, text: decodeBody(r) };
+    });
   }
 }
 
@@ -396,25 +422,77 @@ export function pickShip(open: Choice[], wishes: ShipWish[]): { choice: Choice; 
   return null;
 }
 
-export async function prepareBooking(sess: Session, cfg: BookingConfig, found: { choice: Choice; wish: ShipWish }, log: (m: string) => void): Promise<BookingResult> {
+export type Warm = { type: Choice; naun: string };
+
+const SHIP_UIDS: [string, string][] = [
+  ["승주", "2955"], ["헌터", "4443"], ["골드피싱", "2954"], ["으리", "4920"], ["블루오션", "5679"], ["바다호", "5891"], ["영스타", "3571"],
+  ["뚜기", "2961"], ["유리", "5578"], ["나대세", "2956"], ["아산", "5866"], ["박찬호", "2950"], ["히트", "6407"], ["헤르메스", "5579"], ["만석", "3570"],
+];
+// 배 이름만 알 때 알려진 배 번호를 추정 (틀려도 배 목록에서 이름으로 다시 찾으므로 안전)
+export function guessUid(w: ShipWish): string | undefined {
+  if (w.uid) return w.uid;
+  const n = norm(w.name);
+  return SHIP_UIDS.find(([k]) => n.includes(k))?.[1];
+}
+
+const step1Url = (date: string, uid: string, psUid?: string) =>
+  `${MODULE}/popup.step1.php?date=${date}&PA_N_UID=${uid}&PH_N_UID=0${psUid ? `&PS_N_UID=${psUid}` : ""}`;
+const ajaxBody = (cfg: BookingConfig, uid: string, psUid: string, naun: string) =>
+  `date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0&PS_N_UID=${psUid}&BI_IN=${cfg.people}&BI_SO_IN=N&pay_method=&naun=${naun}`;
+
+// 오픈 전에 미리: 각 배의 낚시 종류 번호와 naun 값을 알아 둡니다 (오픈 순간에는 요청 한 번으로 끝내기 위함)
+export async function prewarm(sess: Session, cfg: BookingConfig, log: (m: string) => void): Promise<Map<string, Warm>> {
+  const out = new Map<string, Warm>();
+  const uids = [...new Set(cfg.ships.map(guessUid).filter(Boolean) as string[])].slice(0, 4);
+  if (!uids.length) return out;
+  try {
+    const pages = await sess.batch(uids.map((uid) => ({ method: "GET" as const, path: step1Url(cfg.date, uid) })));
+    pages.forEach((p, i) => {
+      const type = parseRadios(p.text, "PS_N_UID").find((t) => SPECIES_WORDS.some((w) => t.label.includes(w)));
+      if (type) out.set(uids[i], { type, naun: /naun=(\d+)/.exec(p.text)?.[1] ?? "1" });
+    });
+    if (out.size) log(`미리 준비 완료 (${out.size}척): 낚시 종류 번호를 확인해 두었습니다.`);
+  } catch (e: any) {
+    log(`미리 준비 건너뜀: ${e.message}`);
+  }
+  return out;
+}
+
+export async function prepareBooking(sess: Session, cfg: BookingConfig, found: { choice: Choice; wish: ShipWish }, log: (m: string) => void, warm?: Warm): Promise<BookingResult> {
   const { choice, wish } = found;
   const uid = choice.value;
-  // 낚시 종류 (쭈꾸미·갑오징어만)
-  let page = await sess.request("GET", `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0`);
-  const types = parseRadios(page.text, "PS_N_UID");
-  log(`낚시 종류: ${types.map((t) => t.label).join(" | ") || "없음"}`);
-  const type = types.find((t) => SPECIES_WORDS.some((w) => t.label.includes(w)));
-  if (!type) throw new Error(`${choice.label}: 쭈꾸미/갑오징어 낚시종류가 없어 중단합니다`);
-  page = await sess.request("GET", `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0&PS_N_UID=${type.value}`);
-  const html = page.text;
-
+  let type: Choice | undefined;
+  let html = "";
+  let ajaxText = "";
+  if (warm) {
+    // 빠른 길: 좌석 화면과 인원 확인을 중계 한 번으로
+    try {
+      type = warm.type;
+      const [page, ajax] = await sess.batch([
+        { method: "GET", path: step1Url(cfg.date, uid, type.value) },
+        { method: "POST", path: `${MODULE}/action/popup.step1.ajax.php`, ajax: true, body: ajaxBody(cfg, uid, type.value, warm.naun) },
+      ]);
+      html = page.text;
+      ajaxText = ajax.text;
+    } catch (e: any) {
+      log(`빠른 방식 실패, 일반 방식으로 전환: ${e.message}`);
+      type = undefined;
+    }
+  }
+  if (!type) {
+    // 일반 길: 낚시 종류 (쭈꾸미·갑오징어만)
+    let page = await sess.request("GET", step1Url(cfg.date, uid));
+    const types = parseRadios(page.text, "PS_N_UID");
+    log(`낚시 종류: ${types.map((t) => t.label).join(" | ") || "없음"}`);
+    type = types.find((t) => SPECIES_WORDS.some((w) => t.label.includes(w)));
+    if (!type) throw new Error(`${choice.label}: 쭈꾸미/갑오징어 낚시종류가 없어 중단합니다`);
+    page = await sess.request("GET", step1Url(cfg.date, uid, type.value));
+    html = page.text;
+    const naun = /naun=(\d+)/.exec(html)?.[1] ?? "1";
+    ajaxText = (await sess.request("POST", `${MODULE}/action/popup.step1.ajax.php`, { ajax: true, body: ajaxBody(cfg, uid, type.value, naun) })).text;
+  }
   // 인원 → 상태 확인 (사이트가 인원 선택 시 하는 요청과 같음)
-  const naun = /naun=(\d+)/.exec(html)?.[1] ?? "1";
-  const ajax = await sess.request("POST", `${MODULE}/action/popup.step1.ajax.php`, {
-    ajax: true,
-    body: `date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0&PS_N_UID=${type.value}&BI_IN=${cfg.people}&BI_SO_IN=N&pay_method=&naun=${naun}`,
-  });
-  const parts = ajax.text.split("|^|");
+  const parts = ajaxText.split("|^|");
   const price = (parts[1] ?? parts[0] ?? "").trim();
   const status = (parts[2] ?? "").trim();
   if (status !== "확인") throw new Error(`인원 ${cfg.people}명 상태: "${status || "응답 없음"}" (남은 자리 부족·대기자) — 중단합니다`);
@@ -438,11 +516,11 @@ export async function prepareBooking(sess: Session, cfg: BookingConfig, found: {
   if (!form) throw new Error("예약 폼(#insert_form)을 찾지 못했습니다");
   // seat[] 칸(hidden, id = 's'+날짜+배번호+좌석번호)마다 선택된 번호만 값으로 채움 — 브라우저 전송과 같은 형태
   const seatValues = seatValuesFor(html, cfg.date, uid, new Set(seats));
-  const { payload, unresolved } = buildPayload(form, { people: cfg.people, name: cfg.name, phone: cfg.phone, seatValues, tempStat: status, agreeAll: true, shipUid: uid, typeUid: type.value });
+  const { payload, unresolved } = buildPayload(form, { people: cfg.people, name: cfg.name, phone: cfg.phone, seatValues, tempStat: status, agreeAll: true, shipUid: uid, typeUid: type!.value });
 
   return {
     ship: { uid, name: choice.label },
-    species: type.label,
+    species: type!.label,
     people: cfg.people,
     seats,
     seatNote,
@@ -522,7 +600,7 @@ export function validateConfig(raw: any): BookingConfig {
     phone: String(raw.phone),
     openAt,
     warmupSeconds: Math.min(60, Math.max(0, Number(raw?.warmupSeconds ?? 5))),
-    pollMs: Math.max(800, Number(raw?.pollMs ?? 1000)), // 선사 서버 부담을 줄이기 위해 0.8초 미만으로는 조회하지 않음
+    pollMs: Math.max(500, Number(raw?.pollMs ?? 700)), // 선사 서버 부담을 줄이기 위해 0.5초 미만으로는 조회하지 않음
     maxPollMinutes: Math.min(60, Math.max(1, Number(raw?.maxPollMinutes ?? 10))),
     seedUids: Array.isArray(raw?.seedUids) && raw.seedUids.length ? raw.seedUids.map(String) : undefined,
   };
@@ -566,12 +644,19 @@ async function runJob(job: Job, cfg: BookingConfig) {
     }
     job.status = "polling";
     const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 60_000;
-    const seeds = [...new Set([...(cfg.ships.map((s) => s.uid).filter(Boolean) as string[]), ...(cfg.seedUids ?? KNOWN_SEEDS)])];
+    const seeds = [...new Set([...(cfg.ships.map(guessUid).filter(Boolean) as string[]), ...(cfg.seedUids ?? KNOWN_SEEDS)])];
+    let warm = new Map<string, Warm>();
+    try {
+      warm = await prewarm(sess, cfg, log);
+    } catch {
+      /* 미리 준비는 실패해도 일반 방식으로 진행 */
+    }
     let workingSeed: string | null = null;
     let attempt = 0;
     while (Date.now() < deadline) {
       if (job.stopRequested) throw new StopError();
       attempt++;
+      const t0 = Date.now();
       let open: Choice[] = [];
       try {
         const r = workingSeed ? await sess.request("GET", `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${workingSeed}`) : null;
@@ -589,14 +674,16 @@ async function runJob(job: Job, cfg: BookingConfig) {
       const hit = pickShip(open, cfg.ships);
       if (hit) {
         log(`예약 가능한 배 발견: ${hit.choice.label} (${hit.choice.value})`);
-        job.result = await prepareBooking(sess, cfg, hit, log);
+        job.result = await prepareBooking(sess, cfg, hit, log, warm.get(hit.choice.value));
+        log(`소요: 배 발견 후 ${Date.now() - t0}ms`);
         job.status = "done";
         log(`입력 준비 완료 — ${job.result.ship.name}, ${job.result.species}, ${job.result.people}명, 좌석: ${job.result.seats.join(",") || "미선택"}`);
         log("테스트 모드이므로 제출하지 않았습니다.");
         return;
       }
       if (attempt % 10 === 1 && open.length) log(`원하는 배가 아직 안 열렸습니다 (열린 배: ${open.map((o) => o.label).join(", ")})`);
-      await sleep(cfg.pollMs! + Math.random() * 300);
+      // 요청에 걸린 시간을 빼서 일정한 간격으로 조회 (불필요한 대기 제거)
+      await sleep(Math.max(0, cfg.pollMs! - (Date.now() - t0)) + Math.random() * 100);
     }
     throw new Error("제한 시간 안에 예약 가능한 배를 찾지 못했습니다");
   } catch (e: any) {
