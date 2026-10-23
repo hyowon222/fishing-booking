@@ -63,6 +63,17 @@ const MODULE = "/_core/module/reservation_boat_v5.2_seat1";
 const KNOWN_SEEDS = ["2955", "4443", "2954", "5866", "5579", "3570", "2961", "2956", "2950", "6407", "5578", "4920", "5679", "5891", "3571"];
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
+// fetch 실패의 진짜 원인(DNS·연결 거부·시간 초과 등)을 문구에 포함
+async function fetchWhy(label: string, url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (e: any) {
+    const c = e?.cause;
+    const why = [c?.code, c?.message ?? e?.message].filter(Boolean).join(" ");
+    throw new Error(`${label} 연결 실패 (${new URL(url).host}): ${why}`);
+  }
+}
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------ 전송 (중계기 암호화 + 쿠키 + 리다이렉트)
@@ -89,7 +100,7 @@ async function relayCall(
       cookie: opts.cookie ?? "",
     });
     const ct = Buffer.concat([c.update(plain, "utf8"), c.final()]);
-    const res = await fetch(relayUrl, {
+    const res = await fetchWhy("중계기", relayUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ iv: iv.toString("base64"), tag: c.getAuthTag().toString("base64"), ct: ct.toString("base64") }),
@@ -119,7 +130,7 @@ async function relayCall(
   const headers: Record<string, string> = { "user-agent": UA, "accept-language": "ko-KR,ko;q=0.9", ...(opts.headers ?? {}) };
   if (opts.referer) headers.referer = opts.referer;
   if (opts.cookie) headers.cookie = opts.cookie;
-  const res = await fetch(url, { method, headers, body: method === "POST" ? opts.body ?? "" : undefined, redirect: "manual", signal: AbortSignal.timeout(20_000) });
+  const res = await fetchWhy("예약처 직접", url, { method, headers, body: method === "POST" ? opts.body ?? "" : undefined, redirect: "manual", signal: AbortSignal.timeout(20_000) });
   return {
     status: res.status,
     location: res.headers.get("location") ?? "",
