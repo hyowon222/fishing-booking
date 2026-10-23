@@ -81,7 +81,7 @@ async function fetchWhy(label: string, url: string, init: RequestInit): Promise<
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------ 전송 (중계기 암호화 + 쿠키 + 리다이렉트)
-type RawResponse = { status: number; location: string; contentType: string; setCookies: string[]; body: Buffer; upMs?: number };
+type RawResponse = { status: number; location: string; contentType: string; setCookies: string[]; body: Buffer; upMs?: number; dnsMs?: number; srvMs?: number };
 
 const relayEnabled = () => Boolean(process.env.BOOKING_RELAY_URL && process.env.BOOKING_RELAY_TOKEN);
 
@@ -121,6 +121,8 @@ const toRaw = (p: any): RawResponse => ({
   setCookies: p.setCookies ?? [],
   body: Buffer.from(p.bodyBase64 ?? "", "base64"),
   upMs: typeof p.ms === "number" ? p.ms : undefined,
+  dnsMs: typeof p.dns === "number" ? p.dns : undefined,
+  srvMs: typeof p.srv === "number" ? p.srv : undefined,
 });
 
 async function relayCall(
@@ -212,7 +214,7 @@ export class Session {
     } catch {
       /* 무시 */
     }
-    this.onSlow(`느린 요청: ${m} ${p} → 전체 ${ms}ms${r.upMs !== undefined ? ` (예약처 응답 ${r.upMs}ms, 나머지는 중계·서버 구간)` : ""} [${r.status}]`);
+    this.onSlow(`느린 요청: ${m} ${p} → 전체 ${ms}ms${r.upMs !== undefined ? ` (예약처 응답 ${r.upMs}ms${r.dnsMs ? `, 주소확인 ${r.dnsMs}ms` : ""}${r.srvMs !== undefined ? `, 닷홈 처리 ${r.srvMs}ms → 서버↔닷홈 구간 ${ms - r.srvMs}ms` : ""})` : ""} [${r.status}]`);
   }
 
   // 사이트가 http→https, 또는 www 붙은 주소로 보내면 이후 요청은 처음부터 그 주소로 보내 이동 왕복을 없앤다
@@ -246,7 +248,7 @@ export class Session {
     } else {
       raws = await Promise.all(reqs.map((r) => relayCall(r.url, r.method, { body: r.body, headers: r.headers, referer: r.referer, cookie: this.cookieHeader() })));
     }
-    if (this.onSlow && Date.now() - tb >= 1000) this.onSlow(`느린 묶음 요청: ${items.length}건 → 전체 ${Date.now() - tb}ms (예약처 응답 ${raws.map((r) => r.upMs ?? "?").join("/")}ms)`);
+    if (this.onSlow && Date.now() - tb >= 1000) this.onSlow(`느린 묶음 요청: ${items.length}건 → 전체 ${Date.now() - tb}ms (예약처 응답 ${raws.map((r) => r.upMs ?? "?").join("/")}ms, 닷홈 처리 ${raws.map((r) => r.srvMs ?? "?").join("/")}ms)`);
     const isMove = (r: RawResponse) => [301, 302, 303, 307, 308].includes(r.status);
     for (const r of raws) this.store(r.setCookies);
     // 이동 응답은 따라가서 완성하고, 그 사이트의 올바른 주소(https·www)를 기억해 다음부터는 바로 간다
