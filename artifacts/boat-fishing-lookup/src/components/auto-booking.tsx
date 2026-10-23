@@ -23,10 +23,12 @@ type Job = {
   error?: string;
 };
 
-const SITES: { id: string; label: string; url: string; hint: string }[] = [
+const SITES: { id: string; label: string; url: string; hint: string; ships?: string[] }[] = [
   { id: 'mscu', label: '미스쿠 낚시', url: 'http://www.mscufishing.com', hint: '배 이름으로 선택, 좌석 지정 가능' },
   { id: 'dokhan', label: '독한놈호 (더피싱)', url: 'https://dokhan.thefishing.kr', hint: '배가 한 척이면 배 이름을 비워두세요' },
-  { id: 'custom', label: '직접 입력 (더피싱 계열)', url: '', hint: '예: https://xxx.thefishing.kr' },
+  { id: 'ocpro', label: '오천 프로낚시 (선상24·좌석없음)', url: 'https://ocpro.sunsang24.com', hint: '배 이름을 비우면 예약 가능한 첫 배', ships: ['비바호', '가즈아호', '오천 프로낚시'] },
+  { id: 'daebak', label: '대박 (선상24·좌석지정)', url: 'https://daebak.sunsang24.com', hint: '좌석 선택은 준비 중 — 지금은 좌석 없는 일정만 입력 준비', ships: ['뉴항구호', '뉴항구1호', '레전드호'] },
+  { id: 'custom', label: '직접 입력 (더피싱·선상24)', url: '', hint: '예: https://xxx.thefishing.kr 또는 https://xxx.sunsang24.com' },
 ];
 const KNOWN_SHIPS = ['승주호', '헌터호', '골드피싱', '으리호', '블루오션', '바다호', '영스타호', '뚜기호', '유리호', '나대세호', '아산호', '박찬호', '히트호', '헤르메스호', '만석호'];
 const STATUS_LABEL: Record<Job['status'], string> = { waiting: '오픈 대기', polling: '배 찾는 중', done: '입력 준비 완료', failed: '실패', stopped: '중지됨' };
@@ -293,7 +295,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
             ))}
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {(site === 'mscu' ? KNOWN_SHIPS : []).map((k) => (
+            {(site === 'mscu' ? KNOWN_SHIPS : (SITES.find((x) => x.id === site)?.ships ?? [])).map((k) => (
               <button key={k} type="button" onClick={() => addShip(k)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-accent">
                 {k}
               </button>

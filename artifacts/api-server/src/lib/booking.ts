@@ -29,6 +29,7 @@ export type BookingConfig = {
   pollMs?: number;
   maxPollMinutes?: number;
   seedUids?: string[]; // 배 목록을 열기 위한 "아무 배 번호"
+  kind?: "thefishing" | "sunsang24"; // 예약처 종류
   groupId?: string; // 여러 날짜를 한 번에 시작했을 때 같은 값
   stopOthersOnSuccess?: boolean; // 하나 준비되면 같은 묶음의 나머지 작업을 중지
 };
@@ -312,8 +313,8 @@ export function chooseSeats(available: Set<number>, n: number, preferred: number
 
 type FormField = { name: string; type: string; value: string; checked: boolean; options?: { value: string; selected: boolean }[] };
 
-export function parseForm(html: string): { action: string; fields: FormField[] } | null {
-  const fm = /<form\b[^>]*\bid\s*=\s*["']insert_form["'][^>]*>([\s\S]*?)<\/form>/i.exec(html);
+export function parseForm(html: string, formId = "insert_form"): { action: string; fields: FormField[] } | null {
+  const fm = new RegExp(`<form\\b[^>]*\\bid\\s*=\\s*["']${formId}["'][^>]*>([\\s\\S]*?)</form>`, "i").exec(html);
   if (!fm) return null;
   const action = attr(fm[0], "action") ?? `${MODULE}/action/popup.step1.action.php`;
   const body = fm[1];
@@ -585,6 +586,8 @@ export function stopJob(id: string): boolean {
 }
 
 // 지원하는 예약처: 미스쿠 낚시, 더피싱 계열(*.thefishing.kr) — 같은 예약 모듈(reservation_boat_v5.2_seat1)을 쓰는 사이트
+export const kindOf = (base: string): "thefishing" | "sunsang24" => (/sunsang24\.com/.test(base) || process.env.BOOKING_TEST_KIND === "sunsang24" ? "sunsang24" : "thefishing");
+
 export function normalizeBase(input: unknown): string {
   const raw = String(input ?? "http://www.mscufishing.com").trim();
   let u: URL;
@@ -595,8 +598,8 @@ export function normalizeBase(input: unknown): string {
   }
   const base = `${u.protocol}//${u.host}`;
   const host = u.hostname.toLowerCase();
-  const ok = /(^|\.)mscufishing\.com$/.test(host) || /(^|\.)thefishing\.kr$/.test(host) || base === process.env.BOOKING_TEST_BASE;
-  if (!ok) throw new Error("지원하지 않는 예약처입니다 (미스쿠 낚시·더피싱 계열만 가능)");
+  const ok = /(^|\.)mscufishing\.com$/.test(host) || /(^|\.)thefishing\.kr$/.test(host) || /(^|\.)sunsang24\.com$/.test(host) || base === process.env.BOOKING_TEST_BASE;
+  if (!ok) throw new Error("지원하지 않는 예약처입니다 (미스쿠 낚시·더피싱·선상24 계열만 가능)");
   return base;
 }
 
@@ -644,6 +647,7 @@ export function validateConfigs(raw: any): BookingConfig[] {
     pollMs: Math.max(500, Number(raw?.pollMs ?? 700)), // 선사 서버 부담을 줄이기 위해 0.5초 미만으로는 조회하지 않음
     maxPollMinutes: Math.min(60, Math.max(1, Number(raw?.maxPollMinutes ?? 10))),
     seedUids: Array.isArray(raw?.seedUids) && raw.seedUids.length ? raw.seedUids.map(String) : undefined,
+    kind: kindOf(base),
     groupId,
     stopOthersOnSuccess: Boolean(raw?.stopOthersOnSuccess) && dates.length > 1,
   }));
@@ -697,6 +701,10 @@ async function runJob(job: Job, cfg: BookingConfig) {
       }
     }
     job.status = "polling";
+    if (cfg.kind === "sunsang24") {
+      await runSunsang(job, cfg, sess, log);
+      return;
+    }
     const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 60_000;
     const listSeeds = await discoverSeeds(sess, cfg.date);
     if (listSeeds.length) log(`예약 목록에서 배 번호 ${listSeeds.length}개 확인`);
@@ -758,3 +766,157 @@ async function runJob(job: Job, cfg: BookingConfig) {
 }
 
 class StopError extends Error {}
+
+// ====================================================================== 선상24 (sunsang24.com) 어댑터
+// 흐름: 날짜별 일정 목록(/ship/schedule_fleet/YYYYMMDD/0/simple_day)에서 배 이름·일정 번호·"바로예약" 여부를 읽고,
+//       열리면 /mypage/reservation_ready/<일정번호> 폼을 읽어 제출 내용(POST /mypage/reservation_end)을 만든다. (제출은 하지 않음)
+
+export type SunShip = { shipNo: string; name: string; scheduleNo: string; bookable: boolean; fish: string };
+
+export function parseSunsangDay(html: string): SunShip[] {
+  const marks = [...html.matchAll(/<table[^>]*class="[^"]*ship_unit_ship_no_(\d+)[^"]*"[^>]*>/g)];
+  return marks.map((m, i) => {
+    const chunk = html.slice(m.index! + m[0].length, i + 1 < marks.length ? marks[i + 1].index! : html.length);
+    const name = stripTags(/<div class="title">([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+    const scheduleNo = /<ul[^>]*reservation_detail[^>]*data-schedule_no="(\d+)"/.exec(chunk)?.[1] ?? /data-schedule_no="(\d+)"/.exec(chunk)?.[1] ?? "";
+    const btn = stripTags(/<div class="btn_wrap"[^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+    const fish = stripTags(/<div id="fish">([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+    return { shipNo: m[1], name, scheduleNo, bookable: btn.includes("바로예약"), fish };
+  });
+}
+
+// 페이지 안의 `var data = {...};` 를 JSON 으로 읽는다 (문자열 안의 중괄호는 무시)
+export function parseJsVar(html: string, varName = "data"): any {
+  const start = html.indexOf(`var ${varName} = `);
+  if (start < 0) return null;
+  const open = html.indexOf("{", start);
+  if (open < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  for (let i = open; i < html.length; i++) {
+    const c = html[i];
+    if (inStr) {
+      if (c === "\\") i++;
+      else if (c === '"') inStr = false;
+    } else if (c === '"') inStr = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) {
+      try {
+        return JSON.parse(html.slice(open, i + 1));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+export function buildSunsangPayload(form: { fields: FormField[] }, v: { people: number; name: string; phone: string; scheduleNo: string }): string {
+  const m = /^(\d{3})(\d{3,4})(\d{4})$/.exec(v.phone.replace(/\D/g, ""));
+  if (!m) throw new Error("휴대폰 번호 형식이 올바르지 않습니다");
+  const set: Record<string, string> = { ship_schedule_no: v.scheduleNo, person_count: String(v.people), name: v.name, deposit_name: "", phone1: m[1], phone2: m[2], phone3: m[3], memo: "", price_option: "" };
+  const pairs: [string, string][] = [];
+  for (const f of form.fields) {
+    if (f.type === "checkbox") {
+      // 전체동의 + 필수 약관 3개를 모두 체크한 상태 (사이트에서 "전체동의"를 누른 것과 같음)
+      if (f.name === "all_check" || f.name === "agree_rule[]") pairs.push([f.name, f.value || "on"]);
+      else if (f.checked) pairs.push([f.name, f.value || "on"]);
+    } else if (f.type === "radio") {
+      if (f.checked) pairs.push([f.name, f.value]);
+    } else if (f.type === "select") {
+      pairs.push([f.name, (f.options?.find((o) => o.selected) ?? f.options?.[0])?.value ?? ""]);
+    } else {
+      pairs.push([f.name, f.name in set ? set[f.name] : f.value]);
+    }
+  }
+  return pairs.map(([k, val]) => `${enc(k)}=${enc(val)}`).join("&");
+}
+
+export async function prepareSunsang(sess: Session, cfg: BookingConfig, ship: SunShip, log: (m: string) => void): Promise<BookingResult> {
+  const page = await sess.request("GET", `/mypage/reservation_ready/${ship.scheduleNo}`, { referer: `${sess.base}/ship/schedule_fleet` });
+  const data = parseJsVar(page.text, "data");
+  if (!data || !data.schedule) throw new Error(`${ship.name}: 예약 화면 정보를 읽지 못했습니다${data?.message ? ` (${data.message})` : ""}`);
+  if (typeof data.code !== "undefined") throw new Error(`${ship.name}: ${data.message ?? "예약 화면을 열 수 없습니다"}`);
+  const sc = data.schedule;
+  const fish: string[] = (sc.fish_type ?? []).map((f: any) => String(f.name));
+  log(`어종: ${fish.join(", ") || ship.fish || "정보 없음"} / 남은 자리 ${sc.remain_embarkation_num}명`);
+  if (!SPECIES_WORDS.some((w) => fish.join(",").includes(w)) && !/주꾸미|쭈꾸미|갑오징어/.test(ship.fish)) {
+    throw new SkipShip(`${ship.name}: 쭈꾸미/갑오징어 어종이 아니라 건너뜁니다 (${fish.join(", ") || ship.fish})`);
+  }
+  if (sc.is_reservation_login) throw new Error(`${ship.name}: 로그인이 필요한 예약이라 지원하지 않습니다`);
+  if (sc.is_reservation_phone_auth) throw new Error(`${ship.name}: 휴대전화 인증이 필요한 예약이라 지원하지 않습니다`);
+  const remain = Number(sc.remain_embarkation_num);
+  if (!(remain >= cfg.people)) throw new Error(`${ship.name}: 남은 자리 ${remain}명 — 필요 ${cfg.people}명 (대기 예약은 지원하지 않습니다)`);
+  const max = Number(sc.person_per_reservation);
+  if (max > 0 && cfg.people > max) throw new Error(`${ship.name}: 1회 최대 예약 인원은 ${max}명입니다`);
+
+  const form = parseForm(page.text, "form-reservation");
+  if (!form) throw new Error("예약 폼(#form-reservation)을 찾지 못했습니다");
+  if (form.fields.some((f) => f.name === "select_seat_nos[]")) {
+    throw new Error(`${ship.name}: 좌석 선택 화면이 있는 배입니다. 좌석 선택은 아직 지원하지 않아 중단합니다`);
+  }
+  const payload = buildSunsangPayload(form, { people: cfg.people, name: cfg.name, phone: cfg.phone, scheduleNo: ship.scheduleNo });
+  const total = Number(sc.price) * cfg.people;
+  return {
+    ship: { uid: ship.scheduleNo, name: `${ship.name} (${sc.sdate})` },
+    species: fish.join("·"),
+    people: cfg.people,
+    seats: [],
+    seatNote: "좌석 선택 없는 배",
+    status: `남은 자리 ${remain}명`,
+    price: total > 0 ? `${total.toLocaleString("ko-KR")}원` : "",
+    actionUrl: new URL("/mypage/reservation_end", sess.base).toString(),
+    payload,
+    unresolved: [],
+    dryRun: true,
+  };
+}
+
+class SkipShip extends Error {}
+
+async function runSunsang(job: Job, cfg: BookingConfig, sess: Session, log: (m: string) => void) {
+  const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 60_000;
+  const skipped = new Set<string>();
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    if (job.stopRequested) throw new StopError();
+    attempt++;
+    const t0 = Date.now();
+    let ships: SunShip[] = [];
+    try {
+      const r = await sess.request("GET", `/ship/schedule_fleet/${cfg.date}/0/simple_day`, { ajax: true, referer: `${sess.base}/ship/schedule_fleet` });
+      ships = parseSunsangDay(r.text).filter((x) => x.scheduleNo && !skipped.has(x.scheduleNo));
+    } catch (e: any) {
+      log(`조회 오류: ${e.message}`);
+      if (/중계기 오류\((auth|config)\)/.test(e.message)) throw e;
+    }
+    const open = ships.filter((x) => x.bookable);
+    const hit = cfg.ships.length
+      ? cfg.ships.map((w) => open.find((x) => norm(x.name).includes(norm(w.name)))).find(Boolean)
+      : open[0];
+    if (hit) {
+      log(`예약 가능한 배 발견: ${hit.name} (일정 ${hit.scheduleNo})`);
+      try {
+        job.result = await prepareSunsang(sess, cfg, hit, log);
+      } catch (e: any) {
+        if (e instanceof SkipShip) {
+          skipped.add(hit.scheduleNo);
+          log(e.message);
+          continue;
+        }
+        throw e;
+      }
+      log(`소요: 배 발견 후 ${Date.now() - t0}ms`);
+      job.status = "done";
+      log(`입력 준비 완료 — ${job.result.ship.name}, ${job.result.people}명`);
+      log("테스트 모드이므로 제출하지 않았습니다.");
+      if (cfg.stopOthersOnSuccess && cfg.groupId) {
+        for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job.id) stopJob(o.id);
+      }
+      return;
+    }
+    if (attempt % 10 === 1) log(ships.length ? `원하는 배가 아직 안 열렸습니다 (목록: ${ships.map((x) => `${x.name}${x.bookable ? "✔" : ""}`).join(", ")})` : "이 날짜의 일정이 아직 없습니다. 계속 확인합니다.");
+    await sleep(Math.max(0, cfg.pollMs! - (Date.now() - t0)) + Math.random() * 100);
+  }
+  throw new Error("제한 시간 안에 예약 가능한 배를 찾지 못했습니다");
+}
