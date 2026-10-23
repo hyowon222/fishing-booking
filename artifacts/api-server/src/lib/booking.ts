@@ -193,9 +193,22 @@ export class Session {
         }
         continue;
       }
+      this.adoptOrigin(url);
       return { status: r.status, text: decodeBody(r), url };
     }
     throw new Error("이동(리다이렉트)이 너무 많습니다");
+  }
+
+  // 사이트가 http→https, 또는 www 붙은 주소로 보내면 이후 요청은 처음부터 그 주소로 보내 이동 왕복을 없앤다
+  private adoptOrigin(finalUrl: string) {
+    try {
+      const f = new URL(finalUrl);
+      const b = new URL(this.base);
+      const root = (h: string) => h.replace(/^www\./, "");
+      if (f.origin !== b.origin && root(f.hostname) === root(b.hostname)) this.base = f.origin;
+    } catch {
+      /* 무시 */
+    }
   }
 
   // 여러 요청을 한 번의 중계 왕복으로 처리 (이동·오류가 섞이면 호출한 쪽에서 일반 방식으로 다시 시도)
@@ -216,11 +229,17 @@ export class Session {
     } else {
       raws = await Promise.all(reqs.map((r) => relayCall(r.url, r.method, { body: r.body, headers: r.headers, referer: r.referer, cookie: this.cookieHeader() })));
     }
-    return raws.map((r) => {
-      this.store(r.setCookies);
-      if ([301, 302, 303, 307, 308].includes(r.status)) throw new Error("batch 응답에 이동(리다이렉트)이 있습니다");
-      return { status: r.status, text: decodeBody(r) };
-    });
+    const isMove = (r: RawResponse) => [301, 302, 303, 307, 308].includes(r.status);
+    for (const r of raws) this.store(r.setCookies);
+    // 이동 응답은 따라가서 완성하고, 그 사이트의 올바른 주소(https·www)를 기억해 다음부터는 바로 간다
+    return Promise.all(
+      raws.map(async (r, i) => {
+        if (!isMove(r)) return { status: r.status, text: decodeBody(r) };
+        const it = items[i];
+        const res = await this.request(it.method, it.path, { body: it.body, ajax: it.ajax });
+        return { status: res.status, text: res.text };
+      }),
+    );
   }
 }
 

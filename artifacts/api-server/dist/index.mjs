@@ -19700,9 +19700,9 @@ var require_ipaddr = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/proxy-addr@2.0.7/node_modules/proxy-addr/index.js
+// ../../node_modules/.pnpm/proxy-addr@2.0.8/node_modules/proxy-addr/index.js
 var require_proxy_addr = __commonJS({
-  "../../node_modules/.pnpm/proxy-addr@2.0.7/node_modules/proxy-addr/index.js"(exports, module) {
+  "../../node_modules/.pnpm/proxy-addr@2.0.8/node_modules/proxy-addr/index.js"(exports, module) {
     "use strict";
     module.exports = proxyaddr;
     module.exports.all = alladdrs;
@@ -19814,6 +19814,9 @@ var require_proxy_addr = __commonJS({
       return function trust(addr) {
         if (!isip(addr)) return false;
         var ip = parseip(addr);
+        if (ip.kind() === "ipv6" && ip.isIPv4MappedAddress()) {
+          ip = ip.toIPv4Address();
+        }
         var ipconv;
         var kind = ip.kind();
         for (var i = 0; i < subnets.length; i++) {
@@ -19826,10 +19829,15 @@ var require_proxy_addr = __commonJS({
             if (subnetkind === "ipv4" && !ip.isIPv4MappedAddress()) {
               continue;
             }
+            if (subnetkind !== "ipv4" && !(subnetrange >= 96 && subnetip.isIPv4MappedAddress())) {
+              continue;
+            }
             if (!ipconv) {
               ipconv = subnetkind === "ipv4" ? ip.toIPv4Address() : ip.toIPv4MappedAddress();
             }
             trusted = ipconv;
+          } else if (kind === "ipv6" && subnetip.isIPv4MappedAddress()) {
+            continue;
           }
           if (trusted.match(subnetip, subnetrange)) {
             return true;
@@ -19846,12 +19854,20 @@ var require_proxy_addr = __commonJS({
       return function trust(addr) {
         if (!isip(addr)) return false;
         var ip = parseip(addr);
+        if (ip.kind() === "ipv6" && ip.isIPv4MappedAddress()) {
+          ip = ip.toIPv4Address();
+        }
         var kind = ip.kind();
         if (kind !== subnetkind) {
           if (subnetisipv4 && !ip.isIPv4MappedAddress()) {
             return false;
           }
+          if (!subnetisipv4 && !(subnetrange >= 96 && subnetip.isIPv4MappedAddress())) {
+            return false;
+          }
           ip = subnetisipv4 ? ip.toIPv4Address() : ip.toIPv4MappedAddress();
+        } else if (kind === "ipv6" && subnetip.isIPv4MappedAddress()) {
+          return false;
         }
         return ip.match(subnetip, subnetrange);
       };
@@ -103477,54 +103493,60 @@ var SPECIES_WORDS = ["\uCB48\uAFB8\uBBF8", "\uC8FC\uAFB8\uBBF8", "\uAC11\uC624\u
 var MODULE = "/_core/module/reservation_boat_v5.2_seat1";
 var KNOWN_SEEDS = ["2955", "4443", "2954", "5866", "5579", "3570", "2961", "2956", "2950", "6407", "5578", "4920", "5679", "5891", "3571"];
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+async function fetchWhy(label, url2, init) {
+  try {
+    return await fetch(url2, init);
+  } catch (e) {
+    const c = e?.cause;
+    const why = [c?.code, c?.message ?? e?.message].filter(Boolean).join(" ");
+    throw new Error(`${label} \uC5F0\uACB0 \uC2E4\uD328 (${new URL(url2).host}): ${why}`);
+  }
+}
 var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function relayCall(url2, method, opts) {
+var relayEnabled = () => Boolean(process.env.BOOKING_RELAY_URL && process.env.BOOKING_RELAY_TOKEN);
+async function relayExchange(payload) {
   const relayUrl = process.env.BOOKING_RELAY_URL;
   const token = process.env.BOOKING_RELAY_TOKEN;
-  if (relayUrl && token) {
-    const key = crypto2.createHash("sha256").update(token).digest();
-    const iv = crypto2.randomBytes(12);
-    const c = crypto2.createCipheriv("aes-256-gcm", key, iv);
-    const plain = JSON.stringify({
-      ts: Math.floor(Date.now() / 1e3),
-      url: url2,
-      method,
-      headers: opts.headers ?? {},
-      body: opts.body ?? "",
-      referer: opts.referer ?? "",
-      cookie: opts.cookie ?? ""
-    });
-    const ct = Buffer.concat([c.update(plain, "utf8"), c.final()]);
-    const res2 = await fetch(relayUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ iv: iv.toString("base64"), tag: c.getAuthTag().toString("base64"), ct: ct.toString("base64") }),
-      signal: AbortSignal.timeout(3e4)
-    });
-    const text4 = await res2.text();
-    const errCode = res2.headers.get("x-relay-error");
-    let j;
-    try {
-      j = JSON.parse(text4);
-    } catch {
-      throw new Error(`\uC911\uACC4\uAE30 \uC751\uB2F5\uC744 \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 (HTTP ${res2.status}). \uC8FC\uC18C\xB7\uC5C5\uB85C\uB4DC\uB97C \uD655\uC778\uD558\uC138\uC694.`);
-    }
-    if (errCode) throw new Error(`\uC911\uACC4\uAE30 \uC624\uB958(${errCode}): ${j?.error ?? ""}`);
-    const d = crypto2.createDecipheriv("aes-256-gcm", key, Buffer.from(j.iv, "base64"));
-    d.setAuthTag(Buffer.from(j.tag, "base64"));
-    const p = JSON.parse(Buffer.concat([d.update(Buffer.from(j.ct, "base64")), d.final()]).toString("utf8"));
-    return {
-      status: p.status,
-      location: p.location ?? "",
-      contentType: p.contentType ?? "",
-      setCookies: p.setCookies ?? [],
-      body: Buffer.from(p.bodyBase64 ?? "", "base64")
-    };
+  const key = crypto2.createHash("sha256").update(token).digest();
+  const iv = crypto2.randomBytes(12);
+  const c = crypto2.createCipheriv("aes-256-gcm", key, iv);
+  const plain = JSON.stringify({ ts: Math.floor(Date.now() / 1e3), ...payload });
+  const ct = Buffer.concat([c.update(plain, "utf8"), c.final()]);
+  const res = await fetchWhy("\uC911\uACC4\uAE30", relayUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ iv: iv.toString("base64"), tag: c.getAuthTag().toString("base64"), ct: ct.toString("base64") }),
+    signal: AbortSignal.timeout(3e4)
+  });
+  const text4 = await res.text();
+  const errCode = res.headers.get("x-relay-error");
+  let j;
+  try {
+    j = JSON.parse(text4);
+  } catch {
+    throw new Error(`\uC911\uACC4\uAE30 \uC751\uB2F5\uC744 \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 (HTTP ${res.status}). \uC8FC\uC18C\xB7\uC5C5\uB85C\uB4DC\uB97C \uD655\uC778\uD558\uC138\uC694.`);
+  }
+  if (errCode) throw new Error(`\uC911\uACC4\uAE30 \uC624\uB958(${errCode}): ${j?.error ?? ""}`);
+  const d = crypto2.createDecipheriv("aes-256-gcm", key, Buffer.from(j.iv, "base64"));
+  d.setAuthTag(Buffer.from(j.tag, "base64"));
+  return JSON.parse(Buffer.concat([d.update(Buffer.from(j.ct, "base64")), d.final()]).toString("utf8"));
+}
+var toRaw = (p) => ({
+  status: p.status,
+  location: p.location ?? "",
+  contentType: p.contentType ?? "",
+  setCookies: p.setCookies ?? [],
+  body: Buffer.from(p.bodyBase64 ?? "", "base64")
+});
+async function relayCall(url2, method, opts) {
+  if (relayEnabled()) {
+    const p = await relayExchange({ url: url2, method, headers: opts.headers ?? {}, body: opts.body ?? "", referer: opts.referer ?? "", cookie: opts.cookie ?? "" });
+    return toRaw(p);
   }
   const headers = { "user-agent": UA, "accept-language": "ko-KR,ko;q=0.9", ...opts.headers ?? {} };
   if (opts.referer) headers.referer = opts.referer;
   if (opts.cookie) headers.cookie = opts.cookie;
-  const res = await fetch(url2, { method, headers, body: method === "POST" ? opts.body ?? "" : void 0, redirect: "manual", signal: AbortSignal.timeout(2e4) });
+  const res = await fetchWhy("\uC608\uC57D\uCC98 \uC9C1\uC811", url2, { method, headers, body: method === "POST" ? opts.body ?? "" : void 0, redirect: "manual", signal: AbortSignal.timeout(2e4) });
   return {
     status: res.status,
     location: res.headers.get("location") ?? "",
@@ -103581,6 +103603,30 @@ var Session = class {
       return { status: r.status, text: decodeBody(r), url: url2 };
     }
     throw new Error("\uC774\uB3D9(\uB9AC\uB2E4\uC774\uB809\uD2B8)\uC774 \uB108\uBB34 \uB9CE\uC2B5\uB2C8\uB2E4");
+  }
+  // 여러 요청을 한 번의 중계 왕복으로 처리 (이동·오류가 섞이면 호출한 쪽에서 일반 방식으로 다시 시도)
+  async batch(items) {
+    const reqs = items.map((it) => {
+      const headers = {};
+      if (it.method === "POST") headers["content-type"] = "application/x-www-form-urlencoded; charset=UTF-8";
+      if (it.ajax) headers["x-requested-with"] = "XMLHttpRequest";
+      return { url: it.path.startsWith("http") ? it.path : this.base + it.path, method: it.method, headers, body: it.body ?? "", referer: this.base + "/" };
+    });
+    let raws;
+    if (relayEnabled()) {
+      const out = await relayExchange({ batch: reqs, cookie: this.cookieHeader() });
+      raws = out.results.map((p) => {
+        if (p.error) throw new Error(`\uC911\uACC4\uAE30 \uC624\uB958(${p.error}): ${p.message ?? ""}`);
+        return toRaw(p);
+      });
+    } else {
+      raws = await Promise.all(reqs.map((r) => relayCall(r.url, r.method, { body: r.body, headers: r.headers, referer: r.referer, cookie: this.cookieHeader() })));
+    }
+    return raws.map((r) => {
+      this.store(r.setCookies);
+      if ([301, 302, 303, 307, 308].includes(r.status)) throw new Error("batch \uC751\uB2F5\uC5D0 \uC774\uB3D9(\uB9AC\uB2E4\uC774\uB809\uD2B8)\uC774 \uC788\uC2B5\uB2C8\uB2E4");
+      return { status: r.status, text: decodeBody(r) };
+    });
   }
 };
 var stripTags = (s) => s.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&middot;|&#183;/g, "\xB7").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
@@ -103649,8 +103695,8 @@ function chooseSeats(available, n, preferred, order) {
   [...available].sort((a, b) => a - b).forEach(take);
   return chosen;
 }
-function parseForm(html3) {
-  const fm = /<form\b[^>]*\bid\s*=\s*["']insert_form["'][^>]*>([\s\S]*?)<\/form>/i.exec(html3);
+function parseForm(html3, formId = "insert_form") {
+  const fm = new RegExp(`<form\\b[^>]*\\bid\\s*=\\s*["']${formId}["'][^>]*>([\\s\\S]*?)</form>`, "i").exec(html3);
   if (!fm) return null;
   const action = attr2(fm[0], "action") ?? `${MODULE}/action/popup.step1.action.php`;
   const body = fm[1];
@@ -103742,28 +103788,94 @@ async function discoverOpenShips(sess, date6, seeds) {
 }
 var norm = (s) => s.replace(/\s+/g, "");
 function pickShip(open, wishes) {
+  if (!wishes.length) return open.length ? { choice: open[0], wish: { name: "" } } : null;
   for (const w of wishes) {
     const hit = open.find((o) => w.uid ? o.value === w.uid : norm(o.label).includes(norm(w.name)));
     if (hit) return { choice: hit, wish: w };
   }
   return null;
 }
-async function prepareBooking(sess, cfg, found, log) {
+var SHIP_UIDS = [
+  ["\uC2B9\uC8FC", "2955"],
+  ["\uD5CC\uD130", "4443"],
+  ["\uACE8\uB4DC\uD53C\uC2F1", "2954"],
+  ["\uC73C\uB9AC", "4920"],
+  ["\uBE14\uB8E8\uC624\uC158", "5679"],
+  ["\uBC14\uB2E4\uD638", "5891"],
+  ["\uC601\uC2A4\uD0C0", "3571"],
+  ["\uB69C\uAE30", "2961"],
+  ["\uC720\uB9AC", "5578"],
+  ["\uB098\uB300\uC138", "2956"],
+  ["\uC544\uC0B0", "5866"],
+  ["\uBC15\uCC2C\uD638", "2950"],
+  ["\uD788\uD2B8", "6407"],
+  ["\uD5E4\uB974\uBA54\uC2A4", "5579"],
+  ["\uB9CC\uC11D", "3570"]
+];
+function guessUid(w) {
+  if (w.uid) return w.uid;
+  const n = norm(w.name);
+  return SHIP_UIDS.find(([k]) => n.includes(k))?.[1];
+}
+async function discoverSeeds(sess, date6) {
+  try {
+    const r = await sess.request("GET", `/index.php?mid=bk&year=${date6.slice(0, 4)}&month=${Number(date6.slice(4, 6))}&day=${Number(date6.slice(6))}`);
+    return [...new Set([...r.text.matchAll(/PA_N_UID=(\d+)/g)].map((m) => m[1]))];
+  } catch {
+    return [];
+  }
+}
+var step1Url = (date6, uid, psUid) => `${MODULE}/popup.step1.php?date=${date6}&PA_N_UID=${uid}&PH_N_UID=0${psUid ? `&PS_N_UID=${psUid}` : ""}`;
+var ajaxBody = (cfg, uid, psUid, naun) => `date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0&PS_N_UID=${psUid}&BI_IN=${cfg.people}&BI_SO_IN=N&pay_method=&naun=${naun}`;
+async function prewarm(sess, cfg, log, extra = []) {
+  const out = /* @__PURE__ */ new Map();
+  const wished = cfg.ships.map(guessUid).filter(Boolean);
+  const uids = [...new Set(cfg.ships.length ? wished : extra)].slice(0, 4);
+  if (!uids.length) return out;
+  try {
+    const pages = await sess.batch(uids.map((uid) => ({ method: "GET", path: step1Url(cfg.date, uid) })));
+    pages.forEach((p, i) => {
+      const type = parseRadios(p.text, "PS_N_UID").find((t) => SPECIES_WORDS.some((w) => t.label.includes(w)));
+      if (type) out.set(uids[i], { type, naun: /naun=(\d+)/.exec(p.text)?.[1] ?? "1" });
+    });
+    if (out.size) log(`\uBBF8\uB9AC \uC900\uBE44 \uC644\uB8CC (${out.size}\uCC99): \uB09A\uC2DC \uC885\uB958 \uBC88\uD638\uB97C \uD655\uC778\uD574 \uB450\uC5C8\uC2B5\uB2C8\uB2E4.`);
+  } catch (e) {
+    log(`\uBBF8\uB9AC \uC900\uBE44 \uAC74\uB108\uB700: ${e.message}`);
+  }
+  return out;
+}
+async function prepareBooking(sess, cfg, found, log, warm) {
   const { choice, wish } = found;
   const uid = choice.value;
-  let page = await sess.request("GET", `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0`);
-  const types3 = parseRadios(page.text, "PS_N_UID");
-  log(`\uB09A\uC2DC \uC885\uB958: ${types3.map((t) => t.label).join(" | ") || "\uC5C6\uC74C"}`);
-  const type = types3.find((t) => SPECIES_WORDS.some((w) => t.label.includes(w)));
-  if (!type) throw new Error(`${choice.label}: \uCB48\uAFB8\uBBF8/\uAC11\uC624\uC9D5\uC5B4 \uB09A\uC2DC\uC885\uB958\uAC00 \uC5C6\uC5B4 \uC911\uB2E8\uD569\uB2C8\uB2E4`);
-  page = await sess.request("GET", `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0&PS_N_UID=${type.value}`);
-  const html3 = page.text;
-  const naun = /naun=(\d+)/.exec(html3)?.[1] ?? "1";
-  const ajax = await sess.request("POST", `${MODULE}/action/popup.step1.ajax.php`, {
-    ajax: true,
-    body: `date=${cfg.date}&PA_N_UID=${uid}&PH_N_UID=0&PS_N_UID=${type.value}&BI_IN=${cfg.people}&BI_SO_IN=N&pay_method=&naun=${naun}`
-  });
-  const parts = ajax.text.split("|^|");
+  let type;
+  let html3 = "";
+  let ajaxText = "";
+  if (warm) {
+    try {
+      type = warm.type;
+      const [page, ajax] = await sess.batch([
+        { method: "GET", path: step1Url(cfg.date, uid, type.value) },
+        { method: "POST", path: `${MODULE}/action/popup.step1.ajax.php`, ajax: true, body: ajaxBody(cfg, uid, type.value, warm.naun) }
+      ]);
+      html3 = page.text;
+      ajaxText = ajax.text;
+    } catch (e) {
+      log(`\uBE60\uB978 \uBC29\uC2DD \uC2E4\uD328, \uC77C\uBC18 \uBC29\uC2DD\uC73C\uB85C \uC804\uD658: ${e.message}`);
+      type = void 0;
+    }
+  }
+  if (!type) {
+    let page = await sess.request("GET", step1Url(cfg.date, uid));
+    const types3 = parseRadios(page.text, "PS_N_UID");
+    log(`\uB09A\uC2DC \uC885\uB958: ${types3.map((t) => t.label).join(" | ") || "\uC5C6\uC74C"}`);
+    type = types3.find((t) => SPECIES_WORDS.some((w) => t.label.includes(w)));
+    if (!type) throw new Error(`${choice.label}: \uCB48\uAFB8\uBBF8/\uAC11\uC624\uC9D5\uC5B4 \uB09A\uC2DC\uC885\uB958\uAC00 \uC5C6\uC5B4 \uC911\uB2E8\uD569\uB2C8\uB2E4`);
+    page = await sess.request("GET", step1Url(cfg.date, uid, type.value));
+    html3 = page.text;
+    const naun = /naun=(\d+)/.exec(html3)?.[1] ?? "1";
+    ajaxText = (await sess.request("POST", `${MODULE}/action/popup.step1.ajax.php`, { ajax: true, body: ajaxBody(cfg, uid, type.value, naun) })).text;
+  }
+  const parts = ajaxText.split("|^|");
   const price = (parts[1] ?? parts[0] ?? "").trim();
   const status = (parts[2] ?? "").trim();
   if (status !== "\uD655\uC778") throw new Error(`\uC778\uC6D0 ${cfg.people}\uBA85 \uC0C1\uD0DC: "${status || "\uC751\uB2F5 \uC5C6\uC74C"}" (\uB0A8\uC740 \uC790\uB9AC \uBD80\uC871\xB7\uB300\uAE30\uC790) \u2014 \uC911\uB2E8\uD569\uB2C8\uB2E4`);
@@ -103809,7 +103921,8 @@ function seatValuesFor(html3, date6, uid, chosen) {
   return out;
 }
 var jobs = /* @__PURE__ */ new Map();
-var MAX_JOBS = 20;
+var MAX_JOBS = 40;
+var MAX_ACTIVE = 12;
 function listJobs() {
   return [...jobs.values()].sort((a, b) => b.createdAt - a.createdAt).map(publicJob);
 }
@@ -103826,13 +103939,34 @@ function stopJob(id) {
   j.stopRequested = true;
   return true;
 }
-function validateConfig(raw) {
-  const base = String(raw?.baseUrl ?? "http://www.mscufishing.com").replace(/\/$/, "");
-  if (!/^https?:\/\/(www\.)?mscufishing\.com$/i.test(base) && base !== process.env.BOOKING_TEST_BASE) throw new Error("\uC9C0\uC6D0\uD558\uC9C0 \uC54A\uB294 \uC608\uC57D\uCC98\uC785\uB2C8\uB2E4");
-  const date6 = String(raw?.date ?? "").replace(/\D/g, "");
-  if (!/^\d{8}$/.test(date6)) throw new Error("\uB0A0\uC9DC\uB294 YYYYMMDD \uD615\uC2DD\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4");
+var kindOf = (base) => /sunsang24\.com/.test(base) || process.env.BOOKING_TEST_KIND === "sunsang24" ? "sunsang24" : "thefishing";
+function normalizeBase(input) {
+  const raw = String(input ?? "http://www.mscufishing.com").trim();
+  let u;
+  try {
+    u = new URL(/^https?:\/\//i.test(raw) ? raw : `http://${raw}`);
+  } catch {
+    throw new Error("\uC608\uC57D\uCC98 \uC8FC\uC18C\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4");
+  }
+  const base = `${u.protocol}//${u.host}`;
+  const host2 = u.hostname.toLowerCase();
+  const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host2) || host2.includes(":") || host2 === "localhost" || !host2.includes(".") || /\.(local|internal|localdomain)$/.test(host2);
+  const ok = !isIp || base === process.env.BOOKING_TEST_BASE;
+  if (!ok) throw new Error("\uC608\uC57D\uCC98 \uC8FC\uC18C\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (\uB3C4\uBA54\uC778 \uC8FC\uC18C\uB9CC \uAC00\uB2A5)");
+  return base;
+}
+function parseDates(raw) {
+  const list = Array.isArray(raw?.dates) ? raw.dates : raw?.date ? [raw.date] : [];
+  const out = [...new Set(list.map((d) => String(d).replace(/\D/g, "")))];
+  if (!out.length) throw new Error("\uB0A0\uC9DC\uB97C \uD55C \uAC1C \uC774\uC0C1 \uC120\uD0DD\uD558\uC138\uC694");
+  if (out.length > 10) throw new Error("\uB0A0\uC9DC\uB294 \uD55C \uBC88\uC5D0 10\uAC1C\uAE4C\uC9C0\uC785\uB2C8\uB2E4");
+  for (const d of out) if (!/^\d{8}$/.test(d)) throw new Error("\uB0A0\uC9DC\uB294 YYYYMMDD \uD615\uC2DD\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4");
+  return out.sort();
+}
+function validateConfigs(raw) {
+  const base = normalizeBase(raw?.baseUrl);
+  const dates = parseDates(raw);
   const ships = (Array.isArray(raw?.ships) ? raw.ships : []).map((s) => ({ name: String(s?.name ?? "").trim(), uid: s?.uid ? String(s.uid) : void 0, preferredSeats: Array.isArray(s?.preferredSeats) ? s.preferredSeats.map(Number).filter(Number.isFinite) : void 0 })).filter((s) => s.name || s.uid);
-  if (!ships.length) throw new Error("\uBC30\uB97C \uD55C \uCC99 \uC774\uC0C1 \uC785\uB825\uD558\uC138\uC694");
   const people = Number(raw?.people);
   if (!Number.isInteger(people) || people < 1 || people > 20) throw new Error("\uC778\uC6D0\uC740 1~20\uBA85");
   const name = String(raw?.name ?? "").trim();
@@ -103844,7 +103978,8 @@ function validateConfig(raw) {
     if (!Number.isFinite(t)) throw new Error("\uC624\uD508 \uC2DC\uAC01 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4");
     openAt = new Date(t).toISOString();
   }
-  return {
+  const groupId = dates.length > 1 ? crypto2.randomBytes(4).toString("hex") : void 0;
+  return dates.map((date6) => ({
     baseUrl: base,
     date: date6,
     ships,
@@ -103856,14 +103991,21 @@ function validateConfig(raw) {
     phone: String(raw.phone),
     openAt,
     warmupSeconds: Math.min(60, Math.max(0, Number(raw?.warmupSeconds ?? 5))),
-    pollMs: Math.max(800, Number(raw?.pollMs ?? 1e3)),
-    // 선사 서버 부담을 줄이기 위해 0.8초 미만으로는 조회하지 않음
+    pollMs: Math.max(500, Number(raw?.pollMs ?? 700)),
+    // 선사 서버 부담을 줄이기 위해 0.5초 미만으로는 조회하지 않음
     maxPollMinutes: Math.min(60, Math.max(1, Number(raw?.maxPollMinutes ?? 10))),
-    seedUids: Array.isArray(raw?.seedUids) && raw.seedUids.length ? raw.seedUids.map(String) : void 0
-  };
+    seedUids: Array.isArray(raw?.seedUids) && raw.seedUids.length ? raw.seedUids.map(String) : void 0,
+    kind: kindOf(base),
+    groupId,
+    stopOthersOnSuccess: Boolean(raw?.stopOthersOnSuccess) && dates.length > 1
+  }));
+}
+function startJobs(cfgs) {
+  const active = [...jobs.values()].filter((j) => ["waiting", "polling"].includes(j.status)).length;
+  if (active + cfgs.length > MAX_ACTIVE) throw new Error(`\uB3D9\uC2DC\uC5D0 \uC9C4\uD589\uD560 \uC218 \uC788\uB294 \uC791\uC5C5\uC740 ${MAX_ACTIVE}\uAC1C\uAE4C\uC9C0\uC785\uB2C8\uB2E4 (\uD604\uC7AC ${active}\uAC1C \uC9C4\uD589 \uC911)`);
+  return cfgs.map(startJob);
 }
 function startJob(cfg) {
-  if ([...jobs.values()].filter((j) => ["waiting", "polling"].includes(j.status)).length >= 3) throw new Error("\uB3D9\uC2DC\uC5D0 \uC9C4\uD589 \uC911\uC778 \uC791\uC5C5\uC740 3\uAC1C\uAE4C\uC9C0\uC785\uB2C8\uB2E4");
   if (jobs.size >= MAX_JOBS) {
     const oldest = [...jobs.values()].filter((j) => !["waiting", "polling"].includes(j.status)).sort((a, b) => a.createdAt - b.createdAt)[0];
     if (oldest) jobs.delete(oldest.id);
@@ -103873,7 +104015,8 @@ function startJob(cfg) {
     id,
     createdAt: Date.now(),
     status: "waiting",
-    summary: `${cfg.date} ${cfg.ships.map((s) => s.name || s.uid).join(" > ")} \xB7 ${cfg.people}\uBA85`,
+    summary: `${cfg.date.slice(4, 6)}/${cfg.date.slice(6)} ${new URL(cfg.baseUrl).hostname.replace(/^www\./, "")} \xB7 ${cfg.ships.length ? cfg.ships.map((s) => s.name || s.uid).join(" > ") : "\uC5F4\uB9B0 \uBC30 \uC544\uBB34\uAC70\uB098"} \xB7 ${cfg.people}\uBA85`,
+    groupId: cfg.groupId,
     log: [],
     stopRequested: false
   };
@@ -103898,13 +104041,25 @@ async function runJob(job, cfg) {
       }
     }
     job.status = "polling";
+    if (cfg.kind === "sunsang24") {
+      await runSunsang(job, cfg, sess, log);
+      return;
+    }
     const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 6e4;
-    const seeds = [.../* @__PURE__ */ new Set([...cfg.ships.map((s) => s.uid).filter(Boolean), ...cfg.seedUids ?? KNOWN_SEEDS])];
+    const listSeeds = await discoverSeeds(sess, cfg.date);
+    if (listSeeds.length) log(`\uC608\uC57D \uBAA9\uB85D\uC5D0\uC11C \uBC30 \uBC88\uD638 ${listSeeds.length}\uAC1C \uD655\uC778`);
+    const seeds = [.../* @__PURE__ */ new Set([...cfg.ships.map(guessUid).filter(Boolean), ...listSeeds, ...cfg.seedUids ?? KNOWN_SEEDS])];
+    let warm = /* @__PURE__ */ new Map();
+    try {
+      warm = await prewarm(sess, cfg, log, listSeeds);
+    } catch {
+    }
     let workingSeed = null;
     let attempt = 0;
     while (Date.now() < deadline) {
       if (job.stopRequested) throw new StopError();
       attempt++;
+      const t0 = Date.now();
       let open = [];
       try {
         const r = workingSeed ? await sess.request("GET", `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${workingSeed}`) : null;
@@ -103922,14 +104077,18 @@ async function runJob(job, cfg) {
       const hit = pickShip(open, cfg.ships);
       if (hit) {
         log(`\uC608\uC57D \uAC00\uB2A5\uD55C \uBC30 \uBC1C\uACAC: ${hit.choice.label} (${hit.choice.value})`);
-        job.result = await prepareBooking(sess, cfg, hit, log);
+        job.result = await prepareBooking(sess, cfg, hit, log, warm.get(hit.choice.value));
+        log(`\uC18C\uC694: \uBC30 \uBC1C\uACAC \uD6C4 ${Date.now() - t0}ms`);
         job.status = "done";
         log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.species}, ${job.result.people}\uBA85, \uC88C\uC11D: ${job.result.seats.join(",") || "\uBBF8\uC120\uD0DD"}`);
         log("\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC\uC774\uBBC0\uB85C \uC81C\uCD9C\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
+        if (cfg.stopOthersOnSuccess && cfg.groupId) {
+          for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job.id) stopJob(o.id);
+        }
         return;
       }
       if (attempt % 10 === 1 && open.length) log(`\uC6D0\uD558\uB294 \uBC30\uAC00 \uC544\uC9C1 \uC548 \uC5F4\uB838\uC2B5\uB2C8\uB2E4 (\uC5F4\uB9B0 \uBC30: ${open.map((o) => o.label).join(", ")})`);
-      await sleep(cfg.pollMs + Math.random() * 300);
+      await sleep(Math.max(0, cfg.pollMs - (Date.now() - t0)) + Math.random() * 100);
     }
     throw new Error("\uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uC608\uC57D \uAC00\uB2A5\uD55C \uBC30\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
   } catch (e) {
@@ -103945,6 +104104,170 @@ async function runJob(job, cfg) {
 }
 var StopError = class extends Error {
 };
+function parseSunsangDay(html3) {
+  const marks = [...html3.matchAll(/<table[^>]*class="[^"]*ship_unit_ship_no_(\d+)[^"]*"[^>]*>/g)];
+  return marks.map((m, i) => {
+    const chunk = html3.slice(m.index + m[0].length, i + 1 < marks.length ? marks[i + 1].index : html3.length);
+    const name = stripTags(/<div class="title">([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+    const scheduleNo = /<ul[^>]*reservation_detail[^>]*data-schedule_no="(\d+)"/.exec(chunk)?.[1] ?? /data-schedule_no="(\d+)"/.exec(chunk)?.[1] ?? "";
+    const btn = stripTags(/<div class="btn_wrap"[^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+    const fish = stripTags(/<div id="fish">([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+    return { shipNo: m[1], name, scheduleNo, bookable: btn.includes("\uBC14\uB85C\uC608\uC57D"), fish };
+  });
+}
+function parseJsVar(html3, varName = "data") {
+  const start = html3.indexOf(`var ${varName} = `);
+  if (start < 0) return null;
+  const open = html3.indexOf("{", start);
+  if (open < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  for (let i = open; i < html3.length; i++) {
+    const c = html3[i];
+    if (inStr) {
+      if (c === "\\") i++;
+      else if (c === '"') inStr = false;
+    } else if (c === '"') inStr = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) {
+      try {
+        return JSON.parse(html3.slice(open, i + 1));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+function buildSunsangPayload(form, v) {
+  const m = /^(\d{3})(\d{3,4})(\d{4})$/.exec(v.phone.replace(/\D/g, ""));
+  if (!m) throw new Error("\uD734\uB300\uD3F0 \uBC88\uD638 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4");
+  const set2 = { ship_schedule_no: v.scheduleNo, person_count: String(v.people), name: v.name, deposit_name: "", phone1: m[1], phone2: m[2], phone3: m[3], memo: "", price_option: "" };
+  const pairs = [];
+  for (const f of form.fields) {
+    if (f.type === "checkbox") {
+      if (f.name === "all_check" || f.name === "agree_rule[]") pairs.push([f.name, f.value || "on"]);
+      else if (f.name === "select_seat_nos[]") {
+        if (v.seats?.includes(Number(f.value))) pairs.push([f.name, f.value]);
+      } else if (f.checked) pairs.push([f.name, f.value || "on"]);
+    } else if (f.type === "radio") {
+      if (f.checked) pairs.push([f.name, f.value]);
+    } else if (f.type === "select") {
+      pairs.push([f.name, (f.options?.find((o) => o.selected) ?? f.options?.[0])?.value ?? ""]);
+    } else {
+      pairs.push([f.name, f.name in set2 ? set2[f.name] : f.value]);
+    }
+  }
+  return pairs.map(([k, val2]) => `${enc(k)}=${enc(val2)}`).join("&");
+}
+function sunsangSternOrder(seats, total, sternSide) {
+  const half = Math.ceil(total / 2);
+  const key = (s) => {
+    const first2 = s <= half;
+    const dist = first2 ? half - s : s - half - 1;
+    const sideRank = sternSide === "right" === !first2 ? 0 : 1;
+    return [dist, sideRank, s];
+  };
+  return [...seats].sort((a, b) => {
+    const ka = key(a), kb = key(b);
+    return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2];
+  });
+}
+async function prepareSunsang(sess, cfg, ship, log) {
+  const page = await sess.request("GET", `/mypage/reservation_ready/${ship.scheduleNo}`, { referer: `${sess.base}/ship/schedule_fleet` });
+  const data2 = parseJsVar(page.text, "data");
+  if (!data2 || !data2.schedule) throw new Error(`${ship.name}: \uC608\uC57D \uD654\uBA74 \uC815\uBCF4\uB97C \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4${data2?.message ? ` (${data2.message})` : ""}`);
+  if (typeof data2.code !== "undefined") throw new Error(`${ship.name}: ${data2.message ?? "\uC608\uC57D \uD654\uBA74\uC744 \uC5F4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4"}`);
+  const sc = data2.schedule;
+  const fish = (sc.fish_type ?? []).map((f) => String(f.name));
+  log(`\uC5B4\uC885: ${fish.join(", ") || ship.fish || "\uC815\uBCF4 \uC5C6\uC74C"} / \uB0A8\uC740 \uC790\uB9AC ${sc.remain_embarkation_num}\uBA85`);
+  if (!SPECIES_WORDS.some((w) => fish.join(",").includes(w)) && !/주꾸미|쭈꾸미|갑오징어/.test(ship.fish)) {
+    throw new SkipShip(`${ship.name}: \uCB48\uAFB8\uBBF8/\uAC11\uC624\uC9D5\uC5B4 \uC5B4\uC885\uC774 \uC544\uB2C8\uB77C \uAC74\uB108\uB701\uB2C8\uB2E4 (${fish.join(", ") || ship.fish})`);
+  }
+  if (sc.is_reservation_login) throw new Error(`${ship.name}: \uB85C\uADF8\uC778\uC774 \uD544\uC694\uD55C \uC608\uC57D\uC774\uB77C \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4`);
+  if (sc.is_reservation_phone_auth) throw new Error(`${ship.name}: \uD734\uB300\uC804\uD654 \uC778\uC99D\uC774 \uD544\uC694\uD55C \uC608\uC57D\uC774\uB77C \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4`);
+  const remain = Number(sc.remain_embarkation_num);
+  if (!(remain >= cfg.people)) throw new Error(`${ship.name}: \uB0A8\uC740 \uC790\uB9AC ${remain}\uBA85 \u2014 \uD544\uC694 ${cfg.people}\uBA85 (\uB300\uAE30 \uC608\uC57D\uC740 \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4)`);
+  const max = Number(sc.person_per_reservation);
+  if (max > 0 && cfg.people > max) throw new Error(`${ship.name}: 1\uD68C \uCD5C\uB300 \uC608\uC57D \uC778\uC6D0\uC740 ${max}\uBA85\uC785\uB2C8\uB2E4`);
+  const form = parseForm(page.text, "form-reservation");
+  if (!form) throw new Error("\uC608\uC57D \uD3FC(#form-reservation)\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
+  let seats = [];
+  let seatNote = "\uC88C\uC11D \uC120\uD0DD \uC5C6\uB294 \uBC30";
+  const seatFields = form.fields.filter((f) => f.name === "select_seat_nos[]");
+  if (seatFields.length) {
+    const possible = Array.isArray(sc.arrange_seating?.possible_seat_nos) ? sc.arrange_seating.possible_seat_nos.map(Number) : null;
+    const free = new Set(seatFields.map((f) => Number(f.value)).filter((n) => Number.isFinite(n) && (!possible || possible.includes(n))));
+    if (free.size < cfg.people) throw new SkipShip(`${ship.name}: \uC120\uD0DD \uAC00\uB2A5\uD55C \uC88C\uC11D ${free.size}\uAC1C \u2014 \uD544\uC694 ${cfg.people}\uBA85`);
+    const total2 = Number(sc.seating_num) || Math.max(...free);
+    const order = sunsangSternOrder([...free], total2, cfg.sternSide ?? "right");
+    const prefer = cfg.seatMode === "none" ? [] : [...cfg.ships.find((w) => norm(ship.name).includes(norm(w.name)))?.preferredSeats ?? [], ...cfg.preferredSeats ?? []];
+    seats = chooseSeats(free, cfg.people, prefer, order);
+    seatNote = (cfg.seatMode === "none" ? "\uC88C\uC11D \uC120\uD0DD\uC774 \uD544\uC218\uC778 \uBC30\uB77C \uC120\uBBF8 \uCABD \uC790\uB3D9 \uC120\uD0DD" : prefer.some((x) => seats.includes(x)) ? "\uC9C0\uC815 \uC88C\uC11D \uC6B0\uC120" : "\uC120\uBBF8 \uC6B0\uC120 \uC790\uB3D9 \uC120\uD0DD") + " (\uC120\uC0C124 \uC88C\uC11D: \uBC88\uD638 \uAD6C\uC870\uB85C \uCD94\uC815)";
+    log(`\uC88C\uC11D \uC120\uD0DD: ${seats.join(", ")}\uBC88`);
+  }
+  const payload = buildSunsangPayload(form, { people: cfg.people, name: cfg.name, phone: cfg.phone, scheduleNo: ship.scheduleNo, seats });
+  const total = Number(sc.price) * cfg.people;
+  return {
+    ship: { uid: ship.scheduleNo, name: `${ship.name} (${sc.sdate})` },
+    species: fish.join("\xB7"),
+    people: cfg.people,
+    seats,
+    seatNote,
+    status: `\uB0A8\uC740 \uC790\uB9AC ${remain}\uBA85`,
+    price: total > 0 ? `${total.toLocaleString("ko-KR")}\uC6D0` : "",
+    actionUrl: new URL("/mypage/reservation_end", sess.base).toString(),
+    payload,
+    unresolved: [],
+    dryRun: true
+  };
+}
+var SkipShip = class extends Error {
+};
+async function runSunsang(job, cfg, sess, log) {
+  const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 6e4;
+  const skipped = /* @__PURE__ */ new Set();
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    if (job.stopRequested) throw new StopError();
+    attempt++;
+    const t0 = Date.now();
+    let ships = [];
+    try {
+      const r = await sess.request("GET", `/ship/schedule_fleet/${cfg.date}/0/simple_day`, { ajax: true, referer: `${sess.base}/ship/schedule_fleet` });
+      ships = parseSunsangDay(r.text).filter((x) => x.scheduleNo && !skipped.has(x.scheduleNo));
+    } catch (e) {
+      log(`\uC870\uD68C \uC624\uB958: ${e.message}`);
+      if (/중계기 오류\((auth|config)\)/.test(e.message)) throw e;
+    }
+    const open = ships.filter((x) => x.bookable);
+    const hit = cfg.ships.length ? cfg.ships.map((w) => open.find((x) => norm(x.name).includes(norm(w.name)))).find(Boolean) : open[0];
+    if (hit) {
+      log(`\uC608\uC57D \uAC00\uB2A5\uD55C \uBC30 \uBC1C\uACAC: ${hit.name} (\uC77C\uC815 ${hit.scheduleNo})`);
+      try {
+        job.result = await prepareSunsang(sess, cfg, hit, log);
+      } catch (e) {
+        if (e instanceof SkipShip) {
+          skipped.add(hit.scheduleNo);
+          log(e.message);
+          continue;
+        }
+        throw e;
+      }
+      log(`\uC18C\uC694: \uBC30 \uBC1C\uACAC \uD6C4 ${Date.now() - t0}ms`);
+      job.status = "done";
+      log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.people}\uBA85`);
+      log("\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC\uC774\uBBC0\uB85C \uC81C\uCD9C\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
+      if (cfg.stopOthersOnSuccess && cfg.groupId) {
+        for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job.id) stopJob(o.id);
+      }
+      return;
+    }
+    if (attempt % 10 === 1) log(ships.length ? `\uC6D0\uD558\uB294 \uBC30\uAC00 \uC544\uC9C1 \uC548 \uC5F4\uB838\uC2B5\uB2C8\uB2E4 (\uBAA9\uB85D: ${ships.map((x) => `${x.name}${x.bookable ? "\u2714" : ""}`).join(", ")})` : "\uC774 \uB0A0\uC9DC\uC758 \uC77C\uC815\uC774 \uC544\uC9C1 \uC5C6\uC2B5\uB2C8\uB2E4. \uACC4\uC18D \uD655\uC778\uD569\uB2C8\uB2E4.");
+    await sleep(Math.max(0, cfg.pollMs - (Date.now() - t0)) + Math.random() * 100);
+  }
+  throw new Error("\uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uC608\uC57D \uAC00\uB2A5\uD55C \uBC30\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
+}
 
 // src/routes/booking.ts
 var bookingRouter = (0, import_express3.Router)();
@@ -103977,8 +104300,8 @@ bookingRouter.get("/booking/jobs/:id", guard, (req, res) => {
 });
 bookingRouter.post("/booking/jobs", guard, (req, res) => {
   try {
-    const cfg = validateConfig(req.body);
-    res.json({ job: startJob(cfg) });
+    const jobs2 = startJobs(validateConfigs(req.body));
+    res.json({ jobs: jobs2, job: jobs2[0] });
   } catch (e) {
     res.status(400).json({ error: e?.message ?? "\uC694\uCCAD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4" });
   }
