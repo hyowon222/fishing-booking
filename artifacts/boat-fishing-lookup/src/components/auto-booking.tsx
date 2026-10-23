@@ -84,8 +84,10 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [newSeat, setNewSeat] = useState(false);
+  const [directUrl, setDirectUrl] = useState(() => load('autoBooking.directUrl'));
+  const DIRECT: Site = { id: 'direct', label: '직접 URL 입력', url: directUrl.trim(), hint: '더피싱·선상24 주소를 바로 입력해서 예약 (저장 안 해도 돼요)', seat: false };
   const allSites = [...BUILTIN_SITES, ...mySites];
-  const cur = allSites.find((x) => x.id === site) ?? allSites[0];
+  const cur = site === 'direct' ? DIRECT : (allSites.find((x) => x.id === site) ?? allSites[0]);
   const [dates, setDates] = useState<string[]>([]);
   const [dateInput, setDateInput] = useState('');
   const [stopOthers, setStopOthers] = useState(false);
@@ -152,6 +154,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     const list = ships.map((s) => s.trim()).filter(Boolean);
     const baseUrl = cur.url;
     if (!baseUrl) return setError('예약처 주소를 입력하세요');
+    if (cur.id === 'direct') save('autoBooking.directUrl', directUrl);
     if (!dates.length) return setError('날짜를 한 개 이상 추가하세요');
     if (!name.trim()) return setError('예약자명을 입력하세요');
     if (!phone.trim()) return setError('휴대폰 번호를 입력하세요');
@@ -240,6 +243,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
             onChange={(e) => {
               if (e.target.value === '__add') return setAdding(true);
               setSite(e.target.value);
+              save('autoBooking.site', e.target.value);
               const t = allSites.find((x) => x.id === e.target.value);
               if (t) setSeatMode(t.seat ? 'auto' : 'none');
             }}
@@ -249,10 +253,36 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
                 {x.label}
               </option>
             ))}
+            <option value="direct">직접 URL 입력</option>
             <option value="__add">+ 예약처 추가…</option>
           </select>
+          {cur.id === 'direct' && (
+            <div className="mt-2 space-y-2">
+              <input
+                className={input}
+                placeholder="예약처 주소 (예: http://vipfishing.kr 또는 https://xxx.sunsang24.com)"
+                value={directUrl}
+                onChange={(e) => {
+                  setDirectUrl(e.target.value);
+                  save('autoBooking.directUrl', e.target.value);
+                }}
+              />
+              <button
+                type="button"
+                className="text-[11px] underline"
+                onClick={() => {
+                  setNewUrl(directUrl);
+                  setNewSeat(seatMode === 'auto');
+                  setAdding(true);
+                }}
+              >
+                이 주소를 예약처 목록에 저장
+              </button>
+            </div>
+          )}
           <p className="mt-1 text-[11px] text-muted-foreground">
-            {cur.hint} · {cur.url}
+            {cur.hint}
+            {cur.url ? ` · ${cur.url}` : ''}
           </p>
           {cur.custom && (
             <button
