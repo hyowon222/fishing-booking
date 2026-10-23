@@ -879,7 +879,7 @@ export async function prepareSunsang(sess: Session, cfg: BookingConfig, ship: Su
   const sc = data.schedule;
   const fish: string[] = (sc.fish_type ?? []).map((f: any) => String(f.name));
   log(`어종: ${fish.join(", ") || ship.fish || "정보 없음"} / 남은 자리 ${sc.remain_embarkation_num}명`);
-  if (!SPECIES_WORDS.some((w) => fish.join(",").includes(w)) && !/주꾸미|쭈꾸미|갑오징어/.test(ship.fish)) {
+  if (!SPECIES_WORDS.some((w) => fish.join(",").includes(w)) && !/주꾸미|쭈꾸미|갑오징어|쭈갑/.test(ship.fish)) {
     throw new SkipShip(`${ship.name}: 쭈꾸미/갑오징어 어종이 아니라 건너뜁니다 (${fish.join(", ") || ship.fish})`);
   }
   if (sc.is_reservation_login) throw new Error(`${ship.name}: 로그인이 필요한 예약이라 지원하지 않습니다`);
