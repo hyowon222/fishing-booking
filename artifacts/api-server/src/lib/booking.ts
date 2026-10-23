@@ -811,7 +811,7 @@ export function parseJsVar(html: string, varName = "data"): any {
   return null;
 }
 
-export function buildSunsangPayload(form: { fields: FormField[] }, v: { people: number; name: string; phone: string; scheduleNo: string }): string {
+export function buildSunsangPayload(form: { fields: FormField[] }, v: { people: number; name: string; phone: string; scheduleNo: string; seats?: number[] }): string {
   const m = /^(\d{3})(\d{3,4})(\d{4})$/.exec(v.phone.replace(/\D/g, ""));
   if (!m) throw new Error("휴대폰 번호 형식이 올바르지 않습니다");
   const set: Record<string, string> = { ship_schedule_no: v.scheduleNo, person_count: String(v.people), name: v.name, deposit_name: "", phone1: m[1], phone2: m[2], phone3: m[3], memo: "", price_option: "" };
@@ -820,7 +820,9 @@ export function buildSunsangPayload(form: { fields: FormField[] }, v: { people: 
     if (f.type === "checkbox") {
       // 전체동의 + 필수 약관 3개를 모두 체크한 상태 (사이트에서 "전체동의"를 누른 것과 같음)
       if (f.name === "all_check" || f.name === "agree_rule[]") pairs.push([f.name, f.value || "on"]);
-      else if (f.checked) pairs.push([f.name, f.value || "on"]);
+      else if (f.name === "select_seat_nos[]") {
+        if (v.seats?.includes(Number(f.value))) pairs.push([f.name, f.value]);
+      } else if (f.checked) pairs.push([f.name, f.value || "on"]);
     } else if (f.type === "radio") {
       if (f.checked) pairs.push([f.name, f.value]);
     } else if (f.type === "select") {
@@ -830,6 +832,22 @@ export function buildSunsangPayload(form: { fields: FormField[] }, v: { people: 
     }
   }
   return pairs.map(([k, val]) => `${enc(k)}=${enc(val)}`).join("&");
+}
+
+// 선상24 좌석: 1..N/2 가 한 줄, N/2+1..N 이 반대 줄 (선미 쪽이 N/2 와 N/2+1 쪽). 선미에 가까운 순으로 정렬.
+// 같은 거리면 sternSide=right 일 때 뒷 번호 줄(N/2+1..N)을 먼저.
+export function sunsangSternOrder(seats: number[], total: number, sternSide: "right" | "left"): number[] {
+  const half = Math.ceil(total / 2);
+  const key = (s: number) => {
+    const first = s <= half;
+    const dist = first ? half - s : s - half - 1;
+    const sideRank = (sternSide === "right") === !first ? 0 : 1;
+    return [dist, sideRank, s];
+  };
+  return [...seats].sort((a, b) => {
+    const ka = key(a), kb = key(b);
+    return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2];
+  });
 }
 
 export async function prepareSunsang(sess: Session, cfg: BookingConfig, ship: SunShip, log: (m: string) => void): Promise<BookingResult> {
@@ -852,17 +870,29 @@ export async function prepareSunsang(sess: Session, cfg: BookingConfig, ship: Su
 
   const form = parseForm(page.text, "form-reservation");
   if (!form) throw new Error("예약 폼(#form-reservation)을 찾지 못했습니다");
-  if (form.fields.some((f) => f.name === "select_seat_nos[]")) {
-    throw new Error(`${ship.name}: 좌석 선택 화면이 있는 배입니다. 좌석 선택은 아직 지원하지 않아 중단합니다`);
+  let seats: number[] = [];
+  let seatNote = "좌석 선택 없는 배";
+  const seatFields = form.fields.filter((f) => f.name === "select_seat_nos[]");
+  if (seatFields.length) {
+    // 선택 가능한 좌석 = 폼의 체크박스 ∩ 서버가 알려준 possible_seat_nos
+    const possible: number[] | null = Array.isArray(sc.arrange_seating?.possible_seat_nos) ? sc.arrange_seating.possible_seat_nos.map(Number) : null;
+    const free = new Set(seatFields.map((f) => Number(f.value)).filter((n) => Number.isFinite(n) && (!possible || possible.includes(n))));
+    if (free.size < cfg.people) throw new SkipShip(`${ship.name}: 선택 가능한 좌석 ${free.size}개 — 필요 ${cfg.people}명`);
+    const total = Number(sc.seating_num) || Math.max(...free);
+    const order = sunsangSternOrder([...free], total, cfg.sternSide ?? "right");
+    const prefer = cfg.seatMode === "none" ? [] : [...(cfg.ships.find((w) => norm(ship.name).includes(norm(w.name)))?.preferredSeats ?? []), ...(cfg.preferredSeats ?? [])];
+    seats = chooseSeats(free, cfg.people, prefer, order);
+    seatNote = (cfg.seatMode === "none" ? "좌석 선택이 필수인 배라 선미 쪽 자동 선택" : prefer.some((x) => seats.includes(x)) ? "지정 좌석 우선" : "선미 우선 자동 선택") + " (선상24 좌석: 번호 구조로 추정)";
+    log(`좌석 선택: ${seats.join(", ")}번`);
   }
-  const payload = buildSunsangPayload(form, { people: cfg.people, name: cfg.name, phone: cfg.phone, scheduleNo: ship.scheduleNo });
+  const payload = buildSunsangPayload(form, { people: cfg.people, name: cfg.name, phone: cfg.phone, scheduleNo: ship.scheduleNo, seats });
   const total = Number(sc.price) * cfg.people;
   return {
     ship: { uid: ship.scheduleNo, name: `${ship.name} (${sc.sdate})` },
     species: fish.join("·"),
     people: cfg.people,
-    seats: [],
-    seatNote: "좌석 선택 없는 배",
+    seats,
+    seatNote,
     status: `남은 자리 ${remain}명`,
     price: total > 0 ? `${total.toLocaleString("ko-KR")}원` : "",
     actionUrl: new URL("/mypage/reservation_end", sess.base).toString(),
