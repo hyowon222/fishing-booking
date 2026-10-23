@@ -81,7 +81,7 @@ async function fetchWhy(label: string, url: string, init: RequestInit): Promise<
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------ 전송 (중계기 암호화 + 쿠키 + 리다이렉트)
-type RawResponse = { status: number; location: string; contentType: string; setCookies: string[]; body: Buffer };
+type RawResponse = { status: number; location: string; contentType: string; setCookies: string[]; body: Buffer; upMs?: number };
 
 const relayEnabled = () => Boolean(process.env.BOOKING_RELAY_URL && process.env.BOOKING_RELAY_TOKEN);
 
@@ -120,6 +120,7 @@ const toRaw = (p: any): RawResponse => ({
   contentType: p.contentType ?? "",
   setCookies: p.setCookies ?? [],
   body: Buffer.from(p.bodyBase64 ?? "", "base64"),
+  upMs: typeof p.ms === "number" ? p.ms : undefined,
 });
 
 async function relayCall(
@@ -160,6 +161,7 @@ function decodeBody(r: RawResponse): string {
 export class Session {
   private jar = new Map<string, string>();
   base: string;
+  onSlow?: (m: string) => void; // 느린 요청(1초 이상)만 기록해서 어디서 시간이 걸리는지 보여준다
   constructor(base: string) {
     this.base = base;
   }
@@ -183,7 +185,9 @@ export class Session {
       const headers: Record<string, string> = {};
       if (m === "POST") headers["content-type"] = "application/x-www-form-urlencoded; charset=UTF-8";
       if (opts.ajax) headers["x-requested-with"] = "XMLHttpRequest";
+      const t1 = Date.now();
       const r = await relayCall(url, m, { body, headers, referer: opts.referer ?? this.base + "/", cookie: this.cookieHeader() });
+      this.noteSlow(m, url, r, Date.now() - t1);
       this.store(r.setCookies);
       if ([301, 302, 303, 307, 308].includes(r.status) && r.location) {
         url = new URL(r.location, url).toString();
@@ -197,6 +201,18 @@ export class Session {
       return { status: r.status, text: decodeBody(r), url };
     }
     throw new Error("이동(리다이렉트)이 너무 많습니다");
+  }
+
+  private noteSlow(m: string, url: string, r: RawResponse, ms: number) {
+    if (ms < 1000 || !this.onSlow) return;
+    let p = url;
+    try {
+      const u = new URL(url);
+      p = u.pathname.split("/").slice(-1)[0] || u.pathname;
+    } catch {
+      /* 무시 */
+    }
+    this.onSlow(`느린 요청: ${m} ${p} → 전체 ${ms}ms${r.upMs !== undefined ? ` (예약처 응답 ${r.upMs}ms, 나머지는 중계·서버 구간)` : ""} [${r.status}]`);
   }
 
   // 사이트가 http→https, 또는 www 붙은 주소로 보내면 이후 요청은 처음부터 그 주소로 보내 이동 왕복을 없앤다
@@ -220,6 +236,7 @@ export class Session {
       return { url: it.path.startsWith("http") ? it.path : this.base + it.path, method: it.method, headers, body: it.body ?? "", referer: this.base + "/" };
     });
     let raws: RawResponse[];
+    const tb = Date.now();
     if (relayEnabled()) {
       const out = await relayExchange({ batch: reqs, cookie: this.cookieHeader() });
       raws = (out.results as any[]).map((p) => {
@@ -229,6 +246,7 @@ export class Session {
     } else {
       raws = await Promise.all(reqs.map((r) => relayCall(r.url, r.method, { body: r.body, headers: r.headers, referer: r.referer, cookie: this.cookieHeader() })));
     }
+    if (this.onSlow && Date.now() - tb >= 1000) this.onSlow(`느린 묶음 요청: ${items.length}건 → 전체 ${Date.now() - tb}ms (예약처 응답 ${raws.map((r) => r.upMs ?? "?").join("/")}ms)`);
     const isMove = (r: RawResponse) => [301, 302, 303, 307, 308].includes(r.status);
     for (const r of raws) this.store(r.setCookies);
     // 이동 응답은 따라가서 완성하고, 그 사이트의 올바른 주소(https·www)를 기억해 다음부터는 바로 간다
@@ -711,6 +729,7 @@ async function runJob(job: Job, cfg: BookingConfig) {
     if (job.log.length > 200) job.log.splice(0, job.log.length - 200);
   };
   const sess = new Session(cfg.baseUrl);
+  sess.onSlow = log;
   try {
     log("테스트 모드: 최종 제출은 하지 않습니다.");
     if (cfg.openAt) {
