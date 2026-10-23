@@ -23,13 +23,20 @@ type Job = {
   error?: string;
 };
 
-const SITES: { id: string; label: string; url: string; hint: string; ships?: string[] }[] = [
-  { id: 'mscu', label: '미스쿠 낚시', url: 'http://www.mscufishing.com', hint: '배 이름으로 선택, 좌석 지정 가능' },
-  { id: 'dokhan', label: '독한놈호 (더피싱)', url: 'https://dokhan.thefishing.kr', hint: '배가 한 척이면 배 이름을 비워두세요' },
-  { id: 'ocpro', label: '오천 프로낚시 (선상24·좌석없음)', url: 'https://ocpro.sunsang24.com', hint: '배 이름을 비우면 예약 가능한 첫 배', ships: ['비바호', '가즈아호', '오천 프로낚시'] },
-  { id: 'daebak', label: '대박 (선상24·좌석지정)', url: 'https://daebak.sunsang24.com', hint: '좌석 지정 가능 (번호 입력, 없으면 선미 우선)', ships: ['뉴항구호', '뉴항구1호', '레전드호'] },
-  { id: 'custom', label: '직접 입력 (더피싱·선상24)', url: '', hint: '예: https://xxx.thefishing.kr 또는 https://xxx.sunsang24.com' },
+type Site = { id: string; label: string; url: string; hint: string; seat: boolean; ships?: string[]; custom?: boolean };
+const BUILTIN_SITES: Site[] = [
+  { id: 'mscu', label: '삼길포 CU 만석낚시', url: 'http://www.mscufishing.com', hint: '자리 지정 선사 · 배 이름으로 선택', seat: true },
+  { id: 'daebak', label: '뉴항구호', url: 'https://daebak.sunsang24.com', hint: '자리 지정 선사 (선상24)', seat: true, ships: ['뉴항구호'] },
 ];
+const LS_SITES = 'autoBooking.sites';
+function loadSites(): Site[] {
+  try {
+    const v = JSON.parse(load(LS_SITES, '[]'));
+    return Array.isArray(v) ? v.filter((x) => x && x.id && x.url).map((x) => ({ id: String(x.id), label: String(x.label || x.url), url: String(x.url), hint: x.seat ? '자리 지정 선사' : '자리 지정 없는 선사', seat: !!x.seat, custom: true })) : [];
+  } catch {
+    return [];
+  }
+}
 const KNOWN_SHIPS = ['승주호', '헌터호', '골드피싱', '으리호', '블루오션', '바다호', '영스타호', '뚜기호', '유리호', '나대세호', '아산호', '박찬호', '히트호', '헤르메스호', '만석호'];
 const STATUS_LABEL: Record<Job['status'], string> = { waiting: '오픈 대기', polling: '배 찾는 중', done: '입력 준비 완료', failed: '실패', stopped: '중지됨' };
 const STATUS_STYLE: Record<Job['status'], string> = {
@@ -72,7 +79,13 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const [relayOk, setRelayOk] = useState<boolean | null>(null);
 
   const [site, setSite] = useState(() => load('autoBooking.site', 'mscu'));
-  const [customSite, setCustomSite] = useState(() => load('autoBooking.customSite'));
+  const [mySites, setMySites] = useState<Site[]>(loadSites);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newUrl, setNewUrl] = useState('');
+  const [newSeat, setNewSeat] = useState(false);
+  const allSites = [...BUILTIN_SITES, ...mySites];
+  const cur = allSites.find((x) => x.id === site) ?? allSites[0];
   const [dates, setDates] = useState<string[]>([]);
   const [dateInput, setDateInput] = useState('');
   const [stopOthers, setStopOthers] = useState(false);
@@ -137,7 +150,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   async function start() {
     setError('');
     const list = ships.map((s) => s.trim()).filter(Boolean);
-    const baseUrl = site === 'custom' ? customSite.trim() : (SITES.find((x) => x.id === site)?.url ?? '');
+    const baseUrl = cur.url;
     if (!baseUrl) return setError('예약처 주소를 입력하세요');
     if (!dates.length) return setError('날짜를 한 개 이상 추가하세요');
     if (!name.trim()) return setError('예약자명을 입력하세요');
@@ -146,7 +159,6 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     save(LS.phone, phone);
     save(LS.ships, JSON.stringify(list));
     save('autoBooking.site', site);
-    save('autoBooking.customSite', customSite);
     setBusy(true);
     try {
       await api('/jobs', {
@@ -222,15 +234,83 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
       <section className="space-y-4 rounded-xl border p-4">
         <div>
           <label className={label}>예약처</label>
-          <select className={input} value={site} onChange={(e) => setSite(e.target.value)}>
-            {SITES.map((x) => (
+          <select
+            className={input}
+            value={cur.id}
+            onChange={(e) => {
+              if (e.target.value === '__add') return setAdding(true);
+              setSite(e.target.value);
+              const t = allSites.find((x) => x.id === e.target.value);
+              if (t) setSeatMode(t.seat ? 'auto' : 'none');
+            }}
+          >
+            {allSites.map((x) => (
               <option key={x.id} value={x.id}>
                 {x.label}
               </option>
             ))}
+            <option value="__add">+ 예약처 추가…</option>
           </select>
-          {site === 'custom' && <input className={`${input} mt-2`} placeholder="https://xxx.thefishing.kr" value={customSite} onChange={(e) => setCustomSite(e.target.value)} />}
-          <p className="mt-1 text-[11px] text-muted-foreground">{SITES.find((x) => x.id === site)?.hint}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {cur.hint} · {cur.url}
+          </p>
+          {cur.custom && (
+            <button
+              type="button"
+              className="mt-1 text-[11px] text-red-600 underline"
+              onClick={() => {
+                if (!confirm(`'${cur.label}' 예약처를 삭제할까요?`)) return;
+                const next = mySites.filter((x) => x.id !== cur.id);
+                setMySites(next);
+                save(LS_SITES, JSON.stringify(next));
+                setSite('mscu');
+              }}
+            >
+              이 예약처 삭제
+            </button>
+          )}
+          {adding && (
+            <div className="mt-2 space-y-2 rounded-lg border p-3">
+              <input className={input} placeholder="예약처 이름 (예: 으리호)" value={newName} onChange={(e) => setNewName(e.target.value)} />
+              <input className={input} placeholder="주소 (예: https://xxx.sunsang24.com 또는 http://xxx.thefishing.kr)" value={newUrl} onChange={(e) => setNewUrl(e.target.value)} />
+              <select className={input} value={newSeat ? 'seat' : 'free'} onChange={(e) => setNewSeat(e.target.value === 'seat')}>
+                <option value="free">자리 지정 없는 선사</option>
+                <option value="seat">자리 지정 선사</option>
+              </select>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="flex-1 rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
+                  onClick={() => {
+                    let url = newUrl.trim();
+                    if (!url) return setError('예약처 주소를 입력하세요');
+                    if (!/^https?:\/\//i.test(url)) url = `http://${url}`;
+                    try {
+                      url = new URL(url).origin;
+                    } catch {
+                      return setError('예약처 주소가 올바르지 않습니다');
+                    }
+                    const id = `u${Date.now()}`;
+                    const next = [...mySites, { id, label: newName.trim() || new URL(url).hostname, url, hint: newSeat ? '자리 지정 선사' : '자리 지정 없는 선사', seat: newSeat, custom: true }];
+                    setMySites(next);
+                    save(LS_SITES, JSON.stringify(next));
+                    setSite(id);
+                    setSeatMode(newSeat ? 'auto' : 'none');
+                    setAdding(false);
+                    setNewName('');
+                    setNewUrl('');
+                    setError('');
+                  }}
+                >
+                  추가
+                </button>
+                <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={() => setAdding(false)}>
+                  취소
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">이 기기 브라우저에 저장돼요. 더피싱·선상24 계열 주소를 넣으면 됩니다.</p>
+            </div>
+          )}
         </div>
 
         <div>
@@ -295,7 +375,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
             ))}
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {(site === 'mscu' ? KNOWN_SHIPS : (SITES.find((x) => x.id === site)?.ships ?? [])).map((k) => (
+            {(cur.id === 'mscu' ? KNOWN_SHIPS : (cur.ships ?? [])).map((k) => (
               <button key={k} type="button" onClick={() => addShip(k)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-accent">
                 {k}
               </button>
@@ -316,8 +396,8 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
           <label className={label}>좌석</label>
           <div className="grid grid-cols-2 gap-3">
             <select className={input} value={seatMode} onChange={(e) => setSeatMode(e.target.value as 'auto' | 'none')}>
-              <option value="auto">좌석 선택 (선미 우선)</option>
-              <option value="none">좌석 선택 안 함</option>
+              <option value="auto">자리 지정 선사 (지정·선미 우선)</option>
+              <option value="none">자리 지정 없는 선사</option>
             </select>
             <select className={input} value={sternSide} onChange={(e) => setSternSide(e.target.value as 'right' | 'left')} disabled={seatMode === 'none'}>
               <option value="right">선미 같은 줄이면 오른쪽 먼저</option>

@@ -598,8 +598,10 @@ export function normalizeBase(input: unknown): string {
   }
   const base = `${u.protocol}//${u.host}`;
   const host = u.hostname.toLowerCase();
-  const ok = /(^|\.)mscufishing\.com$/.test(host) || /(^|\.)thefishing\.kr$/.test(host) || /(^|\.)sunsang24\.com$/.test(host) || base === process.env.BOOKING_TEST_BASE;
-  if (!ok) throw new Error("지원하지 않는 예약처입니다 (미스쿠 낚시·더피싱·선상24 계열만 가능)");
+  // 어떤 사이트든 공개 주소면 허용 (내부망·IP 주소·localhost 는 차단). 방식은 kindOf 가 주소로 판단.
+  const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":") || host === "localhost" || !host.includes(".") || /\.(local|internal|localdomain)$/.test(host);
+  const ok = !isIp || base === process.env.BOOKING_TEST_BASE;
+  if (!ok) throw new Error("예약처 주소가 올바르지 않습니다 (도메인 주소만 가능)");
   return base;
 }
 
