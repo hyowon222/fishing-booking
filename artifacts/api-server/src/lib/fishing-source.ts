@@ -1257,7 +1257,7 @@ function applyTideStrength(items: FishingSchedule[], byPort: TideByPort): void {
 
 export type GetSchedulesOptions = {
   /** 지역/항구를 골라서 검색한 경우, 관련 없는 예약처는 처음부터 조회하지 않는다. */
-  filter?: { region?: string[]; port?: string };
+  filter?: { region?: string[]; port?: string; ship?: string[] };
   /** "high"(기본): 사용자가 직접 누른 검색. "low": 필터 목록 채우기 같은 백그라운드 조회. */
   priority?: FetchPriority;
   /**
@@ -1403,6 +1403,18 @@ export async function getSchedules(
   }
   if (filter?.port) {
     sources = sources.filter((source) => source.port === filter.port);
+  }
+  // 선박을 골랐다면 그 배가 속한 예약처만 조회한다 (배가 등록되어 있지 않은 예약처는 알 수 없으니 남겨 둔다).
+  if (filter?.ship?.length) {
+    const norm = (value: string) => value.replace(/\s+/g, "").toLowerCase();
+    const wanted = filter.ship.map(norm).filter(Boolean);
+    const matches = (vessel: string) => {
+      const v = norm(vessel);
+      return wanted.some((w) => v === w || v.includes(w) || w.includes(v));
+    };
+    const narrowed = sources.filter((source) => !source.vessels?.length || source.vessels.some(matches));
+    // 어느 예약처에도 해당 배가 없다고 나오면(이름이 달라서 못 찾는 경우) 안전하게 원래 목록으로 조회한다.
+    if (narrowed.some((source) => source.vessels?.some(matches))) sources = narrowed;
   }
 
   if (sources.length === 0) {

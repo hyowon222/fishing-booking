@@ -103536,7 +103536,10 @@ var toRaw = (p) => ({
   location: p.location ?? "",
   contentType: p.contentType ?? "",
   setCookies: p.setCookies ?? [],
-  body: Buffer.from(p.bodyBase64 ?? "", "base64")
+  body: Buffer.from(p.bodyBase64 ?? "", "base64"),
+  upMs: typeof p.ms === "number" ? p.ms : void 0,
+  dnsMs: typeof p.dns === "number" ? p.dns : void 0,
+  srvMs: typeof p.srv === "number" ? p.srv : void 0
 });
 async function relayCall(url2, method, opts) {
   if (relayEnabled()) {
@@ -103569,6 +103572,8 @@ function decodeBody(r) {
 var Session = class {
   jar = /* @__PURE__ */ new Map();
   base;
+  onSlow;
+  // 느린 요청(1초 이상)만 기록해서 어디서 시간이 걸리는지 보여준다
   constructor(base) {
     this.base = base;
   }
@@ -103590,7 +103595,9 @@ var Session = class {
       const headers = {};
       if (m === "POST") headers["content-type"] = "application/x-www-form-urlencoded; charset=UTF-8";
       if (opts.ajax) headers["x-requested-with"] = "XMLHttpRequest";
+      const t1 = Date.now();
       const r = await relayCall(url2, m, { body, headers, referer: opts.referer ?? this.base + "/", cookie: this.cookieHeader() });
+      this.noteSlow(m, url2, r, Date.now() - t1);
       this.store(r.setCookies);
       if ([301, 302, 303, 307, 308].includes(r.status) && r.location) {
         url2 = new URL(r.location, url2).toString();
@@ -103600,9 +103607,30 @@ var Session = class {
         }
         continue;
       }
+      this.adoptOrigin(url2);
       return { status: r.status, text: decodeBody(r), url: url2 };
     }
     throw new Error("\uC774\uB3D9(\uB9AC\uB2E4\uC774\uB809\uD2B8)\uC774 \uB108\uBB34 \uB9CE\uC2B5\uB2C8\uB2E4");
+  }
+  noteSlow(m, url2, r, ms) {
+    if (ms < 1e3 || !this.onSlow) return;
+    let p = url2;
+    try {
+      const u = new URL(url2);
+      p = u.pathname.split("/").slice(-1)[0] || u.pathname;
+    } catch {
+    }
+    this.onSlow(`\uB290\uB9B0 \uC694\uCCAD: ${m} ${p} \u2192 \uC804\uCCB4 ${ms}ms${r.upMs !== void 0 ? ` (\uC608\uC57D\uCC98 \uC751\uB2F5 ${r.upMs}ms${r.dnsMs ? `, \uC8FC\uC18C\uD655\uC778 ${r.dnsMs}ms` : ""}${r.srvMs !== void 0 ? `, \uB2F7\uD648 \uCC98\uB9AC ${r.srvMs}ms \u2192 \uC11C\uBC84\u2194\uB2F7\uD648 \uAD6C\uAC04 ${ms - r.srvMs}ms` : ""})` : ""} [${r.status}]`);
+  }
+  // 사이트가 http→https, 또는 www 붙은 주소로 보내면 이후 요청은 처음부터 그 주소로 보내 이동 왕복을 없앤다
+  adoptOrigin(finalUrl) {
+    try {
+      const f = new URL(finalUrl);
+      const b = new URL(this.base);
+      const root2 = (h) => h.replace(/^www\./, "");
+      if (f.origin !== b.origin && root2(f.hostname) === root2(b.hostname)) this.base = f.origin;
+    } catch {
+    }
   }
   // 여러 요청을 한 번의 중계 왕복으로 처리 (이동·오류가 섞이면 호출한 쪽에서 일반 방식으로 다시 시도)
   async batch(items) {
@@ -103613,6 +103641,7 @@ var Session = class {
       return { url: it.path.startsWith("http") ? it.path : this.base + it.path, method: it.method, headers, body: it.body ?? "", referer: this.base + "/" };
     });
     let raws;
+    const tb = Date.now();
     if (relayEnabled()) {
       const out = await relayExchange({ batch: reqs, cookie: this.cookieHeader() });
       raws = out.results.map((p) => {
@@ -103622,11 +103651,17 @@ var Session = class {
     } else {
       raws = await Promise.all(reqs.map((r) => relayCall(r.url, r.method, { body: r.body, headers: r.headers, referer: r.referer, cookie: this.cookieHeader() })));
     }
-    return raws.map((r) => {
-      this.store(r.setCookies);
-      if ([301, 302, 303, 307, 308].includes(r.status)) throw new Error("batch \uC751\uB2F5\uC5D0 \uC774\uB3D9(\uB9AC\uB2E4\uC774\uB809\uD2B8)\uC774 \uC788\uC2B5\uB2C8\uB2E4");
-      return { status: r.status, text: decodeBody(r) };
-    });
+    if (this.onSlow && Date.now() - tb >= 1e3) this.onSlow(`\uB290\uB9B0 \uBB36\uC74C \uC694\uCCAD: ${items.length}\uAC74 \u2192 \uC804\uCCB4 ${Date.now() - tb}ms (\uC608\uC57D\uCC98 \uC751\uB2F5 ${raws.map((r) => r.upMs ?? "?").join("/")}ms, \uB2F7\uD648 \uCC98\uB9AC ${raws.map((r) => r.srvMs ?? "?").join("/")}ms)`);
+    const isMove = (r) => [301, 302, 303, 307, 308].includes(r.status);
+    for (const r of raws) this.store(r.setCookies);
+    return Promise.all(
+      raws.map(async (r, i) => {
+        if (!isMove(r)) return { status: r.status, text: decodeBody(r) };
+        const it = items[i];
+        const res = await this.request(it.method, it.path, { body: it.body, ajax: it.ajax });
+        return { status: res.status, text: res.text };
+      })
+    );
   }
 };
 var stripTags = (s) => s.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&middot;|&#183;/g, "\xB7").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
@@ -104030,6 +104065,7 @@ async function runJob(job, cfg) {
     if (job.log.length > 200) job.log.splice(0, job.log.length - 200);
   };
   const sess = new Session(cfg.baseUrl);
+  sess.onSlow = log;
   try {
     log("\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC: \uCD5C\uC885 \uC81C\uCD9C\uC740 \uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
     if (cfg.openAt) {
@@ -104181,7 +104217,7 @@ async function prepareSunsang(sess, cfg, ship, log) {
   const sc = data2.schedule;
   const fish = (sc.fish_type ?? []).map((f) => String(f.name));
   log(`\uC5B4\uC885: ${fish.join(", ") || ship.fish || "\uC815\uBCF4 \uC5C6\uC74C"} / \uB0A8\uC740 \uC790\uB9AC ${sc.remain_embarkation_num}\uBA85`);
-  if (!SPECIES_WORDS.some((w) => fish.join(",").includes(w)) && !/주꾸미|쭈꾸미|갑오징어/.test(ship.fish)) {
+  if (!SPECIES_WORDS.some((w) => fish.join(",").includes(w)) && !/주꾸미|쭈꾸미|갑오징어|쭈갑/.test(ship.fish)) {
     throw new SkipShip(`${ship.name}: \uCB48\uAFB8\uBBF8/\uAC11\uC624\uC9D5\uC5B4 \uC5B4\uC885\uC774 \uC544\uB2C8\uB77C \uAC74\uB108\uB701\uB2C8\uB2E4 (${fish.join(", ") || ship.fish})`);
   }
   if (sc.is_reservation_login) throw new Error(`${ship.name}: \uB85C\uADF8\uC778\uC774 \uD544\uC694\uD55C \uC608\uC57D\uC774\uB77C \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4`);

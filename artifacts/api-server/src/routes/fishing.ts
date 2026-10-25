@@ -162,8 +162,8 @@ router.get("/fishing/schedules", async (req, res) => {
     const ship = parsed.data.ship || [];
     const regionOrPortSelected = region.length > 0 || Boolean(parsed.data.port);
     const search = await getSchedules(startDate, endDate, {
-      // 지역/항구를 골랐다면 그쪽 예약처만 조회한다. 고르지 않은("전체") 검색은 모든 예약처를 조회한다.
-      filter: regionOrPortSelected ? { region, port: parsed.data.port } : undefined,
+      // 지역/항구/선박을 골랐다면 그쪽 예약처만 조회한다. 고르지 않은("전체") 검색은 모든 예약처를 조회한다.
+      filter: regionOrPortSelected || ship.length > 0 ? { region, port: parsed.data.port, ship } : undefined,
       // 사용자가 직접 누른 검색은 필터 목록용 백그라운드 조회보다 항상 먼저 처리한다.
       priority: "high",
       softDeadlineMs: SEARCH_SOFT_DEADLINE_MS > 0 ? SEARCH_SOFT_DEADLINE_MS : undefined,
