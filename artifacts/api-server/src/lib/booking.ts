@@ -192,8 +192,12 @@ export class Session {
       this.noteSlow(m, url, r, Date.now() - t1);
       this.store(r.setCookies);
       if ([301, 302, 303, 307, 308].includes(r.status) && r.location) {
-        url = new URL(r.location, url).toString();
-        if (r.status !== 307 && r.status !== 308) {
+        const next = new URL(r.location, url);
+        const cur = new URL(url);
+        // 주소만 http→https·www 로 바뀌는 이동(경로 그대로)이면 POST 와 본문을 그대로 유지한다. 그 밖의 이동은 브라우저처럼 GET 으로.
+        const sameTarget = next.pathname === cur.pathname && next.search === cur.search;
+        url = next.toString();
+        if (r.status !== 307 && r.status !== 308 && !(m === "POST" && sameTarget)) {
           m = "GET";
           body = undefined;
         }
@@ -611,7 +615,9 @@ export async function prepareBooking(sess: Session, cfg: BookingConfig, found: {
   let type: Choice | undefined;
   let html = "";
   let ajaxText = "";
-  if (warm && pre && pre.uid === uid) {
+  const preOk = Boolean(warm && pre && pre.uid === uid && (pre.ajaxText.split("|^|")[2] ?? "").trim() === "확인" && /id\s*=\s*["']insert_form["']/.test(pre.html));
+  if (warm && pre && pre.uid === uid && !preOk) log("미리 받은 화면이 완전하지 않아 다시 받습니다.");
+  if (warm && pre && preOk) {
     // 가장 빠른 길: 배를 찾은 그 조회에서 좌석 화면과 인원 확인을 이미 받아 왔음 (추가 요청 없음)
     type = warm.type;
     html = pre.html;
