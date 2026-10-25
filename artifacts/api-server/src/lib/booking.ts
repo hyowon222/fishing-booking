@@ -160,12 +160,15 @@ function decodeBody(r: RawResponse): string {
   }
 }
 
+// 사이트가 알려 준 정식 주소(http→https, www 유무)를 기억해 두면 다음 작업부터는 이동 없이 바로 간다
+const canonicalOrigin = new Map<string, string>();
+
 export class Session {
   private jar = new Map<string, string>();
   base: string;
   onSlow?: (m: string) => void; // 느린 요청(1초 이상)만 기록해서 어디서 시간이 걸리는지 보여준다
   constructor(base: string) {
-    this.base = base;
+    this.base = canonicalOrigin.get(base) ?? base;
   }
 
   private cookieHeader() {
@@ -227,7 +230,10 @@ export class Session {
       const f = new URL(finalUrl);
       const b = new URL(this.base);
       const root = (h: string) => h.replace(/^www\./, "");
-      if (f.origin !== b.origin && root(f.hostname) === root(b.hostname)) this.base = f.origin;
+      if (f.origin !== b.origin && root(f.hostname) === root(b.hostname)) {
+        canonicalOrigin.set(b.origin, f.origin);
+        this.base = f.origin;
+      }
     } catch {
       /* 무시 */
     }
@@ -260,7 +266,13 @@ export class Session {
       raws.map(async (r, i) => {
         if (!isMove(r)) return { status: r.status, text: decodeBody(r) };
         const it = items[i];
-        const res = await this.request(it.method, it.path, { body: it.body, ajax: it.ajax });
+        // 이동 응답이 알려 준 주소에서 이어서 진행 (처음부터 다시 보내면 같은 이동을 한 번 더 겪는다)
+        const from = new URL(reqs[i].url);
+        const to = r.location ? new URL(r.location, from) : from;
+        const sameTarget = to.pathname === from.pathname && to.search === from.search;
+        const keep = it.method === "GET" || r.status === 307 || r.status === 308 || sameTarget;
+        this.adoptOrigin(to.toString());
+        const res = await this.request(keep ? it.method : "GET", to.toString(), { body: keep ? it.body : undefined, ajax: it.ajax });
         return { status: res.status, text: res.text };
       }),
     );
