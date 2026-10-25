@@ -779,7 +779,8 @@ async function runJob(job: Job, cfg: BookingConfig) {
     } catch {
       /* 미리 준비는 실패해도 일반 방식으로 진행 */
     }
-    let workingSeed: string | null = null;
+    // 미리 준비된 배가 있으면 그 배 번호로 바로 조회 시작 (이미 열려 있으면 첫 조회에서 끝낼 수 있음)
+    let workingSeed: string | null = fastTarget(cfg, warm)?.uid ?? null;
     let attempt = 0;
     while (Date.now() < deadline) {
       if (job.stopRequested) throw new StopError();
