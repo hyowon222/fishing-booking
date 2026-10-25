@@ -468,6 +468,20 @@ export function pickShip(open: Choice[], wishes: ShipWish[]): { choice: Choice; 
 
 export type Warm = { type: Choice; naun: string };
 
+// 조회 때 같이 받아 둘 배: 우선순위가 가장 높은 배 중 미리 준비(prewarm)가 된 것
+function fastTarget(cfg: BookingConfig, warm: Map<string, Warm>): { uid: string; warm: Warm } | null {
+  if (cfg.ships.length) {
+    for (const w of cfg.ships) {
+      const uid = guessUid(w);
+      const wm = uid ? warm.get(uid) : undefined;
+      if (uid && wm) return { uid, warm: wm };
+    }
+    return null;
+  }
+  const first = warm.entries().next().value as [string, Warm] | undefined;
+  return first ? { uid: first[0], warm: first[1] } : null;
+}
+
 const SHIP_UIDS: [string, string][] = [
   ["승주", "2955"], ["헌터", "4443"], ["골드피싱", "2954"], ["으리", "4920"], ["블루오션", "5679"], ["바다호", "5891"], ["영스타", "3571"],
   ["뚜기", "2961"], ["유리", "5578"], ["나대세", "2956"], ["아산", "5866"], ["박찬호", "2950"], ["히트", "6407"], ["헤르메스", "5579"], ["만석", "3570"],
@@ -513,13 +527,21 @@ export async function prewarm(sess: Session, cfg: BookingConfig, log: (m: string
   return out;
 }
 
-export async function prepareBooking(sess: Session, cfg: BookingConfig, found: { choice: Choice; wish: ShipWish }, log: (m: string) => void, warm?: Warm): Promise<BookingResult> {
+export type Prefetched = { uid: string; html: string; ajaxText: string };
+
+export async function prepareBooking(sess: Session, cfg: BookingConfig, found: { choice: Choice; wish: ShipWish }, log: (m: string) => void, warm?: Warm, pre?: Prefetched): Promise<BookingResult> {
   const { choice, wish } = found;
   const uid = choice.value;
   let type: Choice | undefined;
   let html = "";
   let ajaxText = "";
-  if (warm) {
+  if (warm && pre && pre.uid === uid) {
+    // 가장 빠른 길: 배를 찾은 그 조회에서 좌석 화면과 인원 확인을 이미 받아 왔음 (추가 요청 없음)
+    type = warm.type;
+    html = pre.html;
+    ajaxText = pre.ajaxText;
+    log("좌석 화면을 조회와 함께 받아 두어 추가 요청 없이 진행합니다.");
+  } else if (warm) {
     // 빠른 길: 좌석 화면과 인원 확인을 중계 한 번으로
     try {
       type = warm.type;
@@ -764,10 +786,26 @@ async function runJob(job: Job, cfg: BookingConfig) {
       attempt++;
       const t0 = Date.now();
       let open: Choice[] = [];
+      let pre: Prefetched | undefined;
       try {
-        const r = workingSeed ? await sess.request("GET", `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${workingSeed}`) : null;
+        let r: { text: string } | null = null;
+        const fast = workingSeed ? fastTarget(cfg, warm) : null;
+        const seedUrl = `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${workingSeed}`;
+        if (workingSeed && fast) {
+          // 배 목록 확인 + 그 배의 좌석 화면 + 인원 확인을 중계 한 번으로 (열린 순간 바로 쓰려고)
+          const [a, b, c] = await sess.batch([
+            { method: "GET", path: seedUrl },
+            { method: "GET", path: step1Url(cfg.date, fast.uid, fast.warm.type.value) },
+            { method: "POST", path: `${MODULE}/action/popup.step1.ajax.php`, ajax: true, body: ajaxBody(cfg, fast.uid, fast.warm.type.value, fast.warm.naun) },
+          ]);
+          r = a;
+          pre = { uid: fast.uid, html: b.text, ajaxText: c.text };
+        } else if (workingSeed) {
+          r = await sess.request("GET", seedUrl);
+        }
         if (r && /id\s*=\s*["']insert_form["']/.test(r.text)) open = parseRadios(r.text, "PA_N_UID");
         else {
+          pre = undefined; // 닫혀 있을 때 받은 화면은 쓰지 않는다
           const d = await discoverOpenShips(sess, cfg.date, workingSeed ? [workingSeed, ...seeds] : seeds);
           workingSeed = d?.seed ?? null;
           open = d?.ships ?? [];
@@ -780,7 +818,7 @@ async function runJob(job: Job, cfg: BookingConfig) {
       const hit = pickShip(open, cfg.ships);
       if (hit) {
         log(`예약 가능한 배 발견: ${hit.choice.label} (${hit.choice.value})`);
-        job.result = await prepareBooking(sess, cfg, hit, log, warm.get(hit.choice.value));
+        job.result = await prepareBooking(sess, cfg, hit, log, warm.get(hit.choice.value), pre);
         log(`소요: 배 발견 후 ${Date.now() - t0}ms`);
         job.status = "done";
         log(`입력 준비 완료 — ${job.result.ship.name}, ${job.result.species}, ${job.result.people}명, 좌석: ${job.result.seats.join(",") || "미선택"}`);
