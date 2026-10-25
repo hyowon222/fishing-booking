@@ -350,6 +350,82 @@ export function chooseSeats(available: Set<number>, n: number, preferred: number
   return chosen;
 }
 
+// ---- 붙어 앉기: 인원수만큼 나란히(같은 줄에서 번호가 이어지는) 또는 마주 보는(선미 끝에서 같은 거리의) 자리를 먼저 찾는다.
+// 선미에 더 가까운 쪽 우선, 같은 거리면 나란히 앉는 쪽 → 선미 같은 줄이면 sternSide 쪽 순서.
+export type SeatPos = { seat: number; line: string; idx: number; dist: number; tag: "r" | "l" | "" };
+const FACING: [string, string][] = [["side:r", "side:l"], ["B", "A"]];
+
+export function layoutFromCells(cells: SeatCell[]): SeatPos[] {
+  return cells.map((c) => ({
+    seat: c.seat,
+    line: `${c.section}:${c.side}`,
+    idx: c.index,
+    dist: c.section === "back" ? c.index * 0.01 : c.section === "side" ? 1 + (c.count - 1 - c.index) : 1000 + c.index,
+    tag: c.side,
+  }));
+}
+
+// 선상24 좌석: 1..N/2 가 한 줄(A), N/2+1..N 이 반대 줄(B). 선미 끝은 N/2 와 N/2+1.
+export function layoutSunsang(seats: number[], total: number): SeatPos[] {
+  const half = Math.ceil(total / 2);
+  return seats.map((s) => (s <= half ? { seat: s, line: "A", idx: s, dist: half - s, tag: "l" as const } : { seat: s, line: "B", idx: s, dist: s - half - 1, tag: "r" as const }));
+}
+
+export function chooseGrouped(layout: SeatPos[], free: Set<number>, n: number, sternSide: "right" | "left"): number[] | null {
+  if (n < 2) return null;
+  const av = layout.filter((p) => free.has(p.seat));
+  const want = sternSide === "right" ? "r" : "l";
+  type Cand = { seats: number[]; maxDist: number; kind: number; tie: number; sum: number };
+  const cands: Cand[] = [];
+  const byLine = new Map<string, SeatPos[]>();
+  for (const p of av) {
+    const l = byLine.get(p.line) ?? [];
+    l.push(p);
+    byLine.set(p.line, l);
+  }
+  for (const list of byLine.values()) {
+    list.sort((a, b) => a.idx - b.idx);
+    for (let i = 0; i + n <= list.length; i++) {
+      const w = list.slice(i, i + n);
+      if (w[n - 1].idx - w[0].idx !== n - 1) continue;
+      cands.push({ seats: w.map((x) => x.seat), maxDist: Math.max(...w.map((x) => x.dist)), kind: 0, tie: w[0].tag === want ? 0 : 1, sum: w.reduce((a, x) => a + x.dist, 0) });
+    }
+  }
+  if (n % 2 === 0) {
+    const k = n / 2;
+    for (const [xa, ya] of FACING) {
+      const xs = byLine.get(xa) ?? [];
+      const ys = byLine.get(ya) ?? [];
+      const pairs: { x: SeatPos; y: SeatPos }[] = [];
+      for (const x of xs) {
+        const y = ys.find((q) => Math.abs(q.dist - x.dist) < 1e-9);
+        if (y) pairs.push({ x, y });
+      }
+      pairs.sort((a, b) => a.x.dist - b.x.dist);
+      for (let i = 0; i + k <= pairs.length; i++) {
+        const w = pairs.slice(i, i + k);
+        let ok = true;
+        for (let j = 1; j < k; j++) if (Math.abs(w[j].x.idx - w[j - 1].x.idx) !== 1 || Math.abs(w[j].y.idx - w[j - 1].y.idx) !== 1) ok = false;
+        if (!ok) continue;
+        const all = w.flatMap((q) => [q.x, q.y]);
+        cands.push({ seats: all.map((q) => q.seat), maxDist: Math.max(...all.map((q) => q.dist)), kind: 1, tie: 0, sum: all.reduce((a, q) => a + q.dist, 0) });
+      }
+    }
+  }
+  cands.sort((a, b) => a.maxDist - b.maxDist || a.kind - b.kind || a.tie - b.tie || a.sum - b.sum);
+  return cands[0]?.seats ?? null;
+}
+
+// 지정 좌석이 없으면 붙어 앉는 자리를 먼저, 없으면 예전처럼 선미에 가까운 순서로 한 자리씩.
+export function pickSeats(layout: SeatPos[], free: Set<number>, n: number, preferred: number[], order: number[], sternSide: "right" | "left"): { seats: number[]; grouped: boolean } {
+  const hasPref = preferred.some((s) => free.has(s));
+  if (!hasPref) {
+    const g = chooseGrouped(layout, free, n, sternSide);
+    if (g) return { seats: g, grouped: true };
+  }
+  return { seats: chooseSeats(free, n, preferred, order), grouped: false };
+}
+
 type FormField = { name: string; type: string; value: string; checked: boolean; options?: { value: string; selected: boolean }[] };
 
 export function parseForm(html: string, formId = "insert_form"): { action: string; fields: FormField[] } | null {
@@ -583,9 +659,10 @@ export async function prepareBooking(sess: Session, cfg: BookingConfig, found: {
   } else {
     const free = new Set(cells.filter((c) => c.available).map((c) => c.seat));
     const order = sternOrder(cells, cfg.sternSide ?? "right");
-    seats = chooseSeats(free, cfg.people, [...(wish.preferredSeats ?? []), ...(cfg.preferredSeats ?? [])], order);
+    const pk = pickSeats(layoutFromCells(cells), free, cfg.people, [...(wish.preferredSeats ?? []), ...(cfg.preferredSeats ?? [])], order, cfg.sternSide ?? "right");
+    seats = pk.seats;
     if (seats.length < cfg.people) throw new Error(`빈 좌석 부족: 필요 ${cfg.people}, 가능 ${seats.length}`);
-    seatNote = `빈 좌석 ${free.size}개 중 선미 우선으로 선택`;
+    seatNote = `빈 좌석 ${free.size}개 중 선미 우선으로 선택${pk.grouped ? " (붙어 앉는 자리)" : ""}`;
   }
 
   // 제출 폼
@@ -962,8 +1039,9 @@ export async function prepareSunsang(sess: Session, cfg: BookingConfig, ship: Su
     const total = Number(sc.seating_num) || Math.max(...free);
     const order = sunsangSternOrder([...free], total, cfg.sternSide ?? "right");
     const prefer = cfg.seatMode === "none" ? [] : [...(cfg.ships.find((w) => norm(ship.name).includes(norm(w.name)))?.preferredSeats ?? []), ...(cfg.preferredSeats ?? [])];
-    seats = chooseSeats(free, cfg.people, prefer, order);
-    seatNote = (cfg.seatMode === "none" ? "좌석 선택이 필수인 배라 선미 쪽 자동 선택" : prefer.some((x) => seats.includes(x)) ? "지정 좌석 우선" : "선미 우선 자동 선택") + " (선상24 좌석: 번호 구조로 추정)";
+    const pk = pickSeats(layoutSunsang([...free], total), free, cfg.people, prefer, order, cfg.sternSide ?? "right");
+    seats = pk.seats;
+    seatNote = (cfg.seatMode === "none" ? "좌석 선택이 필수인 배라 선미 쪽 자동 선택" : prefer.some((x) => seats.includes(x)) ? "지정 좌석 우선" : "선미 우선 자동 선택") + (pk.grouped ? " (붙어 앉는 자리)" : "") + " (선상24 좌석: 번호 구조로 추정)";
     log(`좌석 선택: ${seats.join(", ")}번`);
   }
   const payload = buildSunsangPayload(form, { people: cfg.people, name: cfg.name, phone: cfg.phone, scheduleNo: ship.scheduleNo, seats });
