@@ -1,8 +1,10 @@
 // booking.ts — 선상낚시 자동 예약 엔진 (브라우저 없이 HTTP 요청만 사용)
 // 대상: reservation_boat_v5.2_seat1 방식 예약 사이트 (예: mscufishing.com)
 //
-// ★ 지금은 "테스트 모드(dry-run)" 전용입니다. 최종 제출(popup.step1.action.php 로 POST)은 코드에 아예 없습니다.
-//   좌석·인원·폼 값을 실제 사이트 응답으로 모두 만들고, "이 내용으로 제출할 것"이라는 payload 만 결과로 돌려줍니다.
+// ★ 기본은 "테스트 모드(dry-run)"입니다. 좌석·인원·폼 값을 실제 사이트 응답으로 모두 만들고,
+//   "이 내용으로 제출할 것"이라는 payload 만 결과로 돌려줍니다.
+//   cfg.submit 이 true 일 때만(화면에서 "실제 제출"을 골랐을 때) 최종 제출을 합니다.
+//   제출 요청은 작업당 딱 한 번만 보내고, 응답을 못 받아도 자동으로 다시 보내지 않습니다 (중복 예약 방지).
 //
 // 닷홈 중계기(relay2.php)를 쓰려면 환경변수:
 //   BOOKING_RELAY_URL   예) http://hyowon222.dothome.co.kr/relay2.php
@@ -32,9 +34,19 @@ export type BookingConfig = {
   kind?: "thefishing" | "sunsang24"; // 예약처 종류
   groupId?: string; // 여러 날짜를 한 번에 시작했을 때 같은 값
   stopOthersOnSuccess?: boolean; // 하나 준비되면 같은 묶음의 나머지 작업을 중지
+  submit?: boolean; // true: 자리를 잡으면 실제로 제출 / 아니면 테스트 모드(제출 안 함)
 };
 
-export type JobStatus = "waiting" | "polling" | "done" | "failed" | "stopped";
+export type JobStatus = "waiting" | "polling" | "submitting" | "done" | "failed" | "stopped";
+
+// 실제 제출 결과. unknown 은 "보냈는데 접수 여부를 알 수 없음" (사이트에서 직접 확인 필요)
+export type SubmitOutcome = {
+  state: "success" | "failed" | "unknown";
+  message: string;
+  reservationNo?: string;
+  httpStatus?: number;
+  at: number;
+};
 
 export type BookingResult = {
   ship: { uid: string; name: string };
@@ -47,7 +59,10 @@ export type BookingResult = {
   actionUrl: string;
   payload: string; // 제출 시 보낼 폼 본문 (이름·전화번호 포함)
   unresolved: string[]; // 값이 정해지지 않은 라디오 그룹 등
-  dryRun: true;
+  dryRun: boolean; // 제출하지 않았으면 true
+  referer?: string; // 제출 때 Referer 로 보낼, 폼이 있던 화면 주소
+  deposit?: string; // 입금 안내 (선상24: 예약 화면 기준 예상)
+  submit?: SubmitOutcome; // 실제 제출을 했다면 그 결과
 };
 
 export type Job = {
@@ -182,12 +197,12 @@ export class Session {
     }
   }
 
-  async request(method: "GET" | "POST", path: string, opts: { body?: string; ajax?: boolean; referer?: string } = {}): Promise<{ status: number; text: string; url: string }> {
+  async request(method: "GET" | "POST", path: string, opts: { body?: string; ajax?: boolean; referer?: string; headers?: Record<string, string> } = {}): Promise<{ status: number; text: string; url: string }> {
     let url = path.startsWith("http") ? path : this.base + path;
     let m = method;
     let body = opts.body;
     for (let hop = 0; hop < 5; hop++) {
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = { ...(opts.headers ?? {}) };
       if (m === "POST") headers["content-type"] = "application/x-www-form-urlencoded; charset=UTF-8";
       if (opts.ajax) headers["x-requested-with"] = "XMLHttpRequest";
       const t1 = Date.now();
@@ -702,6 +717,7 @@ export async function prepareBooking(sess: Session, cfg: BookingConfig, found: {
     payload,
     unresolved,
     dryRun: true,
+    referer: new URL(step1Url(cfg.date, uid, type!.value), sess.base).toString(),
   };
 }
 
@@ -715,6 +731,152 @@ function seatValuesFor(html: string, date: string, uid: string, chosen: Set<numb
     out.push(chosen.has(no) ? String(no) : "");
   }
   return out;
+}
+
+// ------------------------------------------------------------------ 최종 제출 (cfg.submit 이 true 일 때만 실행됨)
+const decodeHtml = (s: string) => s.replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&amp;/g, "&");
+
+// 응답 화면 안의 안내창(alert) 문구들과, 태그를 뺀 본문
+export function pageNotes(text: string): { alerts: string[]; plain: string } {
+  const alerts = [...text.matchAll(/alert\(\s*(["'`])((?:\\[\s\S]|(?!\1)[^\\])*)\1\s*\)/g)]
+    .map((m) => decodeHtml(m[2]).replace(/\\n/g, " ").replace(/\\(["'`/\\])/g, "$1").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const plain = decodeHtml(text.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+  return { alerts, plain };
+}
+
+// 완료 화면에서 예약번호·입금 안내처럼 보이는 부분만 골라 낸다 (없으면 앞부분)
+function keyInfo(plain: string): string {
+  const hits = [...plain.matchAll(/(예약\s*번호|입금\s*(?:계좌|금액|기한|은행)|계좌\s*번호|예금주)[\s:：]*\S.{0,40}/g)].map((m) => m[0].trim());
+  return hits.length ? hits.slice(0, 4).join(" / ") : plain.slice(0, 150);
+}
+
+const FAIL_WORDS = /(실패|오류|에러|불가|마감|초과|부족|이미|중복|잘못|제한|입력해|선택해|동의|확인해|없습니다|않습니다|못했|안됩니다|안 됩니다|거부)/;
+const OK_WORDS = /(완료|접수|예약되|예약 되|등록되|신청되)/;
+
+// 더피싱 계열: 제출이 받아들여지면 사이트가 다음 단계(popup.step2.php)로 보낸다. 안내창 문구가 있으면 그것으로도 판단한다.
+export function judgeThefishing(finalUrl: string, text: string): { state: SubmitOutcome["state"]; message: string; next?: string } {
+  const { alerts, plain } = pageNotes(text);
+  const said = alerts.join(" / ");
+  const jump = /(?:location(?:\.href|\.replace)?|href)\s*(?:=|\()\s*["']([^"']*popup\.step2\.php[^"']*)["']/i.exec(text)?.[1] ?? /url=([^"'>\s]*popup\.step2\.php[^"'>\s]*)/i.exec(text)?.[1];
+  if (/popup\.step2\.php/i.test(finalUrl)) return { state: "success", message: said };
+  if (jump) return { state: "success", message: said, next: jump };
+  if (alerts.length) {
+    const bad = FAIL_WORDS.test(said);
+    const good = OK_WORDS.test(said);
+    return { state: bad && !good ? "failed" : good && !bad ? "success" : "unknown", message: said };
+  }
+  return { state: "unknown", message: plain ? `사이트 응답: ${plain.slice(0, 120)}` : "사이트 응답이 비어 있습니다" };
+}
+
+async function submitThefishing(sess: Session, result: BookingResult, log: (m: string) => void): Promise<SubmitOutcome> {
+  const r = await sess.request("POST", result.actionUrl, { body: result.payload, referer: result.referer, headers: { origin: new URL(sess.base).origin } });
+  const v = judgeThefishing(r.url, r.text);
+  log(`제출 응답: HTTP ${r.status} · ${new URL(r.url).pathname.split("/").slice(-1)[0] || "/"}${v.message ? ` · ${v.message.slice(0, 160)}` : ""}`);
+  let message = v.message;
+  if (v.state === "success") {
+    // 완료 화면(입금 안내 등)을 읽어 두면 화면에서 바로 볼 수 있다. 읽기만 하는 요청이라 실패해도 상관없다.
+    try {
+      const page = /popup\.step2\.php/i.test(r.url) ? r.text : v.next ? (await sess.request("GET", new URL(v.next, r.url).toString(), { referer: r.url })).text : "";
+      const info = keyInfo(pageNotes(page).plain);
+      if (info) message = [message, info].filter(Boolean).join(" · ");
+    } catch {
+      /* 무시 */
+    }
+  } else if (v.state === "unknown" && result.seats.length && result.referer) {
+    // 응답을 해석하지 못했을 때: 내가 고른 좌석이 지금 어떻게 보이는지로 접수 여부를 가늠한다
+    try {
+      const again = await sess.request("GET", result.referer);
+      const mine = parseSeats(again.text).filter((c) => result.seats.includes(c.seat));
+      if (mine.length === result.seats.length) {
+        const taken = mine.filter((c) => !c.available).length;
+        if (taken === mine.length) message += " (선택한 좌석이 이제 선택 불가로 바뀌었어요 — 접수됐을 가능성이 높습니다)";
+        else if (taken === 0) message += " (선택한 좌석이 아직 비어 있어요 — 접수되지 않았을 가능성이 있습니다)";
+      }
+    } catch {
+      /* 무시 */
+    }
+  }
+  return { state: v.state, message: message || "사이트가 별도 안내 문구를 주지 않았습니다", httpStatus: r.status, at: Date.now() };
+}
+
+// 선상24: 예약 화면의 스크립트와 같은 방식 — POST /mypage/reservation_end (JSON 응답, 성공이면 reservation_no 가 들어 있음)
+async function submitSunsang24(sess: Session, result: BookingResult, log: (m: string) => void): Promise<SubmitOutcome> {
+  const r = await sess.request("POST", result.actionUrl, {
+    body: result.payload,
+    ajax: true,
+    referer: result.referer,
+    headers: { origin: new URL(sess.base).origin, accept: "application/json, text/javascript, */*; q=0.01" },
+  });
+  let j: any = null;
+  try {
+    j = JSON.parse(r.text.replace(/^\uFEFF/, "").trim());
+  } catch {
+    /* JSON 이 아님 */
+  }
+  log(`제출 응답: HTTP ${r.status} · ${j ? JSON.stringify(j).slice(0, 200) : r.text.replace(/\s+/g, " ").slice(0, 120)}`);
+  if (j && typeof j === "object" && j.reservation_no !== undefined && j.reservation_no !== null && String(j.reservation_no) !== "") {
+    return { state: "success", message: j.message ? String(j.message) : "예약이 접수되었습니다", reservationNo: String(j.reservation_no), httpStatus: r.status, at: Date.now() };
+  }
+  if (j && typeof j === "object" && j.message) {
+    return { state: "failed", message: `${j.message}${j.code ? ` (코드 ${j.code})` : ""}`, httpStatus: r.status, at: Date.now() };
+  }
+  return { state: "unknown", message: `사이트 응답을 해석하지 못했습니다: ${pageNotes(r.text).plain.slice(0, 120) || "내용 없음"}`, httpStatus: r.status, at: Date.now() };
+}
+
+// 같은 묶음(날짜 여러 개 + "하나 되면 나머지 중지")에서는 한 번에 하나만 제출한다 — 두 날짜가 동시에 접수되는 일을 막는다
+const groupSubmit = new Map<string, "busy" | "done">();
+
+async function submitFinal(job: Job, cfg: BookingConfig, sess: Session, log: (m: string) => void): Promise<void> {
+  const result = job.result!;
+  const gid = cfg.stopOthersOnSuccess ? cfg.groupId : undefined;
+  if (gid) {
+    while (groupSubmit.get(gid) === "busy") {
+      if (job.stopRequested) throw new StopError();
+      await sleep(100);
+    }
+    if (groupSubmit.get(gid) === "done") {
+      job.status = "stopped";
+      log("같은 묶음의 다른 날짜가 이미 예약되어, 이 날짜는 제출하지 않았습니다.");
+      return;
+    }
+  }
+  if (job.stopRequested) throw new StopError(); // 제출 직전까지는 중지할 수 있다
+  if (gid) groupSubmit.set(gid, "busy");
+  let keep = false;
+  try {
+    job.status = "submitting";
+    log("실제 제출: 예약 요청을 보냅니다. (한 번만 보내며 자동으로 다시 보내지 않습니다)");
+    const t0 = Date.now();
+    let out: SubmitOutcome;
+    try {
+      out = cfg.kind === "sunsang24" ? await submitSunsang24(sess, result, log) : await submitThefishing(sess, result, log);
+    } catch (e: any) {
+      const msg: string = e?.message ?? String(e);
+      // 설정 문제로 요청이 아예 나가지 못한 경우만 "실패", 그 밖의 오류는 사이트가 받았는지 알 수 없으므로 "확인 필요"
+      out = /중계기 오류\((auth|config)\)/.test(msg)
+        ? { state: "failed", message: `요청을 보내지 못했습니다: ${msg}`, at: Date.now() }
+        : { state: "unknown", message: `응답을 받지 못했습니다 (${msg}). 접수됐는지 예약처에서 직접 확인하세요.`, at: Date.now() };
+    }
+    result.dryRun = false;
+    result.submit = out;
+    log(`제출 소요 ${Date.now() - t0}ms`);
+    if (out.state === "failed") {
+      job.status = "failed";
+      job.error = `제출이 받아들여지지 않았습니다: ${out.message}`;
+      log(job.error);
+      return;
+    }
+    keep = true;
+    job.status = "done";
+    log(out.state === "success" ? `예약이 접수되었습니다.${out.reservationNo ? ` 예약번호 ${out.reservationNo}` : ""}` : "제출은 했지만 접수 여부를 확인하지 못했습니다. 예약처 사이트에서 직접 확인하세요.");
+    if (gid) for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job.id) stopJob(o.id);
+  } finally {
+    if (gid) {
+      if (keep) groupSubmit.set(gid, "done");
+      else groupSubmit.delete(gid);
+    }
+  }
 }
 
 // ------------------------------------------------------------------ 작업(Job) 관리
@@ -815,6 +977,7 @@ export function validateConfigs(raw: any): BookingConfig[] {
     kind: kindOf(base),
     groupId,
     stopOthersOnSuccess: Boolean(raw?.stopOthersOnSuccess) && dates.length > 1,
+    submit: raw?.submit === true,
   }));
 }
 
@@ -823,15 +986,31 @@ export function validateConfig(raw: any): BookingConfig {
   return validateConfigs(raw)[0];
 }
 
+// 실제 제출 작업의 중복 방지: 같은 사이트·날짜·예약자로 이미 진행 중인 실제 제출 작업이 있으면 하나 더 시작하지 않는다 (같은 예약이 두 번 접수되는 것을 막음)
+const liveSubmits = new Map<string, string>();
+const submitKey = (c: BookingConfig) => `${c.baseUrl}|${c.date}|${c.name}|${c.phone.replace(/\D/g, "")}`;
+
 export function startJobs(cfgs: BookingConfig[]): Job[] {
-  const active = [...jobs.values()].filter((j) => ["waiting", "polling"].includes(j.status)).length;
+  const active = [...jobs.values()].filter((j) => ["waiting", "polling", "submitting"].includes(j.status)).length;
   if (active + cfgs.length > MAX_ACTIVE) throw new Error(`동시에 진행할 수 있는 작업은 ${MAX_ACTIVE}개까지입니다 (현재 ${active}개 진행 중)`);
-  return cfgs.map(startJob);
+  for (const c of cfgs) {
+    if (!c.submit) continue;
+    const id = liveSubmits.get(submitKey(c));
+    const j = id ? jobs.get(id) : undefined;
+    if (j && ["waiting", "polling", "submitting"].includes(j.status)) {
+      throw new Error(`${c.date.slice(4, 6)}/${c.date.slice(6)} 같은 예약자로 진행 중인 실제 제출 작업이 이미 있어요. 먼저 중지하거나 끝난 뒤에 다시 시작하세요.`);
+    }
+  }
+  return cfgs.map((c) => {
+    const job = startJob(c);
+    if (c.submit) liveSubmits.set(submitKey(c), job.id);
+    return job;
+  });
 }
 
 export function startJob(cfg: BookingConfig): Job {
   if (jobs.size >= MAX_JOBS) {
-    const oldest = [...jobs.values()].filter((j) => !["waiting", "polling"].includes(j.status)).sort((a, b) => a.createdAt - b.createdAt)[0];
+    const oldest = [...jobs.values()].filter((j) => !["waiting", "polling", "submitting"].includes(j.status)).sort((a, b) => a.createdAt - b.createdAt)[0];
     if (oldest) jobs.delete(oldest.id);
   }
   const id = crypto.randomBytes(6).toString("hex");
@@ -839,7 +1018,7 @@ export function startJob(cfg: BookingConfig): Job {
     id,
     createdAt: Date.now(),
     status: "waiting",
-    summary: `${cfg.date.slice(4, 6)}/${cfg.date.slice(6)} ${new URL(cfg.baseUrl).hostname.replace(/^www\./, "")} · ${cfg.ships.length ? cfg.ships.map((s) => s.name || s.uid).join(" > ") : "열린 배 아무거나"} · ${cfg.people}명`,
+    summary: `${cfg.submit ? "[실제 제출] " : ""}${cfg.date.slice(4, 6)}/${cfg.date.slice(6)} ${new URL(cfg.baseUrl).hostname.replace(/^www\./, "")} · ${cfg.ships.length ? cfg.ships.map((s) => s.name || s.uid).join(" > ") : "열린 배 아무거나"} · ${cfg.people}명`,
     groupId: cfg.groupId,
     log: [],
     stopRequested: false,
@@ -857,7 +1036,7 @@ async function runJob(job: Job, cfg: BookingConfig) {
   const sess = new Session(cfg.baseUrl);
   sess.onSlow = log;
   try {
-    log("테스트 모드: 최종 제출은 하지 않습니다.");
+    log(cfg.submit ? "실제 제출 모드: 자리를 잡으면 바로 제출합니다." : "테스트 모드: 최종 제출은 하지 않습니다.");
     if (cfg.openAt) {
       const target = new Date(cfg.openAt).getTime() - (cfg.warmupSeconds ?? 5) * 1000;
       log(`오픈(${new Date(cfg.openAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}) 전까지 대기합니다.`);
@@ -923,6 +1102,12 @@ async function runJob(job: Job, cfg: BookingConfig) {
         log(`예약 가능한 배 발견: ${hit.choice.label} (${hit.choice.value})`);
         job.result = await prepareBooking(sess, cfg, hit, log, warm.get(hit.choice.value), pre);
         log(`소요: 배 발견 후 ${Date.now() - t0}ms`);
+        if (cfg.submit) {
+          log(`입력 준비 완료 — ${job.result.ship.name}, ${job.result.species}, ${job.result.people}명, 좌석: ${job.result.seats.join(",") || "미선택"}`);
+          await submitFinal(job, cfg, sess, log);
+          log(`소요: 배 발견부터 제출 응답까지 ${Date.now() - t0}ms`);
+          return;
+        }
         job.status = "done";
         log(`입력 준비 완료 — ${job.result.ship.name}, ${job.result.species}, ${job.result.people}명, 좌석: ${job.result.seats.join(",") || "미선택"}`);
         log("테스트 모드이므로 제출하지 않았습니다.");
@@ -1071,6 +1256,9 @@ export async function prepareSunsang(sess: Session, cfg: BookingConfig, ship: Su
   }
   const payload = buildSunsangPayload(form, { people: cfg.people, name: cfg.name, phone: cfg.phone, scheduleNo: ship.scheduleNo, seats });
   const total = Number(sc.price) * cfg.people;
+  const pay = data.payment;
+  const depositTotal = Math.round((Number(sc.price) * cfg.people * (Number(pay?.deposit_rate) || 100)) / 100);
+  const deposit = pay?.bank_account ? `${pay.bank_name ?? ""} ${pay.bank_account}${pay.bank_owner ? ` (예금주 ${pay.bank_owner})` : ""}${depositTotal > 0 ? ` · ${depositTotal.toLocaleString("ko-KR")}원` : ""}`.trim() : undefined;
   return {
     ship: { uid: ship.scheduleNo, name: `${ship.name} (${sc.sdate})` },
     species: fish.join("·"),
@@ -1083,6 +1271,8 @@ export async function prepareSunsang(sess: Session, cfg: BookingConfig, ship: Su
     payload,
     unresolved: [],
     dryRun: true,
+    referer: `${sess.base}/mypage/reservation_ready/${ship.scheduleNo}`,
+    deposit,
   };
 }
 
@@ -1121,6 +1311,12 @@ async function runSunsang(job: Job, cfg: BookingConfig, sess: Session, log: (m: 
         throw e;
       }
       log(`소요: 배 발견 후 ${Date.now() - t0}ms`);
+      if (cfg.submit) {
+        log(`입력 준비 완료 — ${job.result.ship.name}, ${job.result.people}명`);
+        await submitFinal(job, cfg, sess, log);
+        log(`소요: 배 발견부터 제출 응답까지 ${Date.now() - t0}ms`);
+        return;
+      }
       job.status = "done";
       log(`입력 준비 완료 — ${job.result.ship.name}, ${job.result.people}명`);
       log("테스트 모드이므로 제출하지 않았습니다.");

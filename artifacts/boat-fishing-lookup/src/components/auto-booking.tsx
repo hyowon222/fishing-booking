@@ -12,11 +12,14 @@ type BookingResult = {
   actionUrl: string;
   payload: string;
   unresolved: string[];
+  dryRun?: boolean;
+  deposit?: string;
+  submit?: { state: 'success' | 'failed' | 'unknown'; message: string; reservationNo?: string };
 };
 type Job = {
   id: string;
   createdAt: number;
-  status: 'waiting' | 'polling' | 'done' | 'failed' | 'stopped';
+  status: 'waiting' | 'polling' | 'submitting' | 'done' | 'failed' | 'stopped';
   summary: string;
   log: string[];
   result?: BookingResult;
@@ -38,14 +41,22 @@ function loadSites(): Site[] {
   }
 }
 const KNOWN_SHIPS = ['승주호', '헌터호', '골드피싱', '으리호', '블루오션', '바다호', '영스타호', '뚜기호', '유리호', '나대세호', '아산호', '박찬호', '히트호', '헤르메스호', '만석호'];
-const STATUS_LABEL: Record<Job['status'], string> = { waiting: '오픈 대기', polling: '배 찾는 중', done: '입력 준비 완료', failed: '실패', stopped: '중지됨' };
+const STATUS_LABEL: Record<Job['status'], string> = { waiting: '오픈 대기', polling: '배 찾는 중', submitting: '제출 중', done: '입력 준비 완료', failed: '실패', stopped: '중지됨' };
 const STATUS_STYLE: Record<Job['status'], string> = {
   waiting: 'bg-amber-100 text-amber-800',
   polling: 'bg-blue-100 text-blue-800',
+  submitting: 'bg-red-100 text-red-800',
   done: 'bg-emerald-100 text-emerald-800',
   failed: 'bg-red-100 text-red-800',
   stopped: 'bg-muted text-muted-foreground',
 };
+// 실제 제출을 한 작업은 제출 결과로 라벨을 바꿔 보여 준다
+function statusInfo(j: Job): { label: string; style: string } {
+  const st = j.result?.submit?.state;
+  if (j.status === 'done' && st === 'success') return { label: '예약 접수됨', style: 'bg-emerald-100 text-emerald-800' };
+  if (j.status === 'done' && st === 'unknown') return { label: '제출함 · 확인 필요', style: 'bg-amber-100 text-amber-800' };
+  return { label: STATUS_LABEL[j.status], style: STATUS_STYLE[j.status] };
+}
 
 const LS = {
   name: 'autoBooking.name',
@@ -106,6 +117,9 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const [name, setName] = useState(() => load(LS.name));
   const [phone, setPhone] = useState(() => load(LS.phone));
   const [openAt, setOpenAt] = useState('');
+  // 실제 제출 모드 (화면을 열 때마다 항상 테스트 모드로 시작)
+  const [realMode, setRealMode] = useState(false);
+  const [realOk, setRealOk] = useState(false);
   // 일자별 예약자: same=true 이면 바로 앞 일자와 동일
   const [bookerMap, setBookerMap] = useState<Record<string, { same: boolean; name: string; phone: string }>>({});
   const bookerOf = (d: string) => bookerMap[d] ?? { same: true, name: '', phone: '' };
@@ -183,6 +197,17 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     save(LS.phone, phone);
     save(LS.ships, JSON.stringify(list));
     save('autoBooking.site', site);
+    if (realMode) {
+      if (!realOk) return setError('실제 제출을 시작하려면 아래 확인란에 체크해 주세요');
+      const lines = [...dates]
+        .sort()
+        .map((d) => `• ${d.slice(5)}  ${bookers[d.replace(/-/g, '')].name} (${bookers[d.replace(/-/g, '')].phone})`)
+        .join('\n');
+      const ok = window.confirm(
+        `실제로 예약을 제출합니다.\n\n${lines}\n\n${cur.label} · ${people}명 · ${list.length ? list.join(' > ') : '열린 배 아무거나'}\n${openAt ? `오픈 ${openAt.replace('T', ' ')} 부터` : '지금 바로 시작'}\n\n자리가 잡히면 확인 없이 바로 접수됩니다. 계속할까요?`,
+      );
+      if (!ok) return;
+    }
     setBusy(true);
     try {
       await api('/jobs', {
@@ -203,8 +228,10 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
           phone,
           bookers,
           openAt: openAt ? `${openAt}:00+09:00` : undefined, // 한국 시간 기준
+          submit: realMode, // true 일 때만 실제로 제출
         }),
       });
+      setRealOk(false); // 다음 실제 제출은 매번 다시 확인
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : '시작하지 못했습니다');
@@ -503,14 +530,43 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
 
         {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
 
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 text-sm">
+            <button
+              type="button"
+              onClick={() => {
+                setRealMode(false);
+                setRealOk(false);
+              }}
+              className={`h-9 rounded-md ${!realMode ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'}`}
+            >
+              테스트 실행
+            </button>
+            <button type="button" onClick={() => setRealMode(true)} className={`h-9 rounded-md ${realMode ? 'bg-red-600 font-medium text-white shadow-sm' : 'text-muted-foreground'}`}>
+              실제 제출
+            </button>
+          </div>
+          {realMode && (
+            <div className="space-y-2 rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-900">
+              <p className="font-medium">실제로 예약이 접수됩니다.</p>
+              <p>자리가 잡히면 확인 없이 바로 제출돼요. 접수된 예약은 예약처의 입금·취소 규정이 그대로 적용되고, 취소는 예약처에서 직접 해야 합니다. 처음에는 테스트 실행으로 먼저 확인해 보세요.</p>
+              <p>서버가 다시 시작되면(코드 반영·배포 직후 등) 대기 중인 작업이 사라질 수 있어요. 오픈 전에는 배포하지 말고, 시작한 뒤 작업 현황에 "오픈 대기"로 보이는지 확인하세요.</p>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" className="mt-0.5" checked={realOk} onChange={(e) => setRealOk(e.target.checked)} />
+                <span>예약처·날짜·인원·예약자 정보를 확인했고, 실제로 제출하는 데 동의합니다.</span>
+              </label>
+            </div>
+          )}
+        </div>
+
         <button
           type="button"
           onClick={() => void start()}
-          disabled={busy}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60"
+          disabled={busy || (realMode && !realOk)}
+          className={`flex h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-medium disabled:opacity-60 ${realMode ? 'bg-red-600 text-white' : 'bg-primary text-primary-foreground'}`}
         >
           {busy ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}
-          테스트 실행 (제출은 하지 않아요)
+          {realMode ? '실제 예약 시작 (자리를 잡으면 바로 제출)' : '테스트 실행 (제출은 하지 않아요)'}
         </button>
       </section>
 
@@ -519,11 +575,13 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
         {jobs.length === 0 && <p className="text-xs text-muted-foreground">아직 실행한 작업이 없습니다.</p>}
         {jobs.map((j) => {
           const active = j.status === 'waiting' || j.status === 'polling';
+          const info = statusInfo(j);
+          const sub = j.result?.submit;
           return (
             <div key={j.id} className="space-y-2 rounded-xl border p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[j.status]}`}>{STATUS_LABEL[j.status]}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${info.style}`}>{info.label}</span>
                   <p className="mt-1 break-words text-sm">{j.summary}</p>
                 </div>
                 {active && (
@@ -533,7 +591,21 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
                   </button>
                 )}
               </div>
-              {j.error && <p className="text-xs text-red-700">{j.error}</p>}
+              {j.error && !sub && <p className="text-xs text-red-700">{j.error}</p>}
+              {sub && (
+                <div
+                  className={`space-y-1 rounded-lg border p-2.5 text-xs ${
+                    sub.state === 'success' ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : sub.state === 'failed' ? 'border-red-300 bg-red-50 text-red-900' : 'border-amber-300 bg-amber-50 text-amber-900'
+                  }`}
+                >
+                  <p className="font-medium">{sub.state === 'success' ? '예약이 접수됐어요' : sub.state === 'failed' ? '예약이 접수되지 않았어요' : '제출은 했는데 결과를 확인하지 못했어요'}</p>
+                  {sub.reservationNo && <p>예약번호 {sub.reservationNo}</p>}
+                  <p className="break-words">{sub.message}</p>
+                  {j.result?.deposit && sub.state !== 'failed' && <p className="break-words">입금 안내(예상): {j.result.deposit}</p>}
+                  {sub.state === 'success' && <p>예약처 사이트의 예약 조회에서 이름·전화번호로 확인할 수 있어요. 입금 기한은 예약처 안내를 꼭 확인하세요.</p>}
+                  {sub.state === 'unknown' && <p>예약처 사이트의 예약 조회에서 직접 확인하세요. 접수됐다면 같은 예약을 다시 제출하지 마세요(중복 예약).</p>}
+                </div>
+              )}
               {j.result && (
                 <div className="space-y-1 rounded-lg bg-muted p-2.5 text-xs">
                   <p>
@@ -542,7 +614,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
                   <p>좌석: {j.result.seats.length ? j.result.seats.join(', ') + '번' : '선택 안 함'} ({j.result.seatNote})</p>
                   {j.result.unresolved.length > 0 && <p className="text-amber-800">확인 필요: {j.result.unresolved.join(', ')}</p>}
                   <button type="button" className="underline" onClick={() => setShowPayload((p) => ({ ...p, [j.id]: !p[j.id] }))}>
-                    제출될 내용 {showPayload[j.id] ? '숨기기' : '보기'}
+                    {j.result.dryRun === false ? '제출한 내용' : '제출될 내용'} {showPayload[j.id] ? '숨기기' : '보기'}
                   </button>
                   {showPayload[j.id] && <p className="break-all font-mono text-[10px]">{maskPayload(j.result.payload)}</p>}
                 </div>

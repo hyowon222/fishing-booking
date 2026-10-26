@@ -102076,7 +102076,15 @@ async function fetchHtml(url2, referer, ctx) {
       const startedAt = performance2.now();
       if (ctx.trace) ctx.trace.queueMs = (ctx.trace.queueMs ?? 0) + Math.round(startedAt - queuedAt);
       try {
-        return await requestSource(url2, referer, FETCH_TIMEOUT_MS);
+        for (let attempt = 1; ; attempt += 1) {
+          try {
+            return await requestSource(url2, referer, FETCH_TIMEOUT_MS);
+          } catch (error40) {
+            const msg = error40 instanceof Error ? error40.message : String(error40);
+            if (attempt >= 3 || !/연결하지 못함|연결이 끊김|시간 초과|ECONNRESET|UND_ERR/.test(msg)) throw error40;
+            await new Promise((r) => setTimeout(r, 400 * attempt));
+          }
+        }
       } finally {
         if (ctx.trace) ctx.trace.headersMs = (ctx.trace.headersMs ?? 0) + Math.round(performance2.now() - startedAt);
       }
@@ -104121,6 +104129,13 @@ function validateConfigs(raw) {
     openAt = new Date(t).toISOString();
   }
   const groupId = dates.length > 1 ? crypto2.randomBytes(4).toString("hex") : void 0;
+  const bookerOf = (date6) => {
+    const b = raw?.bookers?.[date6];
+    const n = String(b?.name ?? "").trim() || name;
+    const ph = String(b?.phone ?? "").trim() || String(raw.phone);
+    if (!/^\d{3}\d{3,4}\d{4}$/.test(ph.replace(/\D/g, ""))) throw new Error(`${date6} \uC608\uC57D\uC790 \uD734\uB300\uD3F0 \uBC88\uD638\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4`);
+    return { name: n, phone: ph };
+  };
   return dates.map((date6) => ({
     baseUrl: base,
     date: date6,
@@ -104129,8 +104144,7 @@ function validateConfigs(raw) {
     seatMode: raw?.seatMode === "none" ? "none" : "auto",
     preferredSeats: Array.isArray(raw?.preferredSeats) ? raw.preferredSeats.map(Number).filter(Number.isFinite) : [],
     sternSide: raw?.sternSide === "left" ? "left" : "right",
-    name,
-    phone: String(raw.phone),
+    ...bookerOf(date6),
     openAt,
     warmupSeconds: Math.min(60, Math.max(0, Number(raw?.warmupSeconds ?? 5))),
     pollMs: Math.max(500, Number(raw?.pollMs ?? 700)),
