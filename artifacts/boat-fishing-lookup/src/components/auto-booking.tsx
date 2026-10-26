@@ -106,6 +106,22 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const [name, setName] = useState(() => load(LS.name));
   const [phone, setPhone] = useState(() => load(LS.phone));
   const [openAt, setOpenAt] = useState('');
+  // 일자별 예약자: same=true 이면 바로 앞 일자와 동일
+  const [bookerMap, setBookerMap] = useState<Record<string, { same: boolean; name: string; phone: string }>>({});
+  const bookerOf = (d: string) => bookerMap[d] ?? { same: true, name: '', phone: '' };
+  const setBooker = (d: string, v: Partial<{ same: boolean; name: string; phone: string }>) => setBookerMap((m) => ({ ...m, [d]: { ...bookerOf(d), ...v } }));
+  // 정렬된 날짜 순서대로 실제 적용될 예약자 계산 (첫 일자는 위의 기본 예약자)
+  const effectiveBookers = () => {
+    const out: Record<string, { name: string; phone: string }> = {};
+    let prev = { name: name.trim(), phone };
+    [...dates].sort().forEach((d, i) => {
+      const b = bookerOf(d);
+      const cur = i === 0 || b.same ? prev : { name: b.name.trim(), phone: b.phone };
+      out[d.replace(/-/g, '')] = cur;
+      prev = cur;
+    });
+    return out;
+  };
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [busy, setBusy] = useState(false);
@@ -158,6 +174,11 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     if (!dates.length) return setError('날짜를 한 개 이상 추가하세요');
     if (!name.trim()) return setError('예약자명을 입력하세요');
     if (!phone.trim()) return setError('휴대폰 번호를 입력하세요');
+    const bookers = effectiveBookers();
+    for (const [d, b] of Object.entries(bookers)) {
+      if (!b.name) return setError(`${d.slice(4, 6)}/${d.slice(6)} 예약자명을 입력하세요`);
+      if (!b.phone.trim()) return setError(`${d.slice(4, 6)}/${d.slice(6)} 휴대폰 번호를 입력하세요`);
+    }
     save(LS.name, name);
     save(LS.phone, phone);
     save(LS.ships, JSON.stringify(list));
@@ -180,6 +201,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
           sternSide,
           name: name.trim(),
           phone,
+          bookers,
           openAt: openAt ? `${openAt}:00+09:00` : undefined, // 한국 시간 기준
         }),
       });
@@ -447,7 +469,32 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
             <input className={input} inputMode="tel" placeholder="010-1234-5678" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
           </div>
         </div>
-        <p className="-mt-2 text-[11px] text-muted-foreground">이름·번호는 이 기기 브라우저에만 저장됩니다. 입금자명은 사용하지 않습니다.</p>
+        <p className="-mt-2 text-[11px] text-muted-foreground">
+          {dates.length > 1 ? `위 정보는 ${[...dates].sort()[0].slice(5)} 예약자입니다. ` : ''}이름·번호는 이 기기 브라우저에만 저장됩니다. 입금자명은 사용하지 않습니다.
+        </p>
+        {dates.length > 1 && (
+          <div className="space-y-2 rounded-md border p-3">
+            <div className="text-xs font-medium">일자별 예약자</div>
+            {[...dates].sort().map((d, i) => {
+              if (i === 0) return null;
+              const b = bookerOf(d);
+              return (
+                <div key={d} className="space-y-2 rounded border p-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={b.same} onChange={(e) => setBooker(d, { same: e.target.checked })} />
+                    <b>{d.slice(5)}</b> 이전 일자와 예약자 동일
+                  </label>
+                  {!b.same && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <input className={input} placeholder="예약자명" value={b.name} onChange={(e) => setBooker(d, { name: e.target.value })} />
+                      <input className={input} inputMode="tel" placeholder="010-1234-5678" value={b.phone} onChange={(e) => setBooker(d, { phone: e.target.value })} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div>
           <label className={label}>오픈 시각 (한국 시간, 비워두면 지금 바로 시작)</label>

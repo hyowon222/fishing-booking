@@ -790,6 +790,14 @@ export function validateConfigs(raw: any): BookingConfig[] {
     openAt = new Date(t).toISOString();
   }
   const groupId = dates.length > 1 ? crypto.randomBytes(4).toString("hex") : undefined;
+  // 일자별 예약자 (없으면 공통 name/phone 사용)
+  const bookerOf = (date: string) => {
+    const b = raw?.bookers?.[date];
+    const n = String(b?.name ?? "").trim() || name;
+    const ph = String(b?.phone ?? "").trim() || String(raw.phone);
+    if (!/^\d{3}\d{3,4}\d{4}$/.test(ph.replace(/\D/g, ""))) throw new Error(`${date} 예약자 휴대폰 번호가 올바르지 않습니다`);
+    return { name: n, phone: ph };
+  };
   return dates.map((date) => ({
     baseUrl: base,
     date,
@@ -798,8 +806,7 @@ export function validateConfigs(raw: any): BookingConfig[] {
     seatMode: raw?.seatMode === "none" ? "none" : "auto",
     preferredSeats: Array.isArray(raw?.preferredSeats) ? raw.preferredSeats.map(Number).filter(Number.isFinite) : [],
     sternSide: raw?.sternSide === "left" ? "left" : "right",
-    name,
-    phone: String(raw.phone),
+    ...bookerOf(date),
     openAt,
     warmupSeconds: Math.min(60, Math.max(0, Number(raw?.warmupSeconds ?? 5))),
     pollMs: Math.max(500, Number(raw?.pollMs ?? 700)), // 선사 서버 부담을 줄이기 위해 0.5초 미만으로는 조회하지 않음

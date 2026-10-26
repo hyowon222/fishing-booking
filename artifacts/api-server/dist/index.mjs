@@ -102689,6 +102689,16 @@ async function getSchedules(startDate, endDate, options = {}) {
   if (filter4?.port) {
     sources = sources.filter((source) => source.port === filter4.port);
   }
+  if (filter4?.ship?.length) {
+    const norm2 = (value) => value.replace(/\s+/g, "").toLowerCase();
+    const wanted = filter4.ship.map(norm2).filter(Boolean);
+    const matches = (vessel) => {
+      const v = norm2(vessel);
+      return wanted.some((w) => v === w || v.includes(w) || w.includes(v));
+    };
+    const narrowed = sources.filter((source) => !source.vessels?.length || source.vessels.some(matches));
+    if (narrowed.some((source) => source.vessels?.some(matches))) sources = narrowed;
+  }
   if (sources.length === 0) {
     return { items: [], sources, failedSources: [], failures: [], pendingSources: [], partialSources: [] };
   }
@@ -103231,8 +103241,8 @@ router2.get("/fishing/schedules", async (req, res) => {
     const ship = parsed.data.ship || [];
     const regionOrPortSelected = region.length > 0 || Boolean(parsed.data.port);
     const search = await getSchedules(startDate, endDate, {
-      // 지역/항구를 골랐다면 그쪽 예약처만 조회한다. 고르지 않은("전체") 검색은 모든 예약처를 조회한다.
-      filter: regionOrPortSelected ? { region, port: parsed.data.port } : void 0,
+      // 지역/항구/선박을 골랐다면 그쪽 예약처만 조회한다. 고르지 않은("전체") 검색은 모든 예약처를 조회한다.
+      filter: regionOrPortSelected || ship.length > 0 ? { region, port: parsed.data.port, ship } : void 0,
       // 사용자가 직접 누른 검색은 필터 목록용 백그라운드 조회보다 항상 먼저 처리한다.
       priority: "high",
       softDeadlineMs: SEARCH_SOFT_DEADLINE_MS > 0 ? SEARCH_SOFT_DEADLINE_MS : void 0
@@ -103569,13 +103579,14 @@ function decodeBody(r) {
     return r.body.toString("utf8");
   }
 }
+var canonicalOrigin = /* @__PURE__ */ new Map();
 var Session = class {
   jar = /* @__PURE__ */ new Map();
   base;
   onSlow;
   // 느린 요청(1초 이상)만 기록해서 어디서 시간이 걸리는지 보여준다
   constructor(base) {
-    this.base = base;
+    this.base = canonicalOrigin.get(base) ?? base;
   }
   cookieHeader() {
     return [...this.jar].map(([k, v]) => `${k}=${v}`).join("; ");
@@ -103600,8 +103611,11 @@ var Session = class {
       this.noteSlow(m, url2, r, Date.now() - t1);
       this.store(r.setCookies);
       if ([301, 302, 303, 307, 308].includes(r.status) && r.location) {
-        url2 = new URL(r.location, url2).toString();
-        if (r.status !== 307 && r.status !== 308) {
+        const next2 = new URL(r.location, url2);
+        const cur = new URL(url2);
+        const sameTarget = next2.pathname === cur.pathname && next2.search === cur.search;
+        url2 = next2.toString();
+        if (r.status !== 307 && r.status !== 308 && !(m === "POST" && sameTarget)) {
           m = "GET";
           body = void 0;
         }
@@ -103628,7 +103642,10 @@ var Session = class {
       const f = new URL(finalUrl);
       const b = new URL(this.base);
       const root2 = (h) => h.replace(/^www\./, "");
-      if (f.origin !== b.origin && root2(f.hostname) === root2(b.hostname)) this.base = f.origin;
+      if (f.origin !== b.origin && root2(f.hostname) === root2(b.hostname)) {
+        canonicalOrigin.set(b.origin, f.origin);
+        this.base = f.origin;
+      }
     } catch {
     }
   }
@@ -103658,7 +103675,12 @@ var Session = class {
       raws.map(async (r, i) => {
         if (!isMove(r)) return { status: r.status, text: decodeBody(r) };
         const it = items[i];
-        const res = await this.request(it.method, it.path, { body: it.body, ajax: it.ajax });
+        const from = new URL(reqs[i].url);
+        const to = r.location ? new URL(r.location, from) : from;
+        const sameTarget = to.pathname === from.pathname && to.search === from.search;
+        const keep = it.method === "GET" || r.status === 307 || r.status === 308 || sameTarget;
+        this.adoptOrigin(to.toString());
+        const res = await this.request(keep ? it.method : "GET", to.toString(), { body: keep ? it.body : void 0, ajax: it.ajax });
         return { status: res.status, text: res.text };
       })
     );
@@ -103729,6 +103751,71 @@ function chooseSeats(available, n, preferred, order) {
   order.forEach(take);
   [...available].sort((a, b) => a - b).forEach(take);
   return chosen;
+}
+var FACING = [["side:r", "side:l"], ["B", "A"]];
+function layoutFromCells(cells) {
+  return cells.map((c) => ({
+    seat: c.seat,
+    line: `${c.section}:${c.side}`,
+    idx: c.index,
+    dist: c.section === "back" ? c.index * 0.01 : c.section === "side" ? 1 + (c.count - 1 - c.index) : 1e3 + c.index,
+    tag: c.side
+  }));
+}
+function layoutSunsang(seats, total) {
+  const half = Math.ceil(total / 2);
+  return seats.map((s) => s <= half ? { seat: s, line: "A", idx: s, dist: half - s, tag: "l" } : { seat: s, line: "B", idx: s, dist: s - half - 1, tag: "r" });
+}
+function chooseGrouped(layout, free, n, sternSide) {
+  if (n < 2) return null;
+  const av = layout.filter((p) => free.has(p.seat));
+  const want = sternSide === "right" ? "r" : "l";
+  const cands = [];
+  const byLine = /* @__PURE__ */ new Map();
+  for (const p of av) {
+    const l = byLine.get(p.line) ?? [];
+    l.push(p);
+    byLine.set(p.line, l);
+  }
+  for (const list of byLine.values()) {
+    list.sort((a, b) => a.idx - b.idx);
+    for (let i = 0; i + n <= list.length; i++) {
+      const w = list.slice(i, i + n);
+      if (w[n - 1].idx - w[0].idx !== n - 1) continue;
+      cands.push({ seats: w.map((x) => x.seat), maxDist: Math.max(...w.map((x) => x.dist)), kind: 0, tie: w[0].tag === want ? 0 : 1, sum: w.reduce((a, x) => a + x.dist, 0) });
+    }
+  }
+  if (n % 2 === 0) {
+    const k = n / 2;
+    for (const [xa, ya] of FACING) {
+      const xs = byLine.get(xa) ?? [];
+      const ys = byLine.get(ya) ?? [];
+      const pairs = [];
+      for (const x of xs) {
+        const y = ys.find((q) => Math.abs(q.dist - x.dist) < 1e-9);
+        if (y) pairs.push({ x, y });
+      }
+      pairs.sort((a, b) => a.x.dist - b.x.dist);
+      for (let i = 0; i + k <= pairs.length; i++) {
+        const w = pairs.slice(i, i + k);
+        let ok = true;
+        for (let j = 1; j < k; j++) if (Math.abs(w[j].x.idx - w[j - 1].x.idx) !== 1 || Math.abs(w[j].y.idx - w[j - 1].y.idx) !== 1) ok = false;
+        if (!ok) continue;
+        const all = w.flatMap((q) => [q.x, q.y]);
+        cands.push({ seats: all.map((q) => q.seat), maxDist: Math.max(...all.map((q) => q.dist)), kind: 1, tie: 0, sum: all.reduce((a, q) => a + q.dist, 0) });
+      }
+    }
+  }
+  cands.sort((a, b) => a.maxDist - b.maxDist || a.kind - b.kind || a.tie - b.tie || a.sum - b.sum);
+  return cands[0]?.seats ?? null;
+}
+function pickSeats(layout, free, n, preferred, order, sternSide) {
+  const hasPref = preferred.some((s) => free.has(s));
+  if (!hasPref) {
+    const g = chooseGrouped(layout, free, n, sternSide);
+    if (g) return { seats: g, grouped: true };
+  }
+  return { seats: chooseSeats(free, n, preferred, order), grouped: false };
 }
 function parseForm(html3, formId = "insert_form") {
   const fm = new RegExp(`<form\\b[^>]*\\bid\\s*=\\s*["']${formId}["'][^>]*>([\\s\\S]*?)</form>`, "i").exec(html3);
@@ -103830,6 +103917,18 @@ function pickShip(open, wishes) {
   }
   return null;
 }
+function fastTarget(cfg, warm) {
+  if (cfg.ships.length) {
+    for (const w of cfg.ships) {
+      const uid = guessUid(w);
+      const wm = uid ? warm.get(uid) : void 0;
+      if (uid && wm) return { uid, warm: wm };
+    }
+    return null;
+  }
+  const first2 = warm.entries().next().value;
+  return first2 ? { uid: first2[0], warm: first2[1] } : null;
+}
 var SHIP_UIDS = [
   ["\uC2B9\uC8FC", "2955"],
   ["\uD5CC\uD130", "4443"],
@@ -103879,13 +103978,20 @@ async function prewarm(sess, cfg, log, extra = []) {
   }
   return out;
 }
-async function prepareBooking(sess, cfg, found, log, warm) {
+async function prepareBooking(sess, cfg, found, log, warm, pre) {
   const { choice, wish } = found;
   const uid = choice.value;
   let type;
   let html3 = "";
   let ajaxText = "";
-  if (warm) {
+  const preOk = Boolean(warm && pre && pre.uid === uid && (pre.ajaxText.split("|^|")[2] ?? "").trim() === "\uD655\uC778" && /id\s*=\s*["']insert_form["']/.test(pre.html));
+  if (warm && pre && pre.uid === uid && !preOk) log("\uBBF8\uB9AC \uBC1B\uC740 \uD654\uBA74\uC774 \uC644\uC804\uD558\uC9C0 \uC54A\uC544 \uB2E4\uC2DC \uBC1B\uC2B5\uB2C8\uB2E4.");
+  if (warm && pre && preOk) {
+    type = warm.type;
+    html3 = pre.html;
+    ajaxText = pre.ajaxText;
+    log("\uC88C\uC11D \uD654\uBA74\uC744 \uC870\uD68C\uC640 \uD568\uAED8 \uBC1B\uC544 \uB450\uC5B4 \uCD94\uAC00 \uC694\uCCAD \uC5C6\uC774 \uC9C4\uD589\uD569\uB2C8\uB2E4.");
+  } else if (warm) {
     try {
       type = warm.type;
       const [page, ajax] = await sess.batch([
@@ -103922,9 +104028,10 @@ async function prepareBooking(sess, cfg, found, log, warm) {
   } else {
     const free = new Set(cells.filter((c) => c.available).map((c) => c.seat));
     const order = sternOrder(cells, cfg.sternSide ?? "right");
-    seats = chooseSeats(free, cfg.people, [...wish.preferredSeats ?? [], ...cfg.preferredSeats ?? []], order);
+    const pk = pickSeats(layoutFromCells(cells), free, cfg.people, [...wish.preferredSeats ?? [], ...cfg.preferredSeats ?? []], order, cfg.sternSide ?? "right");
+    seats = pk.seats;
     if (seats.length < cfg.people) throw new Error(`\uBE48 \uC88C\uC11D \uBD80\uC871: \uD544\uC694 ${cfg.people}, \uAC00\uB2A5 ${seats.length}`);
-    seatNote = `\uBE48 \uC88C\uC11D ${free.size}\uAC1C \uC911 \uC120\uBBF8 \uC6B0\uC120\uC73C\uB85C \uC120\uD0DD`;
+    seatNote = `\uBE48 \uC88C\uC11D ${free.size}\uAC1C \uC911 \uC120\uBBF8 \uC6B0\uC120\uC73C\uB85C \uC120\uD0DD${pk.grouped ? " (\uBD99\uC5B4 \uC549\uB294 \uC790\uB9AC)" : ""}`;
   }
   const form = parseForm(html3);
   if (!form) throw new Error("\uC608\uC57D \uD3FC(#insert_form)\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
@@ -104090,17 +104197,32 @@ async function runJob(job, cfg) {
       warm = await prewarm(sess, cfg, log, listSeeds);
     } catch {
     }
-    let workingSeed = null;
+    let workingSeed = fastTarget(cfg, warm)?.uid ?? null;
     let attempt = 0;
     while (Date.now() < deadline) {
       if (job.stopRequested) throw new StopError();
       attempt++;
       const t0 = Date.now();
       let open = [];
+      let pre;
       try {
-        const r = workingSeed ? await sess.request("GET", `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${workingSeed}`) : null;
+        let r = null;
+        const fast = workingSeed ? fastTarget(cfg, warm) : null;
+        const seedUrl = `${MODULE}/popup.step1.php?date=${cfg.date}&PA_N_UID=${workingSeed}`;
+        if (workingSeed && fast) {
+          const [a, b, c] = await sess.batch([
+            { method: "GET", path: seedUrl },
+            { method: "GET", path: step1Url(cfg.date, fast.uid, fast.warm.type.value) },
+            { method: "POST", path: `${MODULE}/action/popup.step1.ajax.php`, ajax: true, body: ajaxBody(cfg, fast.uid, fast.warm.type.value, fast.warm.naun) }
+          ]);
+          r = a;
+          pre = { uid: fast.uid, html: b.text, ajaxText: c.text };
+        } else if (workingSeed) {
+          r = await sess.request("GET", seedUrl);
+        }
         if (r && /id\s*=\s*["']insert_form["']/.test(r.text)) open = parseRadios(r.text, "PA_N_UID");
         else {
+          pre = void 0;
           const d = await discoverOpenShips(sess, cfg.date, workingSeed ? [workingSeed, ...seeds] : seeds);
           workingSeed = d?.seed ?? null;
           open = d?.ships ?? [];
@@ -104113,7 +104235,7 @@ async function runJob(job, cfg) {
       const hit = pickShip(open, cfg.ships);
       if (hit) {
         log(`\uC608\uC57D \uAC00\uB2A5\uD55C \uBC30 \uBC1C\uACAC: ${hit.choice.label} (${hit.choice.value})`);
-        job.result = await prepareBooking(sess, cfg, hit, log, warm.get(hit.choice.value));
+        job.result = await prepareBooking(sess, cfg, hit, log, warm.get(hit.choice.value), pre);
         log(`\uC18C\uC694: \uBC30 \uBC1C\uACAC \uD6C4 ${Date.now() - t0}ms`);
         job.status = "done";
         log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.species}, ${job.result.people}\uBA85, \uC88C\uC11D: ${job.result.seats.join(",") || "\uBBF8\uC120\uD0DD"}`);
@@ -104238,8 +104360,9 @@ async function prepareSunsang(sess, cfg, ship, log) {
     const total2 = Number(sc.seating_num) || Math.max(...free);
     const order = sunsangSternOrder([...free], total2, cfg.sternSide ?? "right");
     const prefer = cfg.seatMode === "none" ? [] : [...cfg.ships.find((w) => norm(ship.name).includes(norm(w.name)))?.preferredSeats ?? [], ...cfg.preferredSeats ?? []];
-    seats = chooseSeats(free, cfg.people, prefer, order);
-    seatNote = (cfg.seatMode === "none" ? "\uC88C\uC11D \uC120\uD0DD\uC774 \uD544\uC218\uC778 \uBC30\uB77C \uC120\uBBF8 \uCABD \uC790\uB3D9 \uC120\uD0DD" : prefer.some((x) => seats.includes(x)) ? "\uC9C0\uC815 \uC88C\uC11D \uC6B0\uC120" : "\uC120\uBBF8 \uC6B0\uC120 \uC790\uB3D9 \uC120\uD0DD") + " (\uC120\uC0C124 \uC88C\uC11D: \uBC88\uD638 \uAD6C\uC870\uB85C \uCD94\uC815)";
+    const pk = pickSeats(layoutSunsang([...free], total2), free, cfg.people, prefer, order, cfg.sternSide ?? "right");
+    seats = pk.seats;
+    seatNote = (cfg.seatMode === "none" ? "\uC88C\uC11D \uC120\uD0DD\uC774 \uD544\uC218\uC778 \uBC30\uB77C \uC120\uBBF8 \uCABD \uC790\uB3D9 \uC120\uD0DD" : prefer.some((x) => seats.includes(x)) ? "\uC9C0\uC815 \uC88C\uC11D \uC6B0\uC120" : "\uC120\uBBF8 \uC6B0\uC120 \uC790\uB3D9 \uC120\uD0DD") + (pk.grouped ? " (\uBD99\uC5B4 \uC549\uB294 \uC790\uB9AC)" : "") + " (\uC120\uC0C124 \uC88C\uC11D: \uBC88\uD638 \uAD6C\uC870\uB85C \uCD94\uC815)";
     log(`\uC88C\uC11D \uC120\uD0DD: ${seats.join(", ")}\uBC88`);
   }
   const payload = buildSunsangPayload(form, { people: cfg.people, name: cfg.name, phone: cfg.phone, scheduleNo: ship.scheduleNo, seats });
