@@ -504,7 +504,17 @@ async function fetchHtml(url: URL, referer: string, ctx: FetchContext): Promise<
       // 한 달을 여러 쪽에 나눠 받는 예약처는 쪽마다 호출되므로, 덮어쓰지 않고 더한다.
       if (ctx.trace) ctx.trace.queueMs = (ctx.trace.queueMs ?? 0) + Math.round(startedAt - queuedAt);
       try {
-        return await requestSource(url, referer, FETCH_TIMEOUT_MS);
+        // 중계 연결이 순간적으로 끊긴 경우(UND_ERR_SOCKET 등)는 한두 번 더 시도한다.
+        // 403/404 같은 사이트 응답이나 토큰 오류는 다시 해도 같으므로 재시도하지 않는다.
+        for (let attempt = 1; ; attempt += 1) {
+          try {
+            return await requestSource(url, referer, FETCH_TIMEOUT_MS);
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            if (attempt >= 3 || !/연결하지 못함|연결이 끊김|시간 초과|ECONNRESET|UND_ERR/.test(msg)) throw error;
+            await new Promise((r) => setTimeout(r, 400 * attempt));
+          }
+        }
       } finally {
         if (ctx.trace) ctx.trace.headersMs = (ctx.trace.headersMs ?? 0) + Math.round(performance.now() - startedAt);
       }
