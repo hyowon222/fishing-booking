@@ -79,6 +79,30 @@ const save = (k: string, v: string) => {
   }
 };
 
+// 예약처마다 따로 갖는 설정
+type SiteCfg = { ships: string[]; seatMode: 'auto' | 'none'; preferred: string; same: boolean; name: string; phone: string };
+const shipsKey = (id: string) => `autoBooking.ships.${id}`;
+const bookerKey = (id: string) => `autoBooking.booker.${id}`;
+function defaultSiteCfg(s: Site): SiteCfg {
+  let ships: string[] = [''];
+  try {
+    // 예전 버전은 배 목록을 하나만 저장했으므로, 마지막으로 쓴 예약처에만 그 목록을 이어 준다
+    const raw = load(shipsKey(s.id)) || (load('autoBooking.site', 'mscu') === s.id ? load(LS.ships) : '');
+    const v = JSON.parse(raw || '[]');
+    if (Array.isArray(v) && v.length) ships = v.map(String);
+  } catch {
+    /* 기본값 */
+  }
+  let b = { same: true, name: '', phone: '' };
+  try {
+    const v = JSON.parse(load(bookerKey(s.id), 'null'));
+    if (v && typeof v === 'object') b = { same: v.same !== false, name: String(v.name ?? ''), phone: String(v.phone ?? '') };
+  } catch {
+    /* 기본값 */
+  }
+  return { ships, seatMode: s.seat ? 'auto' : 'none', preferred: '', ...b };
+}
+
 function maskPayload(p: string) {
   // 화면 표시용: 이름·전화번호 값은 가림
   return p.replace(/(BI_NAME=)[^&]*/, '$1***').replace(/(BI_TEL2=)[^&]*/, '$1****').replace(/(BI_TEL3=)[^&]*/, '$1****');
@@ -89,7 +113,16 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const [needKey, setNeedKey] = useState(false);
   const [relayOk, setRelayOk] = useState<boolean | null>(null);
 
-  const [site, setSite] = useState(() => load('autoBooking.site', 'mscu'));
+  // 예약처는 여러 곳을 동시에 고를 수 있다 (곳마다 따로 진행)
+  const [sel, setSel] = useState<string[]>(() => {
+    try {
+      const v = JSON.parse(load('autoBooking.sel', '[]'));
+      if (Array.isArray(v) && v.length) return v.map(String);
+    } catch {
+      /* 저장된 값이 없으면 아래 기본값 */
+    }
+    return [load('autoBooking.site', 'mscu')];
+  });
   const [mySites, setMySites] = useState<Site[]>(loadSites);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
@@ -98,21 +131,21 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const [directUrl, setDirectUrl] = useState(() => load('autoBooking.directUrl'));
   const DIRECT: Site = { id: 'direct', label: '직접 URL 입력', url: directUrl.trim(), hint: '더피싱·선상24 주소를 바로 입력해서 예약 (저장 안 해도 돼요)', seat: false };
   const allSites = [...BUILTIN_SITES, ...mySites];
-  const cur = site === 'direct' ? DIRECT : (allSites.find((x) => x.id === site) ?? allSites[0]);
+  const siteOf = (id: string): Site | undefined => (id === 'direct' ? DIRECT : allSites.find((x) => x.id === id));
+  const selSites = sel.map(siteOf).filter((x): x is Site => !!x);
+  const toggleSite = (id: string) => {
+    const next = sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id];
+    setSel(next);
+    save('autoBooking.sel', JSON.stringify(next));
+  };
+  // 예약처별 설정 (배 우선순위·좌석·예약자). 건드리지 않은 곳은 기본값
+  const [cfgMap, setCfgMap] = useState<Record<string, SiteCfg>>({});
+  const cfgOf = (s: Site): SiteCfg => cfgMap[s.id] ?? defaultSiteCfg(s);
+  const setCfg = (s: Site, v: Partial<SiteCfg>) => setCfgMap((m) => ({ ...m, [s.id]: { ...(m[s.id] ?? defaultSiteCfg(s)), ...v } }));
   const [dates, setDates] = useState<string[]>([]);
   const [dateInput, setDateInput] = useState('');
   const [stopOthers, setStopOthers] = useState(false);
-  const [ships, setShips] = useState<string[]>(() => {
-    try {
-      const v = JSON.parse(load(LS.ships, '[]'));
-      return Array.isArray(v) && v.length ? v : [''];
-    } catch {
-      return [''];
-    }
-  });
   const [people, setPeople] = useState(2);
-  const [seatMode, setSeatMode] = useState<'auto' | 'none'>('auto');
-  const [preferred, setPreferred] = useState('');
   const [sternSide, setSternSide] = useState<'right' | 'left'>('right');
   const [name, setName] = useState(() => load(LS.name));
   const [phone, setPhone] = useState(() => load(LS.phone));
@@ -124,13 +157,18 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const [bookerMap, setBookerMap] = useState<Record<string, { same: boolean; name: string; phone: string }>>({});
   const bookerOf = (d: string) => bookerMap[d] ?? { same: true, name: '', phone: '' };
   const setBooker = (d: string, v: Partial<{ same: boolean; name: string; phone: string }>) => setBookerMap((m) => ({ ...m, [d]: { ...bookerOf(d), ...v } }));
-  // 정렬된 날짜 순서대로 실제 적용될 예약자 계산 (첫 일자는 위의 기본 예약자)
-  const effectiveBookers = () => {
+  // 예약처별로 정렬된 날짜 순서대로 실제 적용될 예약자 계산
+  //  · 공통 예약자를 쓰는 예약처: 첫 일자는 위의 기본 예약자, 이후는 일자별 설정(앞 일자와 동일/따로)
+  //  · 자기 예약자를 따로 정한 예약처: 모든 일자에 그 예약자
+  const effectiveBookers = (s: Site) => {
+    const c = cfgOf(s);
+    const common = selSites.length < 2 || c.same; // 예약처가 한 곳이면 항상 공통 예약자
+    const base = common ? { name: name.trim(), phone } : { name: c.name.trim(), phone: c.phone };
     const out: Record<string, { name: string; phone: string }> = {};
-    let prev = { name: name.trim(), phone };
+    let prev = base;
     [...dates].sort().forEach((d, i) => {
       const b = bookerOf(d);
-      const cur = i === 0 || b.same ? prev : { name: b.name.trim(), phone: b.phone };
+      const cur = !common || i === 0 || b.same ? prev : { name: b.name.trim(), phone: b.phone };
       out[d.replace(/-/g, '')] = cur;
       prev = cur;
     });
@@ -176,68 +214,92 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     return () => clearInterval(t);
   }, [refresh, adminKey]);
 
-  const setShip = (i: number, v: string) => setShips((s) => s.map((x, k) => (k === i ? v : x)));
-  const addShip = (v = '') => setShips((s) => (s.includes(v) && v ? s : s.length === 1 && !s[0] ? [v] : [...s, v]));
+  const setShip = (s: Site, i: number, v: string) => setCfg(s, { ships: cfgOf(s).ships.map((x, k) => (k === i ? v : x)) });
+  const addShip = (s: Site, v = '') => {
+    const cur = cfgOf(s).ships;
+    setCfg(s, { ships: cur.includes(v) && v ? cur : cur.length === 1 && !cur[0] ? [v] : [...cur, v] });
+  };
 
   async function start() {
     setError('');
-    const list = ships.map((s) => s.trim()).filter(Boolean);
-    const baseUrl = cur.url;
-    if (!baseUrl) return setError('예약처 주소를 입력하세요');
-    if (cur.id === 'direct') save('autoBooking.directUrl', directUrl);
+    if (!selSites.length) return setError('예약처를 한 곳 이상 선택하세요');
     if (!dates.length) return setError('날짜를 한 개 이상 추가하세요');
-    if (!name.trim()) return setError('예약자명을 입력하세요');
-    if (!phone.trim()) return setError('휴대폰 번호를 입력하세요');
-    const bookers = effectiveBookers();
-    for (const [d, b] of Object.entries(bookers)) {
-      if (!b.name) return setError(`${d.slice(4, 6)}/${d.slice(6)} 예약자명을 입력하세요`);
-      if (!b.phone.trim()) return setError(`${d.slice(4, 6)}/${d.slice(6)} 휴대폰 번호를 입력하세요`);
+    // 예약처마다 요청 내용을 만들고 빠짐없이 확인한다
+    const targets: { site: Site; cfg: SiteCfg; list: string[]; bookers: Record<string, { name: string; phone: string }> }[] = [];
+    for (const site of selSites) {
+      if (!site.url) return setError(`${site.label}: 예약처 주소를 입력하세요`);
+      const cfg = cfgOf(site);
+      const bookers = effectiveBookers(site);
+      for (const [d, b] of Object.entries(bookers)) {
+        if (!b.name) return setError(`${site.label} ${d.slice(4, 6)}/${d.slice(6)} 예약자명을 입력하세요`);
+        if (!b.phone.trim()) return setError(`${site.label} ${d.slice(4, 6)}/${d.slice(6)} 휴대폰 번호를 입력하세요`);
+      }
+      targets.push({ site, cfg, list: cfg.ships.map((x) => x.trim()).filter(Boolean), bookers });
     }
+    const running = jobs.filter((j) => ['waiting', 'polling', 'submitting'].includes(j.status)).length;
+    if (running + targets.length * dates.length > 12) {
+      return setError(`동시에 진행할 수 있는 작업은 12개까지예요. (예약처 ${targets.length}곳 × 날짜 ${dates.length}개 = ${targets.length * dates.length}개, 현재 진행 중 ${running}개)`);
+    }
+    if (selSites.some((x) => x.id === 'direct')) save('autoBooking.directUrl', directUrl);
     save(LS.name, name);
     save(LS.phone, phone);
-    save(LS.ships, JSON.stringify(list));
-    save('autoBooking.site', site);
+    save('autoBooking.sel', JSON.stringify(sel));
+    save('autoBooking.site', sel[0]);
+    for (const t of targets) {
+      save(shipsKey(t.site.id), JSON.stringify(t.list));
+      save(bookerKey(t.site.id), JSON.stringify({ same: t.cfg.same, name: t.cfg.name, phone: t.cfg.phone }));
+    }
     if (realMode) {
       if (!realOk) return setError('실제 제출을 시작하려면 아래 확인란에 체크해 주세요');
-      const lines = [...dates]
-        .sort()
-        .map((d) => `• ${d.slice(5)}  ${bookers[d.replace(/-/g, '')].name} (${bookers[d.replace(/-/g, '')].phone})`)
-        .join('\n');
+      const days = [...dates].sort();
+      const blocks = targets
+        .map((t) => {
+          const lines = days.map((d) => `  • ${d.slice(5)}  ${t.bookers[d.replace(/-/g, '')].name} (${t.bookers[d.replace(/-/g, '')].phone})`).join('\n');
+          return `■ ${t.site.label}\n${t.list.length ? t.list.join(' > ') : '열린 배 아무거나'}\n${lines}`;
+        })
+        .join('\n\n');
       const ok = window.confirm(
-        `실제로 예약을 제출합니다.\n\n${lines}\n\n${cur.label} · ${people}명 · ${list.length ? list.join(' > ') : '열린 배 아무거나'}\n${openAt ? `오픈 ${openAt.replace('T', ' ')} 부터` : '지금 바로 시작'}\n\n자리가 잡히면 확인 없이 바로 접수됩니다. 계속할까요?`,
+        `실제로 예약을 제출합니다. (${targets.length}곳)\n\n${blocks}\n\n${people}명\n${openAt ? `오픈 ${openAt.replace('T', ' ')} 부터` : '지금 바로 시작'}\n\n예약처마다 따로 진행되며, 자리가 잡히면 확인 없이 바로 접수됩니다. 계속할까요?`,
       );
       if (!ok) return;
     }
     setBusy(true);
-    try {
-      await api('/jobs', {
-        method: 'POST',
-        body: JSON.stringify({
-          baseUrl,
-          dates: dates.map((d) => d.replace(/-/g, '')),
-          stopOthersOnSuccess: stopOthers,
-          ships: list.map((n) => ({ name: n })),
-          people,
-          seatMode,
-          preferredSeats: preferred
-            .split(/[,\s]+/)
-            .map(Number)
-            .filter((n) => Number.isInteger(n) && n > 0),
-          sternSide,
-          name: name.trim(),
-          phone,
-          bookers,
-          openAt: openAt ? `${openAt}:00+09:00` : undefined, // 한국 시간 기준
-          submit: realMode, // true 일 때만 실제로 제출
-        }),
-      });
-      setRealOk(false); // 다음 실제 제출은 매번 다시 확인
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '시작하지 못했습니다');
-    } finally {
-      setBusy(false);
+    const failed: string[] = [];
+    let started = 0;
+    // 예약처마다 요청을 하나씩 보낸다 (한 곳이 실패해도 나머지는 계속 시작)
+    for (const t of targets) {
+      const first = t.bookers[[...dates].sort()[0].replace(/-/g, '')];
+      try {
+        await api('/jobs', {
+          method: 'POST',
+          body: JSON.stringify({
+            baseUrl: t.site.url,
+            dates: dates.map((d) => d.replace(/-/g, '')),
+            stopOthersOnSuccess: stopOthers,
+            ships: t.list.map((n) => ({ name: n })),
+            people,
+            seatMode: t.cfg.seatMode,
+            preferredSeats: t.cfg.preferred
+              .split(/[,\s]+/)
+              .map(Number)
+              .filter((n) => Number.isInteger(n) && n > 0),
+            sternSide,
+            name: first.name,
+            phone: first.phone,
+            bookers: t.bookers,
+            openAt: openAt ? `${openAt}:00+09:00` : undefined, // 한국 시간 기준
+            submit: realMode, // true 일 때만 실제로 제출
+          }),
+        });
+        started++;
+      } catch (e) {
+        failed.push(`${t.site.label}: ${e instanceof Error ? e.message : '시작하지 못했습니다'}`);
+      }
     }
+    if (failed.length) setError(`${started ? `${started}곳은 시작했고, ` : ''}${failed.length}곳은 시작하지 못했어요 — ${failed.join(' / ')}`);
+    if (started) setRealOk(false); // 다음 실제 제출은 매번 다시 확인
+    await refresh();
+    setBusy(false);
   }
 
   async function stop(id: string) {
@@ -259,7 +321,11 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
           <ArrowLeft size={18} />
         </button>
         <h2 className="text-lg font-semibold">자동 예약</h2>
-        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">테스트 모드 · 제출 안 함</span>
+        {realMode ? (
+          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">실제 제출 모드</span>
+        ) : (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">테스트 모드 · 제출 안 함</span>
+        )}
       </div>
 
       {relayOk === false && (
@@ -285,69 +351,74 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
 
       <section className="space-y-4 rounded-xl border p-4">
         <div>
-          <label className={label}>예약처</label>
-          <select
-            className={input}
-            value={cur.id}
-            onChange={(e) => {
-              if (e.target.value === '__add') return setAdding(true);
-              setSite(e.target.value);
-              save('autoBooking.site', e.target.value);
-              const t = allSites.find((x) => x.id === e.target.value);
-              if (t) setSeatMode(t.seat ? 'auto' : 'none');
-            }}
-          >
-            {allSites.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.label}
-              </option>
-            ))}
-            <option value="direct">직접 URL 입력</option>
-            <option value="__add">+ 예약처 추가…</option>
-          </select>
-          {cur.id === 'direct' && (
-            <div className="mt-2 space-y-2">
-              <input
-                className={input}
-                placeholder="예약처 주소 (예: http://vipfishing.kr 또는 https://xxx.sunsang24.com)"
-                value={directUrl}
-                onChange={(e) => {
-                  setDirectUrl(e.target.value);
-                  save('autoBooking.directUrl', e.target.value);
-                }}
-              />
-              <button
-                type="button"
-                className="text-[11px] underline"
-                onClick={() => {
-                  setNewUrl(directUrl);
-                  setNewSeat(seatMode === 'auto');
-                  setAdding(true);
-                }}
-              >
-                이 주소를 예약처 목록에 저장
-              </button>
-            </div>
-          )}
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {cur.hint}
-            {cur.url ? ` · ${cur.url}` : ''}
-          </p>
-          {cur.custom && (
-            <button
-              type="button"
-              className="mt-1 text-[11px] text-red-600 underline"
-              onClick={() => {
-                if (!confirm(`'${cur.label}' 예약처를 삭제할까요?`)) return;
-                const next = mySites.filter((x) => x.id !== cur.id);
-                setMySites(next);
-                save(LS_SITES, JSON.stringify(next));
-                setSite('mscu');
-              }}
-            >
-              이 예약처 삭제
-            </button>
-          )}
+          <label className={label}>예약처 (여러 곳을 골라 동시에 진행할 수 있어요)</label>
+          <div className="space-y-1.5">
+            {[...allSites, DIRECT].map((x) => {
+              const on = sel.includes(x.id);
+              return (
+                <div key={x.id} className={`rounded-lg border p-2.5 ${on ? 'border-primary bg-primary/5' : ''}`}>
+                  <div className="flex items-start gap-2">
+                    <label className="flex min-w-0 flex-1 items-start gap-2 text-sm">
+                      <input type="checkbox" className="mt-0.5" checked={on} onChange={() => toggleSite(x.id)} />
+                      <span className="min-w-0">
+                        <span className="block font-medium">{x.label}</span>
+                        <span className="block break-all text-[11px] text-muted-foreground">
+                          {x.hint}
+                          {x.url ? ` · ${x.url}` : ''}
+                        </span>
+                      </span>
+                    </label>
+                    {x.custom && (
+                      <button
+                        type="button"
+                        className="shrink-0 text-[11px] text-red-600 underline"
+                        onClick={() => {
+                          if (!confirm(`'${x.label}' 예약처를 삭제할까요?`)) return;
+                          const next = mySites.filter((y) => y.id !== x.id);
+                          setMySites(next);
+                          save(LS_SITES, JSON.stringify(next));
+                          const left = sel.filter((id) => id !== x.id);
+                          const nextSel = left.length ? left : ['mscu'];
+                          setSel(nextSel);
+                          save('autoBooking.sel', JSON.stringify(nextSel));
+                        }}
+                      >
+                        삭제
+                      </button>
+                    )}
+                  </div>
+                  {x.id === 'direct' && on && (
+                    <div className="mt-2 space-y-2">
+                      <input
+                        className={input}
+                        placeholder="예약처 주소 (예: http://vipfishing.kr 또는 https://xxx.sunsang24.com)"
+                        value={directUrl}
+                        onChange={(e) => {
+                          setDirectUrl(e.target.value);
+                          save('autoBooking.directUrl', e.target.value);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="text-[11px] underline"
+                        onClick={() => {
+                          setNewUrl(directUrl);
+                          setNewSeat(cfgOf(DIRECT).seatMode === 'auto');
+                          setAdding(true);
+                        }}
+                      >
+                        이 주소를 예약처 목록에 저장
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <button type="button" className="mt-2 flex items-center gap-1 text-xs underline" onClick={() => setAdding(true)}>
+            <Plus size={12} />
+            예약처 추가
+          </button>
           {adding && (
             <div className="mt-2 space-y-2 rounded-lg border p-3">
               <input className={input} placeholder="예약처 이름 (예: 으리호)" value={newName} onChange={(e) => setNewName(e.target.value)} />
@@ -373,8 +444,9 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
                     const next = [...mySites, { id, label: newName.trim() || new URL(url).hostname, url, hint: newSeat ? '자리 지정 선사' : '자리 지정 없는 선사', seat: newSeat, custom: true }];
                     setMySites(next);
                     save(LS_SITES, JSON.stringify(next));
-                    setSite(id);
-                    setSeatMode(newSeat ? 'auto' : 'none');
+                    const nextSel = [...sel.filter((v) => v !== 'direct'), id];
+                    setSel(nextSel);
+                    save('autoBooking.sel', JSON.stringify(nextSel));
                     setAdding(false);
                     setNewName('');
                     setNewUrl('');
@@ -389,6 +461,11 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
               </div>
               <p className="text-[11px] text-muted-foreground">이 기기 브라우저에 저장돼요. 더피싱·선상24 계열 주소를 넣으면 됩니다.</p>
             </div>
+          )}
+          {selSites.length > 1 && (
+            <p className="mt-2 rounded-lg bg-muted p-2 text-[11px] text-muted-foreground">
+              선택한 {selSites.length}곳을 동시에 진행해요. 예약처마다 작업이 따로 만들어지고 서로 영향을 주지 않으니, 같은 날짜가 두 곳에서 모두 잡히면 둘 다 접수될 수 있어요.
+            </p>
           )}
         </div>
 
@@ -422,47 +499,28 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
           {dates.length > 1 && (
             <label className="mt-2 flex items-center gap-2 text-xs">
               <input type="checkbox" checked={stopOthers} onChange={(e) => setStopOthers(e.target.checked)} />
-              한 날짜가 준비되면 나머지 날짜는 중지
+              한 날짜가 준비되면 나머지 날짜는 중지{selSites.length > 1 ? ' (예약처마다 따로 적용)' : ''}
             </label>
           )}
         </div>
 
-        <div>
-          <label className={label}>인원</label>
-          <select className={input} value={people} onChange={(e) => setPeople(Number(e.target.value))}>
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
-              <option key={n} value={n}>
-                {n}명
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className={label}>배 (위에 있을수록 우선, 비워두면 열린 배 아무거나)</label>
-          <div className="space-y-2">
-            {ships.map((s, i) => (
-              <div key={i} className="flex gap-2">
-                <span className="flex h-10 w-6 items-center justify-center text-xs text-muted-foreground">{i + 1}</span>
-                <input className={input} placeholder="배 이름 (예: 헌터호)" value={s} onChange={(e) => setShip(i, e.target.value)} />
-                {ships.length > 1 && (
-                  <button type="button" className="rounded-lg border px-2" onClick={() => setShips((x) => x.filter((_, k) => k !== i))} aria-label="삭제">
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-            ))}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={label}>인원 (모든 예약처 공통)</label>
+            <select className={input} value={people} onChange={(e) => setPeople(Number(e.target.value))}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n}명
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {(cur.id === 'mscu' ? KNOWN_SHIPS : (cur.ships ?? [])).map((k) => (
-              <button key={k} type="button" onClick={() => addShip(k)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-accent">
-                {k}
-              </button>
-            ))}
-            <button type="button" onClick={() => setShips((s) => [...s, ''])} className="flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-xs">
-              <Plus size={12} />
-              직접 추가
-            </button>
+          <div>
+            <label className={label}>선미 같은 줄이면 (자리 지정 선사)</label>
+            <select className={input} value={sternSide} onChange={(e) => setSternSide(e.target.value as 'right' | 'left')}>
+              <option value="right">오른쪽 먼저</option>
+              <option value="left">왼쪽 먼저</option>
+            </select>
           </div>
         </div>
 
@@ -471,37 +529,88 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
           <p className="h-10 rounded-lg bg-muted px-3 text-sm leading-10">쭈꾸미 · 갑오징어 · 쭈갑 (이 중 하나라도 있으면 진행)</p>
         </div>
 
-        <div>
-          <label className={label}>좌석</label>
-          <div className="grid grid-cols-2 gap-3">
-            <select className={input} value={seatMode} onChange={(e) => setSeatMode(e.target.value as 'auto' | 'none')}>
-              <option value="auto">자리 지정 선사 (지정·선미 우선)</option>
-              <option value="none">자리 지정 없는 선사</option>
-            </select>
-            <select className={input} value={sternSide} onChange={(e) => setSternSide(e.target.value as 'right' | 'left')} disabled={seatMode === 'none'}>
-              <option value="right">선미 같은 줄이면 오른쪽 먼저</option>
-              <option value="left">선미 같은 줄이면 왼쪽 먼저</option>
-            </select>
-          </div>
-          {seatMode === 'auto' && <input className={`${input} mt-2`} placeholder="원하는 좌석 번호 (선택, 예: 10, 11)" value={preferred} onChange={(e) => setPreferred(e.target.value)} />}
-        </div>
-
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={label}>예약자명</label>
+            <label className={label}>{selSites.length > 1 ? '공통 예약자명' : '예약자명'}</label>
             <input className={input} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
           </div>
           <div>
-            <label className={label}>휴대폰 번호</label>
+            <label className={label}>{selSites.length > 1 ? '공통 휴대폰 번호' : '휴대폰 번호'}</label>
             <input className={input} inputMode="tel" placeholder="010-1234-5678" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
           </div>
         </div>
         <p className="-mt-2 text-[11px] text-muted-foreground">
           {dates.length > 1 ? `위 정보는 ${[...dates].sort()[0].slice(5)} 예약자입니다. ` : ''}이름·번호는 이 기기 브라우저에만 저장됩니다. 입금자명은 사용하지 않습니다.
+          {selSites.length > 1 ? ' 예약처별 설정에서 "공통 예약자와 동일"을 끄면 그 예약처만 다른 예약자로 넣을 수 있어요.' : ''}
         </p>
+
+        {selSites.map((x, idx) => {
+          const c = cfgOf(x);
+          return (
+            <div key={x.id} className="space-y-3 rounded-lg border-2 border-primary/30 p-3">
+              <div className="text-sm font-semibold">
+                {selSites.length > 1 ? `${idx + 1}. ` : ''}
+                {x.label} 설정
+              </div>
+
+              <div>
+                <label className={label}>배 (위에 있을수록 우선, 비워두면 열린 배 아무거나)</label>
+                <div className="space-y-2">
+                  {c.ships.map((sh, i) => (
+                    <div key={i} className="flex gap-2">
+                      <span className="flex h-10 w-6 items-center justify-center text-xs text-muted-foreground">{i + 1}</span>
+                      <input className={input} placeholder="배 이름 (예: 헌터호)" value={sh} onChange={(e) => setShip(x, i, e.target.value)} />
+                      {c.ships.length > 1 && (
+                        <button type="button" className="rounded-lg border px-2" onClick={() => setCfg(x, { ships: c.ships.filter((_, k) => k !== i) })} aria-label="삭제">
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {(x.id === 'mscu' ? KNOWN_SHIPS : (x.ships ?? [])).map((k) => (
+                    <button key={k} type="button" onClick={() => addShip(x, k)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-accent">
+                      {k}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => setCfg(x, { ships: [...c.ships, ''] })} className="flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-xs">
+                    <Plus size={12} />
+                    직접 추가
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className={label}>좌석</label>
+                <select className={input} value={c.seatMode} onChange={(e) => setCfg(x, { seatMode: e.target.value as 'auto' | 'none' })}>
+                  <option value="auto">자리 지정 선사 (지정·선미 우선)</option>
+                  <option value="none">자리 지정 없는 선사</option>
+                </select>
+                {c.seatMode === 'auto' && <input className={`${input} mt-2`} placeholder="원하는 좌석 번호 (선택, 예: 10, 11)" value={c.preferred} onChange={(e) => setCfg(x, { preferred: e.target.value })} />}
+              </div>
+
+              {selSites.length > 1 && (
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={c.same} onChange={(e) => setCfg(x, { same: e.target.checked })} />
+                    공통 예약자와 동일
+                  </label>
+                  {!c.same && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <input className={input} placeholder="이 예약처 예약자명" value={c.name} onChange={(e) => setCfg(x, { name: e.target.value })} autoComplete="off" />
+                      <input className={input} inputMode="tel" placeholder="010-1234-5678" value={c.phone} onChange={(e) => setCfg(x, { phone: e.target.value })} autoComplete="off" />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
         {dates.length > 1 && (
           <div className="space-y-2 rounded-md border p-3">
-            <div className="text-xs font-medium">일자별 예약자</div>
+            <div className="text-xs font-medium">일자별 예약자{selSites.length > 1 ? ' (공통 예약자를 쓰는 예약처에 적용)' : ''}</div>
             {[...dates].sort().map((d, i) => {
               if (i === 0) return null;
               const b = bookerOf(d);
@@ -550,6 +659,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
             <div className="space-y-2 rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-900">
               <p className="font-medium">실제로 예약이 접수됩니다.</p>
               <p>자리가 잡히면 확인 없이 바로 제출돼요. 접수된 예약은 예약처의 입금·취소 규정이 그대로 적용되고, 취소는 예약처에서 직접 해야 합니다. 처음에는 테스트 실행으로 먼저 확인해 보세요.</p>
+              {selSites.length > 1 && <p className="font-medium">예약처 {selSites.length}곳이 각각 따로 제출됩니다. 같은 날짜가 두 곳 이상에서 잡히면 모두 접수되니, 꼭 필요한 곳만 고르세요.</p>}
               <p>서버가 다시 시작되면(코드 반영·배포 직후 등) 대기 중인 작업이 사라질 수 있어요. 오픈 전에는 배포하지 말고, 시작한 뒤 작업 현황에 "오픈 대기"로 보이는지 확인하세요.</p>
               <label className="flex items-start gap-2">
                 <input type="checkbox" className="mt-0.5" checked={realOk} onChange={(e) => setRealOk(e.target.checked)} />
