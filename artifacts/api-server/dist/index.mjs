@@ -103611,7 +103611,7 @@ var Session = class {
     let m = method;
     let body = opts.body;
     for (let hop = 0; hop < 5; hop++) {
-      const headers = {};
+      const headers = { ...opts.headers ?? {} };
       if (m === "POST") headers["content-type"] = "application/x-www-form-urlencoded; charset=UTF-8";
       if (opts.ajax) headers["x-requested-with"] = "XMLHttpRequest";
       const t1 = Date.now();
@@ -104056,7 +104056,8 @@ async function prepareBooking(sess, cfg, found, log, warm, pre) {
     actionUrl: new URL(form.action, sess.base).toString(),
     payload,
     unresolved,
-    dryRun: true
+    dryRun: true,
+    referer: new URL(step1Url(cfg.date, uid, type.value), sess.base).toString()
   };
 }
 function seatValuesFor(html3, date6, uid, chosen) {
@@ -104069,6 +104070,129 @@ function seatValuesFor(html3, date6, uid, chosen) {
     out.push(chosen.has(no) ? String(no) : "");
   }
   return out;
+}
+var decodeHtml = (s) => s.replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&amp;/g, "&");
+function pageNotes(text4) {
+  const alerts = [...text4.matchAll(/alert\(\s*(["'`])((?:\\[\s\S]|(?!\1)[^\\])*)\1\s*\)/g)].map((m) => decodeHtml(m[2]).replace(/\\n/g, " ").replace(/\\(["'`/\\])/g, "$1").replace(/\s+/g, " ").trim()).filter(Boolean);
+  const plain = decodeHtml(text4.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+  return { alerts, plain };
+}
+function keyInfo(plain) {
+  const hits = [...plain.matchAll(/(예약\s*번호|입금\s*(?:계좌|금액|기한|은행)|계좌\s*번호|예금주)[\s:：]*\S.{0,40}/g)].map((m) => m[0].trim());
+  return hits.length ? hits.slice(0, 4).join(" / ") : plain.slice(0, 150);
+}
+var FAIL_WORDS = /(실패|오류|에러|불가|마감|초과|부족|이미|중복|잘못|제한|입력해|선택해|동의|확인해|없습니다|않습니다|못했|안됩니다|안 됩니다|거부)/;
+var OK_WORDS = /(완료|접수|예약되|예약 되|등록되|신청되)/;
+function judgeThefishing(finalUrl, text4) {
+  const { alerts, plain } = pageNotes(text4);
+  const said = alerts.join(" / ");
+  const jump = /(?:location(?:\.href|\.replace)?|href)\s*(?:=|\()\s*["']([^"']*popup\.step2\.php[^"']*)["']/i.exec(text4)?.[1] ?? /url=([^"'>\s]*popup\.step2\.php[^"'>\s]*)/i.exec(text4)?.[1];
+  if (/popup\.step2\.php/i.test(finalUrl)) return { state: "success", message: said };
+  if (jump) return { state: "success", message: said, next: jump };
+  if (alerts.length) {
+    const bad = FAIL_WORDS.test(said);
+    const good = OK_WORDS.test(said);
+    return { state: bad && !good ? "failed" : good && !bad ? "success" : "unknown", message: said };
+  }
+  return { state: "unknown", message: plain ? `\uC0AC\uC774\uD2B8 \uC751\uB2F5: ${plain.slice(0, 120)}` : "\uC0AC\uC774\uD2B8 \uC751\uB2F5\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4" };
+}
+async function submitThefishing(sess, result, log) {
+  const r = await sess.request("POST", result.actionUrl, { body: result.payload, referer: result.referer, headers: { origin: new URL(sess.base).origin } });
+  const v = judgeThefishing(r.url, r.text);
+  log(`\uC81C\uCD9C \uC751\uB2F5: HTTP ${r.status} \xB7 ${new URL(r.url).pathname.split("/").slice(-1)[0] || "/"}${v.message ? ` \xB7 ${v.message.slice(0, 160)}` : ""}`);
+  let message = v.message;
+  if (v.state === "success") {
+    try {
+      const page = /popup\.step2\.php/i.test(r.url) ? r.text : v.next ? (await sess.request("GET", new URL(v.next, r.url).toString(), { referer: r.url })).text : "";
+      const info = keyInfo(pageNotes(page).plain);
+      if (info) message = [message, info].filter(Boolean).join(" \xB7 ");
+    } catch {
+    }
+  } else if (v.state === "unknown" && result.seats.length && result.referer) {
+    try {
+      const again = await sess.request("GET", result.referer);
+      const mine = parseSeats(again.text).filter((c) => result.seats.includes(c.seat));
+      if (mine.length === result.seats.length) {
+        const taken = mine.filter((c) => !c.available).length;
+        if (taken === mine.length) message += " (\uC120\uD0DD\uD55C \uC88C\uC11D\uC774 \uC774\uC81C \uC120\uD0DD \uBD88\uAC00\uB85C \uBC14\uB00C\uC5C8\uC5B4\uC694 \u2014 \uC811\uC218\uB410\uC744 \uAC00\uB2A5\uC131\uC774 \uB192\uC2B5\uB2C8\uB2E4)";
+        else if (taken === 0) message += " (\uC120\uD0DD\uD55C \uC88C\uC11D\uC774 \uC544\uC9C1 \uBE44\uC5B4 \uC788\uC5B4\uC694 \u2014 \uC811\uC218\uB418\uC9C0 \uC54A\uC558\uC744 \uAC00\uB2A5\uC131\uC774 \uC788\uC2B5\uB2C8\uB2E4)";
+      }
+    } catch {
+    }
+  }
+  return { state: v.state, message: message || "\uC0AC\uC774\uD2B8\uAC00 \uBCC4\uB3C4 \uC548\uB0B4 \uBB38\uAD6C\uB97C \uC8FC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4", httpStatus: r.status, at: Date.now() };
+}
+async function submitSunsang24(sess, result, log) {
+  const r = await sess.request("POST", result.actionUrl, {
+    body: result.payload,
+    ajax: true,
+    referer: result.referer,
+    headers: { origin: new URL(sess.base).origin, accept: "application/json, text/javascript, */*; q=0.01" }
+  });
+  let j = null;
+  try {
+    j = JSON.parse(r.text.replace(/^\uFEFF/, "").trim());
+  } catch {
+  }
+  log(`\uC81C\uCD9C \uC751\uB2F5: HTTP ${r.status} \xB7 ${j ? JSON.stringify(j).slice(0, 200) : r.text.replace(/\s+/g, " ").slice(0, 120)}`);
+  if (j && typeof j === "object" && j.reservation_no !== void 0 && j.reservation_no !== null && String(j.reservation_no) !== "") {
+    return { state: "success", message: j.message ? String(j.message) : "\uC608\uC57D\uC774 \uC811\uC218\uB418\uC5C8\uC2B5\uB2C8\uB2E4", reservationNo: String(j.reservation_no), httpStatus: r.status, at: Date.now() };
+  }
+  if (j && typeof j === "object" && j.message) {
+    return { state: "failed", message: `${j.message}${j.code ? ` (\uCF54\uB4DC ${j.code})` : ""}`, httpStatus: r.status, at: Date.now() };
+  }
+  return { state: "unknown", message: `\uC0AC\uC774\uD2B8 \uC751\uB2F5\uC744 \uD574\uC11D\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${pageNotes(r.text).plain.slice(0, 120) || "\uB0B4\uC6A9 \uC5C6\uC74C"}`, httpStatus: r.status, at: Date.now() };
+}
+var groupSubmit = /* @__PURE__ */ new Map();
+async function submitFinal(job, cfg, sess, log) {
+  const result = job.result;
+  const gid = cfg.stopOthersOnSuccess ? cfg.groupId : void 0;
+  if (gid) {
+    while (groupSubmit.get(gid) === "busy") {
+      if (job.stopRequested) throw new StopError();
+      await sleep(100);
+    }
+    if (groupSubmit.get(gid) === "done") {
+      job.status = "stopped";
+      log("\uAC19\uC740 \uBB36\uC74C\uC758 \uB2E4\uB978 \uB0A0\uC9DC\uAC00 \uC774\uBBF8 \uC608\uC57D\uB418\uC5B4, \uC774 \uB0A0\uC9DC\uB294 \uC81C\uCD9C\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
+      return;
+    }
+  }
+  if (job.stopRequested) throw new StopError();
+  if (gid) groupSubmit.set(gid, "busy");
+  let keep = false;
+  try {
+    job.status = "submitting";
+    log("\uC2E4\uC81C \uC81C\uCD9C: \uC608\uC57D \uC694\uCCAD\uC744 \uBCF4\uB0C5\uB2C8\uB2E4. (\uD55C \uBC88\uB9CC \uBCF4\uB0B4\uBA70 \uC790\uB3D9\uC73C\uB85C \uB2E4\uC2DC \uBCF4\uB0B4\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4)");
+    const t0 = Date.now();
+    let out;
+    try {
+      out = cfg.kind === "sunsang24" ? await submitSunsang24(sess, result, log) : await submitThefishing(sess, result, log);
+    } catch (e) {
+      const msg = e?.message ?? String(e);
+      out = /중계기 오류\((auth|config)\)/.test(msg) ? { state: "failed", message: `\uC694\uCCAD\uC744 \uBCF4\uB0B4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${msg}`, at: Date.now() } : { state: "unknown", message: `\uC751\uB2F5\uC744 \uBC1B\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 (${msg}). \uC811\uC218\uB410\uB294\uC9C0 \uC608\uC57D\uCC98\uC5D0\uC11C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694.`, at: Date.now() };
+    }
+    result.dryRun = false;
+    result.submit = out;
+    log(`\uC81C\uCD9C \uC18C\uC694 ${Date.now() - t0}ms`);
+    if (out.state === "failed") {
+      job.status = "failed";
+      job.error = `\uC81C\uCD9C\uC774 \uBC1B\uC544\uB4E4\uC5EC\uC9C0\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4: ${out.message}`;
+      log(job.error);
+      return;
+    }
+    keep = true;
+    job.status = "done";
+    log(out.state === "success" ? `\uC608\uC57D\uC774 \uC811\uC218\uB418\uC5C8\uC2B5\uB2C8\uB2E4.${out.reservationNo ? ` \uC608\uC57D\uBC88\uD638 ${out.reservationNo}` : ""}` : "\uC81C\uCD9C\uC740 \uD588\uC9C0\uB9CC \uC811\uC218 \uC5EC\uBD80\uB97C \uD655\uC778\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC608\uC57D\uCC98 \uC0AC\uC774\uD2B8\uC5D0\uC11C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694.");
+    if (gid) {
+      for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job.id) stopJob(o.id);
+    }
+  } finally {
+    if (gid) {
+      if (keep) groupSubmit.set(gid, "done");
+      else groupSubmit.delete(gid);
+    }
+  }
 }
 var jobs = /* @__PURE__ */ new Map();
 var MAX_JOBS = 40;
@@ -104153,17 +104277,32 @@ function validateConfigs(raw) {
     seedUids: Array.isArray(raw?.seedUids) && raw.seedUids.length ? raw.seedUids.map(String) : void 0,
     kind: kindOf(base),
     groupId,
-    stopOthersOnSuccess: Boolean(raw?.stopOthersOnSuccess) && dates.length > 1
+    stopOthersOnSuccess: Boolean(raw?.stopOthersOnSuccess) && dates.length > 1,
+    submit: raw?.submit === true
   }));
 }
+var liveSubmits = /* @__PURE__ */ new Map();
+var submitKey = (c) => `${c.baseUrl}|${c.date}|${c.name}|${c.phone.replace(/\D/g, "")}`;
 function startJobs(cfgs) {
-  const active = [...jobs.values()].filter((j) => ["waiting", "polling"].includes(j.status)).length;
+  const active = [...jobs.values()].filter((j) => ["waiting", "polling", "submitting"].includes(j.status)).length;
   if (active + cfgs.length > MAX_ACTIVE) throw new Error(`\uB3D9\uC2DC\uC5D0 \uC9C4\uD589\uD560 \uC218 \uC788\uB294 \uC791\uC5C5\uC740 ${MAX_ACTIVE}\uAC1C\uAE4C\uC9C0\uC785\uB2C8\uB2E4 (\uD604\uC7AC ${active}\uAC1C \uC9C4\uD589 \uC911)`);
-  return cfgs.map(startJob);
+  for (const c of cfgs) {
+    if (!c.submit) continue;
+    const id = liveSubmits.get(submitKey(c));
+    const j = id ? jobs.get(id) : void 0;
+    if (j && ["waiting", "polling", "submitting"].includes(j.status)) {
+      throw new Error(`${c.date.slice(4, 6)}/${c.date.slice(6)} \uAC19\uC740 \uC608\uC57D\uC790\uB85C \uC9C4\uD589 \uC911\uC778 \uC2E4\uC81C \uC81C\uCD9C \uC791\uC5C5\uC774 \uC774\uBBF8 \uC788\uC5B4\uC694. \uBA3C\uC800 \uC911\uC9C0\uD558\uAC70\uB098 \uB05D\uB09C \uB4A4\uC5D0 \uB2E4\uC2DC \uC2DC\uC791\uD558\uC138\uC694.`);
+    }
+  }
+  return cfgs.map((c) => {
+    const job = startJob(c);
+    if (c.submit) liveSubmits.set(submitKey(c), job.id);
+    return job;
+  });
 }
 function startJob(cfg) {
   if (jobs.size >= MAX_JOBS) {
-    const oldest = [...jobs.values()].filter((j) => !["waiting", "polling"].includes(j.status)).sort((a, b) => a.createdAt - b.createdAt)[0];
+    const oldest = [...jobs.values()].filter((j) => !["waiting", "polling", "submitting"].includes(j.status)).sort((a, b) => a.createdAt - b.createdAt)[0];
     if (oldest) jobs.delete(oldest.id);
   }
   const id = crypto2.randomBytes(6).toString("hex");
@@ -104171,7 +104310,7 @@ function startJob(cfg) {
     id,
     createdAt: Date.now(),
     status: "waiting",
-    summary: `${cfg.date.slice(4, 6)}/${cfg.date.slice(6)} ${new URL(cfg.baseUrl).hostname.replace(/^www\./, "")} \xB7 ${cfg.ships.length ? cfg.ships.map((s) => s.name || s.uid).join(" > ") : "\uC5F4\uB9B0 \uBC30 \uC544\uBB34\uAC70\uB098"} \xB7 ${cfg.people}\uBA85`,
+    summary: `${cfg.submit ? "[\uC2E4\uC81C \uC81C\uCD9C] " : ""}${cfg.date.slice(4, 6)}/${cfg.date.slice(6)} ${new URL(cfg.baseUrl).hostname.replace(/^www\./, "")} \xB7 ${cfg.ships.length ? cfg.ships.map((s) => s.name || s.uid).join(" > ") : "\uC5F4\uB9B0 \uBC30 \uC544\uBB34\uAC70\uB098"} \xB7 ${cfg.people}\uBA85`,
     groupId: cfg.groupId,
     log: [],
     stopRequested: false
@@ -104188,7 +104327,7 @@ async function runJob(job, cfg) {
   const sess = new Session(cfg.baseUrl);
   sess.onSlow = log;
   try {
-    log("\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC: \uCD5C\uC885 \uC81C\uCD9C\uC740 \uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
+    log(cfg.submit ? "\uC2E4\uC81C \uC81C\uCD9C \uBAA8\uB4DC: \uC790\uB9AC\uB97C \uC7A1\uC73C\uBA74 \uBC14\uB85C \uC81C\uCD9C\uD569\uB2C8\uB2E4." : "\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC: \uCD5C\uC885 \uC81C\uCD9C\uC740 \uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
     if (cfg.openAt) {
       const target = new Date(cfg.openAt).getTime() - (cfg.warmupSeconds ?? 5) * 1e3;
       log(`\uC624\uD508(${new Date(cfg.openAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}) \uC804\uAE4C\uC9C0 \uB300\uAE30\uD569\uB2C8\uB2E4.`);
@@ -104251,6 +104390,12 @@ async function runJob(job, cfg) {
         log(`\uC608\uC57D \uAC00\uB2A5\uD55C \uBC30 \uBC1C\uACAC: ${hit.choice.label} (${hit.choice.value})`);
         job.result = await prepareBooking(sess, cfg, hit, log, warm.get(hit.choice.value), pre);
         log(`\uC18C\uC694: \uBC30 \uBC1C\uACAC \uD6C4 ${Date.now() - t0}ms`);
+        if (cfg.submit) {
+          log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.species}, ${job.result.people}\uBA85, \uC88C\uC11D: ${job.result.seats.join(",") || "\uBBF8\uC120\uD0DD"}`);
+          await submitFinal(job, cfg, sess, log);
+          log(`\uC18C\uC694: \uBC30 \uBC1C\uACAC\uBD80\uD130 \uC81C\uCD9C \uC751\uB2F5\uAE4C\uC9C0 ${Date.now() - t0}ms`);
+          return;
+        }
         job.status = "done";
         log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.species}, ${job.result.people}\uBA85, \uC88C\uC11D: ${job.result.seats.join(",") || "\uBBF8\uC120\uD0DD"}`);
         log("\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC\uC774\uBBC0\uB85C \uC81C\uCD9C\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
@@ -104381,6 +104526,9 @@ async function prepareSunsang(sess, cfg, ship, log) {
   }
   const payload = buildSunsangPayload(form, { people: cfg.people, name: cfg.name, phone: cfg.phone, scheduleNo: ship.scheduleNo, seats });
   const total = Number(sc.price) * cfg.people;
+  const pay = data2.payment;
+  const depositTotal = Math.round(Number(sc.price) * cfg.people * (Number(pay?.deposit_rate) || 100) / 100);
+  const deposit = pay?.bank_account ? `${pay.bank_name ?? ""} ${pay.bank_account}${pay.bank_owner ? ` (\uC608\uAE08\uC8FC ${pay.bank_owner})` : ""}${depositTotal > 0 ? ` \xB7 ${depositTotal.toLocaleString("ko-KR")}\uC6D0` : ""}`.trim() : void 0;
   return {
     ship: { uid: ship.scheduleNo, name: `${ship.name} (${sc.sdate})` },
     species: fish.join("\xB7"),
@@ -104392,7 +104540,9 @@ async function prepareSunsang(sess, cfg, ship, log) {
     actionUrl: new URL("/mypage/reservation_end", sess.base).toString(),
     payload,
     unresolved: [],
-    dryRun: true
+    dryRun: true,
+    referer: `${sess.base}/mypage/reservation_ready/${ship.scheduleNo}`,
+    deposit
   };
 }
 var SkipShip = class extends Error {
@@ -104428,6 +104578,12 @@ async function runSunsang(job, cfg, sess, log) {
         throw e;
       }
       log(`\uC18C\uC694: \uBC30 \uBC1C\uACAC \uD6C4 ${Date.now() - t0}ms`);
+      if (cfg.submit) {
+        log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.people}\uBA85`);
+        await submitFinal(job, cfg, sess, log);
+        log(`\uC18C\uC694: \uBC30 \uBC1C\uACAC\uBD80\uD130 \uC81C\uCD9C \uC751\uB2F5\uAE4C\uC9C0 ${Date.now() - t0}ms`);
+        return;
+      }
       job.status = "done";
       log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.people}\uBA85`);
       log("\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC\uC774\uBBC0\uB85C \uC81C\uCD9C\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
