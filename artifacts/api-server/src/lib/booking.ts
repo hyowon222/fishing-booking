@@ -100,23 +100,6 @@ type RawResponse = { status: number; location: string; contentType: string; setC
 
 const relayEnabled = () => Boolean(process.env.BOOKING_RELAY_URL && process.env.BOOKING_RELAY_TOKEN);
 
-// 닷홈 중계기 IP 를 막는 사이트(더피싱 thefishing.kr 등)는 중계기를 건너뛰고 서버에서 직접 요청한다.
-// 환경변수 BOOKING_DIRECT_HOSTS (쉼표 구분)로 바꿀 수 있고, "none" 이면 모두 중계기를 쓴다.
-const directHosts = () =>
-  (process.env.BOOKING_DIRECT_HOSTS ?? "thefishing.kr")
-    .split(",")
-    .map((x) => x.trim().toLowerCase())
-    .filter((x) => x && x !== "none");
-const isDirectHost = (url: string) => {
-  try {
-    const h = new URL(url).hostname.toLowerCase();
-    return directHosts().some((d) => h === d || h.endsWith("." + d));
-  } catch {
-    return false;
-  }
-};
-const viaRelay = (url: string) => relayEnabled() && !isDirectHost(url);
-
 // 중계기와 암호화 통신 (AES-256-GCM). payload 에는 단일 요청 또는 batch 가 들어갑니다.
 async function relayExchange(payload: Record<string, unknown>): Promise<any> {
   const relayUrl = process.env.BOOKING_RELAY_URL as string;
@@ -162,7 +145,7 @@ async function relayCall(
   method: "GET" | "POST",
   opts: { body?: string; headers?: Record<string, string>; referer?: string; cookie?: string },
 ): Promise<RawResponse> {
-  if (viaRelay(url)) {
+  if (relayEnabled()) {
     const p = await relayExchange({ url, method, headers: opts.headers ?? {}, body: opts.body ?? "", referer: opts.referer ?? "", cookie: opts.cookie ?? "" });
     return toRaw(p);
   }
@@ -281,7 +264,7 @@ export class Session {
     });
     let raws: RawResponse[];
     const tb = Date.now();
-    if (viaRelay(this.base)) {
+    if (relayEnabled()) {
       const out = await relayExchange({ batch: reqs, cookie: this.cookieHeader() });
       raws = (out.results as any[]).map((p) => {
         if (p.error) throw new Error(`중계기 오류(${p.error}): ${p.message ?? ""}`);
