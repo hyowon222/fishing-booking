@@ -17,6 +17,7 @@ import {
 } from "./fetch-scheduler";
 import { logger } from "./logger";
 import { getRelay, isConnectFailure } from "./relay";
+import { homeAgentOnline, homeFetch, homeForget, homeLearn, homePrefers } from "./home-agent";
 
 export type FishingSchedule = {
   id: string;
@@ -122,7 +123,7 @@ type FetchTrace = {
   partialError?: string;
   missingFrom?: string;
   // 이 조회에서 서울 중계를 거친 요청이 한 번이라도 있었으면 "relay" (relay.ts)
-  via?: "relay";
+  via?: "relay" | "home";
 };
 type FetchContext = { priority: FetchPriority; tag?: string; trace?: FetchTrace };
 const USER_FETCH_CONTEXT: FetchContext = { priority: "high" };
@@ -439,7 +440,7 @@ function describeFetchFailure(error: unknown): string {
   return code ? `${label} ${code}` : `${label} ${raw.replace(/[()]/g, "").slice(0, 60)}`.trim();
 }
 
-type SourceReply = { response: Response; via: "direct" | "relay" };
+type SourceReply = { response: Response; via: "direct" | "relay" | "home" };
 // 서울 중계를 거쳐 받은 응답의 오류 문구 끝에 붙이는 표시 (summarizeFailureReason이 알아본다).
 const RELAY_VIA_NOTE = " 서울 중계 경유";
 
@@ -451,6 +452,15 @@ const RELAY_VIA_NOTE = " 서울 중계 경유";
  * 사람이 읽을 수 있는 한국어 Error로 바꿔 던진다.
  */
 async function requestSource(url: URL, referer: string, timeoutMs: number): Promise<SourceReply> {
+  // 집 PC 중계: 직접 연결이 안 되어 집 PC로만 열렸던 사이트는 곧바로 집 PC로 (PC가 안 되면 아래 일반 순서로)
+  if (homePrefers(url.hostname)) {
+    try {
+      return { response: await homeFetch(url, referer, timeoutMs), via: "home" };
+    } catch (error) {
+      homeForget(url.hostname);
+      logger.warn({ host: url.hostname, error: error instanceof Error ? error.message : String(error) }, `[집 PC 중계] ${url.hostname}: 집 PC 조회 실패, 일반 순서로 다시 시도합니다`);
+    }
+  }
   const relay = getRelay();
   if (relay?.prefers(url.hostname)) {
     try {
@@ -471,13 +481,26 @@ async function requestSource(url: URL, referer: string, timeoutMs: number): Prom
   }
 
   const blocked = direct ? direct.status === 403 : isConnectFailure(directError);
+  const why = direct ? "HTTP 403" : describeFetchFailure(directError);
+
+  // 직접 연결이 막혔고 집 PC가 연결되어 있으면 집 PC로 먼저 시도한다 (한국 가정용 인터넷)
+  if (blocked && homeAgentOnline()) {
+    try {
+      const response = await homeFetch(url, referer, timeoutMs);
+      await direct?.body?.cancel().catch(() => undefined);
+      if (response.ok) homeLearn(url.hostname, why);
+      return { response, via: "home" };
+    } catch (error) {
+      logger.warn({ host: url.hostname, direct: why, error: error instanceof Error ? error.message : String(error) }, `[집 PC 중계] ${url.hostname}: 직접 연결 실패(${why}) 뒤 집 PC도 실패: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   if (!relay || !blocked) {
     if (direct) return { response: direct, via: "direct" };
     throw new Error(`예약 원본에 연결하지 못했습니다: ${describeFetchFailure(directError)}`);
   }
 
   // 직접 연결이 막혔다 → 서울 중계로 한 번 더.
-  const why = direct ? "HTTP 403" : describeFetchFailure(directError);
   await direct?.body?.cancel().catch(() => undefined);
   let response: Response;
   try {
@@ -522,11 +545,11 @@ async function fetchHtml(url: URL, referer: string, ctx: FetchContext): Promise<
     ctx.priority,
     ctx.tag,
   );
-  if (via === "relay" && ctx.trace) ctx.trace.via = "relay";
+  if (via !== "direct" && ctx.trace) ctx.trace.via = via === "home" ? "home" : "relay";
   if (!response.ok) {
     // 본문을 읽지 않고 그냥 버리면 연결이 풀리지 않은 채 남을 수 있어서 명시적으로 닫는다.
     await response.body?.cancel().catch(() => undefined);
-    throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.${via === "relay" ? RELAY_VIA_NOTE : ""}`);
+    throw new Error(`예약 원본이 ${response.status} 상태를 반환했습니다.${via === "relay" ? RELAY_VIA_NOTE : via === "home" ? " 집 PC 중계 경유" : ""}`);
   }
   const bodyStartedAt = performance.now();
   let html: string;
@@ -957,7 +980,7 @@ function describeTiming(timing: MonthTiming): string {
     timing.bodyMs !== undefined ? `본문 ${timing.bodyMs}` : null,
     timing.parseMs !== undefined ? `파싱 ${timing.parseMs}` : null,
     timing.bytes !== undefined ? `${Math.round(timing.bytes / 1024)}KB` : null,
-    timing.via === "relay" ? "서울 중계" : null,
+    timing.via === "relay" ? "서울 중계" : timing.via === "home" ? "집 PC 중계" : null,
     timing.blocks !== undefined
       ? `달력 ${timing.blocks}일 · ${timing.items ?? 0}건${timing.pages && timing.pages > 1 ? ` · ${timing.pages}쪽` : ""}`
       : null,

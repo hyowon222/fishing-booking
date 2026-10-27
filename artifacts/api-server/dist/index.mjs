@@ -103301,10 +103301,17 @@ router2.get("/fishing/schedules", async (req, res) => {
     });
   }
 });
-router2.post("/fishing/cache/refresh", (_req, res) => {
+router2.post("/fishing/cache/refresh", async (_req, res) => {
   clearFishingSourceCache();
   resetSourceHealth();
-  res.json({ ok: true });
+  const today = /* @__PURE__ */ new Date();
+  const startDate = today.toISOString().slice(0, 10);
+  const endDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 2, 0)).toISOString().slice(0, 10);
+  const configuredSources = (await listConfiguredSources()).filter((source) => source.enabled);
+  if (configuredSources.length > 0) {
+    refreshFilterOptionsInBackground(startDate, endDate);
+  }
+  res.json({ ok: true, refreshing: true });
 });
 router2.get("/fishing/options", async (req, res) => {
   try {
@@ -103312,9 +103319,6 @@ router2.get("/fishing/options", async (req, res) => {
     const startDate = today.toISOString().slice(0, 10);
     const endDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 2, 0)).toISOString().slice(0, 10);
     const configuredSources = (await listConfiguredSources()).filter((source) => source.enabled);
-    if (configuredSources.length > 0) {
-      refreshFilterOptionsInBackground(startDate, endDate);
-    }
     const options = getFilterOptions([], configuredSources.map(toSourceConfig));
     const parsedOptions = GetFishingFilterOptionsResponse.parse({
       ...options,

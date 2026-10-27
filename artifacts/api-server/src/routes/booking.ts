@@ -6,6 +6,7 @@
 
 import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
+import { homeAgentStatus } from "../lib/home-agent";
 import { getJob, listJobs, startJobs, stopJob, validateConfigs } from "../lib/booking";
 
 export const bookingRouter = Router();
@@ -23,6 +24,7 @@ bookingRouter.get("/booking/status", guard, (_req, res) => {
   res.json({
     mode: "test", // 최종 제출 기능은 아직 없음
     relay: Boolean(process.env.BOOKING_RELAY_URL && process.env.BOOKING_RELAY_TOKEN),
+    home: homeAgentStatus(),
     keyRequired: Boolean(process.env.BOOKING_ADMIN_KEY),
   });
 });

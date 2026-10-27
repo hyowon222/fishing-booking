@@ -12,6 +12,8 @@
 // 둘 다 없으면 서버에서 직접 요청합니다. (개발·시험용)
 
 import crypto from "node:crypto";
+import { homeAgentOnline, homeCall, homePrefers } from "./home-agent";
+import { normalizeHost } from "./relay";
 
 // ------------------------------------------------------------------ 타입
 export type ShipWish = { name: string; uid?: string; preferredSeats?: number[] };
@@ -100,6 +102,26 @@ type RawResponse = { status: number; location: string; contentType: string; setC
 
 const relayEnabled = () => Boolean(process.env.BOOKING_RELAY_URL && process.env.BOOKING_RELAY_TOKEN);
 
+// 집 PC 중계: 연결되어 있으면 (HOME_AGENT_HOSTS 를 정했다면 그 사이트만) 닷홈 중계기 대신 집 PC로 요청을 보낸다.
+// 닷홈·서버 직접 연결이 막힌 사이트(더피싱 등)를 한국 가정용 인터넷으로 여는 용도다. 끊겨 있으면 예전 방식으로 돌아간다.
+const viaHome = (url: string): boolean => {
+  if (!homeAgentOnline()) return false;
+  const only = (process.env.HOME_AGENT_HOSTS ?? "").split(",").map((v) => normalizeHost(v)).filter(Boolean);
+  if (!only.length) return true;
+  try {
+    const host = normalizeHost(new URL(url).hostname);
+    return only.some((h) => host === h) || homePrefers(host);
+  } catch {
+    return false;
+  }
+};
+
+async function homeExchange(payload: Record<string, unknown>, timeoutMs: number): Promise<any> {
+  const out = await homeCall(payload, timeoutMs);
+  if (out?.error) throw new Error(`중계기 오류(${out.error}): ${out.message ?? ""}`);
+  return out;
+}
+
 // 중계기와 암호화 통신 (AES-256-GCM). payload 에는 단일 요청 또는 batch 가 들어갑니다.
 async function relayExchange(payload: Record<string, unknown>): Promise<any> {
   const relayUrl = process.env.BOOKING_RELAY_URL as string;
@@ -145,6 +167,9 @@ async function relayCall(
   method: "GET" | "POST",
   opts: { body?: string; headers?: Record<string, string>; referer?: string; cookie?: string },
 ): Promise<RawResponse> {
+  if (viaHome(url)) {
+    return toRaw(await homeExchange({ url, method, headers: opts.headers ?? {}, body: opts.body ?? "", referer: opts.referer ?? "", cookie: opts.cookie ?? "" }, 45_000));
+  }
   if (relayEnabled()) {
     const p = await relayExchange({ url, method, headers: opts.headers ?? {}, body: opts.body ?? "", referer: opts.referer ?? "", cookie: opts.cookie ?? "" });
     return toRaw(p);
@@ -264,7 +289,13 @@ export class Session {
     });
     let raws: RawResponse[];
     const tb = Date.now();
-    if (relayEnabled()) {
+    if (reqs[0] && viaHome(reqs[0].url)) {
+      const out = await homeExchange({ batch: reqs, cookie: this.cookieHeader() }, 60_000);
+      raws = (out.results as any[]).map((p) => {
+        if (p.error) throw new Error(`중계기 오류(${p.error}): ${p.message ?? ""}`);
+        return toRaw(p);
+      });
+    } else if (relayEnabled()) {
       const out = await relayExchange({ batch: reqs, cookie: this.cookieHeader() });
       raws = (out.results as any[]).map((p) => {
         if (p.error) throw new Error(`중계기 오류(${p.error}): ${p.message ?? ""}`);
