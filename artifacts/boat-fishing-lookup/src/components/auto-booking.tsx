@@ -80,7 +80,7 @@ const save = (k: string, v: string) => {
 };
 
 // 예약처마다 따로 갖는 설정
-type SiteCfg = { ships: string[]; seatMode: 'auto' | 'none'; preferred: string; same: boolean; name: string; phone: string };
+type SiteCfg = { ships: string[]; seatMode: 'auto' | 'none'; preferred: string; same: boolean; name: string; phone: string; sameDates: boolean; dates: string[] };
 const shipsKey = (id: string) => `autoBooking.ships.${id}`;
 const bookerKey = (id: string) => `autoBooking.booker.${id}`;
 function defaultSiteCfg(s: Site): SiteCfg {
@@ -100,7 +100,7 @@ function defaultSiteCfg(s: Site): SiteCfg {
   } catch {
     /* 기본값 */
   }
-  return { ships, seatMode: s.seat ? 'auto' : 'none', preferred: '', ...b };
+  return { ships, seatMode: s.seat ? 'auto' : 'none', preferred: '', sameDates: true, dates: [], ...b };
 }
 
 function maskPayload(p: string) {
@@ -144,6 +144,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const setCfg = (s: Site, v: Partial<SiteCfg>) => setCfgMap((m) => ({ ...m, [s.id]: { ...(m[s.id] ?? defaultSiteCfg(s)), ...v } }));
   const [dates, setDates] = useState<string[]>([]);
   const [dateInput, setDateInput] = useState('');
+  const [siteDateInput, setSiteDateInput] = useState<Record<string, string>>({});
   const [stopOthers, setStopOthers] = useState(false);
   const [people, setPeople] = useState(2);
   const [sternSide, setSternSide] = useState<'right' | 'left'>('right');
@@ -157,6 +158,15 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const [bookerMap, setBookerMap] = useState<Record<string, { same: boolean; name: string; phone: string }>>({});
   const bookerOf = (d: string) => bookerMap[d] ?? { same: true, name: '', phone: '' };
   const setBooker = (d: string, v: Partial<{ same: boolean; name: string; phone: string }>) => setBookerMap((m) => ({ ...m, [d]: { ...bookerOf(d), ...v } }));
+  // 예약처별 실제 출조 날짜: "공통 날짜 사용"이면 위의 공통 날짜, 아니면 그 예약처에 따로 정한 날짜
+  const datesOf = (s: Site): string[] => [...(cfgOf(s).sameDates ? dates : cfgOf(s).dates)].sort();
+  const allDates = [...new Set(selSites.flatMap(datesOf))].sort();
+  const addSiteDate = (s: Site) => {
+    const v = siteDateInput[s.id];
+    const c = cfgOf(s);
+    if (v && !c.dates.includes(v) && c.dates.length < 10) setCfg(s, { dates: [...c.dates, v].sort() });
+    setSiteDateInput((m) => ({ ...m, [s.id]: '' }));
+  };
   // 예약처별로 정렬된 날짜 순서대로 실제 적용될 예약자 계산
   //  · 공통 예약자를 쓰는 예약처: 첫 일자는 위의 기본 예약자, 이후는 일자별 설정(앞 일자와 동일/따로)
   //  · 자기 예약자를 따로 정한 예약처: 모든 일자에 그 예약자
@@ -166,7 +176,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     const base = common ? { name: name.trim(), phone } : { name: c.name.trim(), phone: c.phone };
     const out: Record<string, { name: string; phone: string }> = {};
     let prev = base;
-    [...dates].sort().forEach((d, i) => {
+    datesOf(s).forEach((d, i) => {
       const b = bookerOf(d);
       const cur = !common || i === 0 || b.same ? prev : { name: b.name.trim(), phone: b.phone };
       out[d.replace(/-/g, '')] = cur;
@@ -223,9 +233,9 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   async function start() {
     setError('');
     if (!selSites.length) return setError('예약처를 한 곳 이상 선택하세요');
-    if (!dates.length) return setError('날짜를 한 개 이상 추가하세요');
+    for (const s of selSites) if (!datesOf(s).length) return setError(`${s.label}: 출조 날짜를 한 개 이상 추가하세요`);
     // 예약처마다 요청 내용을 만들고 빠짐없이 확인한다
-    const targets: { site: Site; cfg: SiteCfg; list: string[]; bookers: Record<string, { name: string; phone: string }> }[] = [];
+    const targets: { site: Site; cfg: SiteCfg; list: string[]; days: string[]; bookers: Record<string, { name: string; phone: string }> }[] = [];
     for (const site of selSites) {
       if (!site.url) return setError(`${site.label}: 예약처 주소를 입력하세요`);
       const cfg = cfgOf(site);
@@ -234,11 +244,12 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
         if (!b.name) return setError(`${site.label} ${d.slice(4, 6)}/${d.slice(6)} 예약자명을 입력하세요`);
         if (!b.phone.trim()) return setError(`${site.label} ${d.slice(4, 6)}/${d.slice(6)} 휴대폰 번호를 입력하세요`);
       }
-      targets.push({ site, cfg, list: cfg.ships.map((x) => x.trim()).filter(Boolean), bookers });
+      targets.push({ site, cfg, list: cfg.ships.map((x) => x.trim()).filter(Boolean), days: datesOf(site), bookers });
     }
     const running = jobs.filter((j) => ['waiting', 'polling', 'submitting'].includes(j.status)).length;
-    if (running + targets.length * dates.length > 12) {
-      return setError(`동시에 진행할 수 있는 작업은 12개까지예요. (예약처 ${targets.length}곳 × 날짜 ${dates.length}개 = ${targets.length * dates.length}개, 현재 진행 중 ${running}개)`);
+    const newJobs = targets.reduce((a, t) => a + t.days.length, 0);
+    if (running + newJobs > 12) {
+      return setError(`동시에 진행할 수 있는 작업은 12개까지예요. (새 작업 ${newJobs}개 = ${targets.map((t) => `${t.site.label} ${t.days.length}`).join(' + ')}, 현재 진행 중 ${running}개)`);
     }
     if (selSites.some((x) => x.id === 'direct')) save('autoBooking.directUrl', directUrl);
     save(LS.name, name);
@@ -251,10 +262,9 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     }
     if (realMode) {
       if (!realOk) return setError('실제 제출을 시작하려면 아래 확인란에 체크해 주세요');
-      const days = [...dates].sort();
       const blocks = targets
         .map((t) => {
-          const lines = days.map((d) => `  • ${d.slice(5)}  ${t.bookers[d.replace(/-/g, '')].name} (${t.bookers[d.replace(/-/g, '')].phone})`).join('\n');
+          const lines = t.days.map((d) => `  • ${d.slice(5)}  ${t.bookers[d.replace(/-/g, '')].name} (${t.bookers[d.replace(/-/g, '')].phone})`).join('\n');
           return `■ ${t.site.label}\n${t.list.length ? t.list.join(' > ') : '열린 배 아무거나'}\n${lines}`;
         })
         .join('\n\n');
@@ -268,14 +278,14 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     let started = 0;
     // 예약처마다 요청을 하나씩 보낸다 (한 곳이 실패해도 나머지는 계속 시작)
     for (const t of targets) {
-      const first = t.bookers[[...dates].sort()[0].replace(/-/g, '')];
+      const first = t.bookers[t.days[0].replace(/-/g, '')];
       try {
         await api('/jobs', {
           method: 'POST',
           body: JSON.stringify({
             baseUrl: t.site.url,
-            dates: dates.map((d) => d.replace(/-/g, '')),
-            stopOthersOnSuccess: stopOthers,
+            dates: t.days.map((d) => d.replace(/-/g, '')),
+            stopOthersOnSuccess: stopOthers && t.days.length > 1,
             ships: t.list.map((n) => ({ name: n })),
             people,
             seatMode: t.cfg.seatMode,
@@ -470,7 +480,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
         </div>
 
         <div>
-          <label className={label}>출조 날짜 (여러 날짜를 추가하면 날짜마다 동시에 진행해요, 최대 10개)</label>
+          <label className={label}>{selSites.length > 1 ? '공통 출조 날짜' : '출조 날짜'} (여러 날짜를 추가하면 날짜마다 동시에 진행해요, 최대 10개){selSites.length > 1 ? ' · 예약처마다 따로 정하려면 아래 예약처 설정에서 "공통 날짜 사용"을 끄세요' : ''}</label>
           <div className="flex gap-2">
             <input type="date" className={input} value={dateInput} onChange={(e) => setDateInput(e.target.value)} />
             <button
@@ -496,7 +506,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
               ))}
             </div>
           )}
-          {dates.length > 1 && (
+          {selSites.some((s) => datesOf(s).length > 1) && (
             <label className="mt-2 flex items-center gap-2 text-xs">
               <input type="checkbox" checked={stopOthers} onChange={(e) => setStopOthers(e.target.checked)} />
               한 날짜가 준비되면 나머지 날짜는 중지{selSites.length > 1 ? ' (예약처마다 따로 적용)' : ''}
@@ -540,7 +550,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
           </div>
         </div>
         <p className="-mt-2 text-[11px] text-muted-foreground">
-          {dates.length > 1 ? `위 정보는 ${[...dates].sort()[0].slice(5)} 예약자입니다. ` : ''}이름·번호는 이 기기 브라우저에만 저장됩니다. 입금자명은 사용하지 않습니다.
+          {allDates.length > 1 ? `위 정보는 ${allDates[0].slice(5)} 예약자입니다. ` : ''}이름·번호는 이 기기 브라우저에만 저장됩니다. 입금자명은 사용하지 않습니다.
           {selSites.length > 1 ? ' 예약처별 설정에서 "공통 예약자와 동일"을 끄면 그 예약처만 다른 예약자로 넣을 수 있어요.' : ''}
         </p>
 
@@ -552,6 +562,42 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
                 {selSites.length > 1 ? `${idx + 1}. ` : ''}
                 {x.label} 설정
               </div>
+
+              {selSites.length > 1 && (
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={c.sameDates}
+                      onChange={(e) => setCfg(x, { sameDates: e.target.checked, ...(!e.target.checked && c.dates.length === 0 ? { dates: [...dates] } : {}) })}
+                    />
+                    공통 날짜 사용{c.sameDates ? ` (${dates.length ? dates.map((d) => d.slice(5).replace('-', '/')).join(', ') : '날짜 없음'})` : ''}
+                  </label>
+                  {!c.sameDates && (
+                    <div>
+                      <label className={label}>이 예약처 출조 날짜 (최대 10개)</label>
+                      <div className="flex gap-2">
+                        <input type="date" className={input} value={siteDateInput[x.id] ?? ''} onChange={(e) => setSiteDateInput((m) => ({ ...m, [x.id]: e.target.value }))} />
+                        <button type="button" className="shrink-0 rounded-lg border px-3 text-sm" onClick={() => addSiteDate(x)}>
+                          추가
+                        </button>
+                      </div>
+                      {c.dates.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {c.dates.map((d) => (
+                            <span key={d} className="flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs">
+                              {d.slice(5).replace('-', '/')}
+                              <button type="button" onClick={() => setCfg(x, { dates: c.dates.filter((v) => v !== d) })} aria-label="날짜 삭제">
+                                <X size={12} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className={label}>배 (위에 있을수록 우선, 비워두면 열린 배 아무거나)</label>
@@ -608,10 +654,10 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
           );
         })}
 
-        {dates.length > 1 && (
+        {allDates.length > 1 && (
           <div className="space-y-2 rounded-md border p-3">
             <div className="text-xs font-medium">일자별 예약자{selSites.length > 1 ? ' (공통 예약자를 쓰는 예약처에 적용)' : ''}</div>
-            {[...dates].sort().map((d, i) => {
+            {allDates.map((d, i) => {
               if (i === 0) return null;
               const b = bookerOf(d);
               return (
