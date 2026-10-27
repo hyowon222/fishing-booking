@@ -477,13 +477,13 @@ function SearchForm({
               <button
                 type="button"
                 onClick={onForceRefresh}
-                disabled={isRefreshingAll}
-                title="캐시를 비우고 모든 예약처를 처음부터 다시 조회합니다"
+                disabled={isRefreshingAll || isOptionsRefreshing}
+                title="예약처 전체를 스캔하여 새로 추가된 선박과 항구 목록을 찾아 업데이트합니다"
                 className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-input px-4 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-70"
                 data-testid="button-force-refresh"
               >
-                <RefreshCw size={14} className={isRefreshingAll ? 'animate-spin' : undefined} />
-                {isRefreshingAll ? '전체 조회 중' : '전체 다시 조회'}
+                <RefreshCw size={14} className={isRefreshingAll || isOptionsRefreshing ? 'animate-spin' : undefined} />
+                {isRefreshingAll || isOptionsRefreshing ? '신규 선박 찾는 중...' : '신규 선박 찾기'}
               </button>
               <button type="button" onClick={clearAll} className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-input px-4 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground" data-testid="button-reset-filters">
                 <RefreshCw size={14} /> 초기화

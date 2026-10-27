@@ -220,10 +220,19 @@ router.get("/fishing/schedules", async (req, res) => {
   }
 });
 
-router.post("/fishing/cache/refresh", (_req, res) => {
+router.post("/fishing/cache/refresh", async (_req, res) => {
   clearFishingSourceCache();
   resetSourceHealth();
-  res.json({ ok: true });
+  const today = new Date();
+  const startDate = today.toISOString().slice(0, 10);
+  const endDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 2, 0))
+    .toISOString()
+    .slice(0, 10);
+  const configuredSources = (await listConfiguredSources()).filter((source) => source.enabled);
+  if (configuredSources.length > 0) {
+    refreshFilterOptionsInBackground(startDate, endDate);
+  }
+  res.json({ ok: true, refreshing: true });
 });
 
 router.get("/fishing/options", async (req, res) => {
@@ -236,9 +245,7 @@ router.get("/fishing/options", async (req, res) => {
       .toISOString()
       .slice(0, 10);
     const configuredSources = (await listConfiguredSources()).filter((source) => source.enabled);
-    if (configuredSources.length > 0) {
-      refreshFilterOptionsInBackground(startDate, endDate);
-    }
+    // 자동 갱신 비활성화: 화면을 열 때는 DB에 등록된 선박 목록만 즉시 반환합니다.
     const options = getFilterOptions([], configuredSources.map(toSourceConfig));
     const parsedOptions = GetFishingFilterOptionsResponse.parse({
       ...options,
