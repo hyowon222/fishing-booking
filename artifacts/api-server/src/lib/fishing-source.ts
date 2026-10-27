@@ -468,6 +468,16 @@ async function requestSource(url: URL, referer: string, timeoutMs: number): Prom
     } catch (error) {
       // 자동으로 "중계로 먼저"가 된 사이트는, 중계가 안 되면 다음 번에 직접 연결부터 다시 해 본다.
       if (!relay.isForced(url.hostname)) relay.forget(url.hostname);
+      // 집 PC가 연결되어 있으면 서울 중계가 안 된 사이트도 집 PC로 한 번 더 시도한다
+      if (homeAgentOnline()) {
+        try {
+          const response = await homeFetch(url, referer, timeoutMs);
+          if (response.ok) homeLearn(url.hostname, "서울 중계 실패");
+          return { response, via: "home" };
+        } catch (homeError) {
+          logger.warn({ host: url.hostname, error: homeError instanceof Error ? homeError.message : String(homeError) }, `[집 PC 중계] ${url.hostname}: 서울 중계 실패 뒤 집 PC도 실패: ${homeError instanceof Error ? homeError.message : String(homeError)}`);
+        }
+      }
       throw error;
     }
   }
