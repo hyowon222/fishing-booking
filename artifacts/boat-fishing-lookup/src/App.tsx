@@ -71,6 +71,32 @@ const initialCriteria: Criteria = {
   endDate: '',
 };
 
+const FILTER_STORE_KEY = 'badajari.filters.v1';
+// 날짜는 매번 새로 고르게 하고, 항구·선박·물때·요일·마감 제외만 기억한다 (저장소를 못 쓰는 환경에서는 조용히 건너뜀).
+function loadSavedFilters(): { criteria: Criteria; weekdays: number[]; onlyOpen: boolean } {
+  const empty = { criteria: initialCriteria, weekdays: [] as number[], onlyOpen: false };
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(FILTER_STORE_KEY) ?? 'null');
+    if (!raw || typeof raw !== 'object') return empty;
+    const c = (raw.criteria ?? {}) as Partial<Criteria>;
+    return {
+      criteria: { ...initialCriteria, ...(c.region ? { region: c.region } : {}), ...(c.ship ? { ship: c.ship } : {}), ...(c.port ? { port: c.port } : {}), ...(c.tide ? { tide: c.tide } : {}) },
+      weekdays: Array.isArray(raw.weekdays) ? raw.weekdays.filter((n: unknown) => typeof n === 'number') : [],
+      onlyOpen: raw.onlyOpen === true,
+    };
+  } catch {
+    return empty;
+  }
+}
+function saveFilters(criteria: Criteria, weekdays: number[], onlyOpen: boolean) {
+  try {
+    const { region, ship, port, tide } = criteria;
+    window.localStorage.setItem(FILTER_STORE_KEY, JSON.stringify({ criteria: { region, ship, port, tide }, weekdays, onlyOpen }));
+  } catch {
+    /* 저장 실패는 무시 */
+  }
+}
+
 const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 const FILTER_OPTIONS_POLL_INTERVAL_MS = 2_000;
 // getDay()와 동일한 인덱스(0=일요일)로, 백엔드가 원문 사이트에서 파싱해 주는
@@ -614,6 +640,26 @@ function describeSearchError(error: unknown): string | null {
   return "서버에 연결하지 못했어요. 인터넷 연결이나 서버 상태를 확인해 주세요.";
 }
 
+// 경고는 한 줄로 요약하고, 눌러야 자세한 내용과 직접 열기 링크를 보여 준다.
+function WarningBanner({ warning, sources }: { warning: string | null; sources: UnavailableSource[] }) {
+  const [open, setOpen] = useState(false);
+  const summary = sources.length ? `예약처 ${sources.length}곳은 아직 못 불러왔어요` : '일부 예약처가 아직 불러와지는 중이에요';
+  return (
+    <div className="border-b border-accent/30 bg-accent/10 px-4 py-2.5 text-sm text-[#765019]" data-testid="warning-banner">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-2 text-left font-semibold">
+        <span className="flex items-center gap-2"><Info size={15} className="shrink-0" />{summary}</span>
+        <span className="flex items-center gap-1 text-xs">{open ? '접기' : '자세히'}<ChevronDown size={14} className={open ? 'rotate-180' : ''} /></span>
+      </button>
+      {open && (
+        <div className="mt-2 text-xs leading-5">
+          {warning ? <p>{warning}</p> : null}
+          <UnavailableSourceLinks sources={sources} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScheduleResults({
   data,
   isLoading,
@@ -666,12 +712,7 @@ function ScheduleResults({
   }
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-[0_8px_30px_hsl(214_42%_18%_/_0.04)]">
-      {(data.warning || !!data.unavailableSources?.length) && (
-        <div className="border-b border-accent/30 bg-accent/10 px-4 py-3 text-xs leading-5 text-[#765019]">
-          {data.warning && <div className="flex items-start gap-2"><Info size={15} className="mt-0.5 shrink-0" />{data.warning}</div>}
-          <UnavailableSourceLinks sources={data.unavailableSources ?? []} />
-        </div>
-      )}
+      {(data.warning || !!data.unavailableSources?.length) && <WarningBanner warning={data.warning} sources={data.unavailableSources ?? []} />}
       <div className="hidden grid-cols-[1.1fr_.9fr_1fr_1.1fr_.85fr_1fr_110px] gap-4 border-b border-border bg-muted/40 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground md:grid">
         <span>출항일</span><span>지역</span><span>선박</span><span>운영사</span><span>장르</span><span>물때</span><span className="text-right">잔여</span>
       </div>
@@ -681,9 +722,11 @@ function ScheduleResults({
 }
 
 function Home() {
-  const [criteria, setCriteria] = useState<Criteria>(initialCriteria);
+  const [saved] = useState(loadSavedFilters);
+  const [criteria, setCriteria] = useState<Criteria>(saved.criteria);
   const [appliedParams, setAppliedParams] = useState<Criteria>(initialCriteria);
-  const [weekdays, setWeekdays] = useState<number[]>([]);
+  const [onlyOpen, setOnlyOpen] = useState(saved.onlyOpen);
+  const [weekdays, setWeekdays] = useState<number[]>(saved.weekdays);
   const [appliedWeekdays, setAppliedWeekdays] = useState<number[]>([]);
   const [showSourceManager, setShowSourceManager] = useState(false);
   const [showAutoBooking, setShowAutoBooking] = useState(false);
@@ -709,11 +752,11 @@ function Home() {
   // 직접 읽어온 정확한 요일 텍스트(item.weekday, 예: "토요일")로 비교한다.
   const data = useMemo(() => {
     const raw = searchQuery.data;
-    if (!raw || appliedWeekdays.length === 0) return raw;
+    if (!raw || (appliedWeekdays.length === 0 && !onlyOpen)) return raw;
     const selectedLabels = new Set(appliedWeekdays.map((day) => WEEKDAY_FULL_LABELS[day]));
-    const items = raw.items.filter((item) => selectedLabels.has(item.weekday));
+    const items = raw.items.filter((item) => (appliedWeekdays.length === 0 || selectedLabels.has(item.weekday)) && (!onlyOpen || item.remainingSeats !== 0));
     return { ...raw, items, total: items.length };
-  }, [searchQuery.data, appliedWeekdays]);
+  }, [searchQuery.data, appliedWeekdays, onlyOpen]);
   const activeFilterCount =
     (criteria.region?.length ?? 0) + (criteria.ship?.length ?? 0) + (criteria.port ? 1 : 0) + (criteria.tide ? 1 : 0) + (weekdays.length ? 1 : 0);
   const rangeLabel = useMemo(
@@ -730,6 +773,7 @@ function Home() {
     const unchanged = hasSearched && JSON.stringify(nextParams) === JSON.stringify(appliedParams);
     setAppliedParams(nextParams);
     setAppliedWeekdays(weekdays);
+    saveFilters(criteria, weekdays, onlyOpen);
     setHasSearched(true);
     window.setTimeout(() => document.getElementById('section-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
     if (unchanged) {
@@ -759,6 +803,8 @@ function Home() {
   const reset = () => {
     setCriteria(initialCriteria);
     setAppliedParams(initialCriteria);
+    setOnlyOpen(false);
+    saveFilters(initialCriteria, [], false);
     setWeekdays([]);
     setAppliedWeekdays([]);
     setHasSearched(false);
@@ -790,9 +836,6 @@ function Home() {
           </div>
           <div className="flex items-center gap-3 text-xs text-sidebar-foreground/65">
             <div className="hidden items-center gap-2 md:flex"><span className="h-1.5 w-1.5 rounded-full bg-sidebar-primary" />실시간 예약처 연결됨</div>
-            <button onClick={() => setShowSourceManager(true)} className="rounded-lg p-2 hover:bg-sidebar-accent md:hidden" data-testid="button-mobile-menu" aria-label="예약처 관리"><Menu size={18} /></button>
-            <button type="button" onClick={() => setShowAutoBooking(true)} className="rounded-lg px-2 py-1.5 text-sm hover:bg-sidebar-accent md:hidden" data-testid="button-mobile-auto-booking">자동예약</button>
-            <button type="button" onClick={() => setShowTide(true)} className="rounded-lg px-2 py-1.5 text-sm hover:bg-sidebar-accent md:hidden" data-testid="button-mobile-tide">물때</button>
             <div className="hidden h-8 w-px bg-sidebar-border sm:block" />
             <button type="button" onClick={() => setShowSourceManager(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-manage-sources"><Settings2 size={15} />예약처 관리</button>
             <button type="button" onClick={() => setShowAutoBooking(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-auto-booking">자동 예약</button>
@@ -841,7 +884,11 @@ function Home() {
               <p className="mt-1 text-xs text-muted-foreground"><CalendarDays size={12} className="mr-1 inline" />{rangeLabel} · {activeFilterCount ? `필터 ${activeFilterCount}개 적용` : '전체 조건'} </p>
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5"><Sparkles size={13} className="text-accent-foreground" /> 출항일 기준 정렬</span>
+              <label className="flex cursor-pointer items-center gap-2 rounded-full border border-input bg-card px-3 py-1.5 text-sm font-semibold text-foreground" data-testid="toggle-only-open">
+                <input type="checkbox" className="h-4 w-4 accent-[hsl(174_58%_32%)]" checked={onlyOpen} onChange={(e) => { setOnlyOpen(e.target.checked); saveFilters(criteria, weekdays, e.target.checked); }} />
+                마감 제외
+              </label>
+              <span className="hidden items-center gap-1.5 sm:flex"><Sparkles size={13} className="text-accent-foreground" /> 출항일 기준 정렬</span>
               {data?.cachedUntil && <span className="hidden items-center gap-1.5 sm:flex"><RefreshCw size={12} /> {formatSearchedAt(data.cachedUntil)}까지 캐시</span>}
             </div>
           </div>
@@ -849,6 +896,19 @@ function Home() {
         </section>
       </main>
       )}
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden" aria-label="메뉴" data-testid="tab-bar">
+        {([
+          ['조회', Search, !showTide && !showAutoBooking && !showSourceManager, () => { setShowTide(false); setShowAutoBooking(false); setShowSourceManager(false); }, 'tab-search'],
+          ['자동 예약', Ship, showAutoBooking, () => { setShowTide(false); setShowSourceManager(false); setShowAutoBooking(true); }, 'button-mobile-auto-booking'],
+          ['물때', Waves, showTide, () => { setShowAutoBooking(false); setShowSourceManager(false); setShowTide(true); }, 'button-mobile-tide'],
+          ['예약처', Settings2, showSourceManager, () => { setShowAutoBooking(false); setShowTide(false); setShowSourceManager(true); }, 'button-mobile-menu'],
+        ] as const).map(([label, Icon, active, go, id]) => (
+          <button key={id} type="button" onClick={go} className={`flex flex-col items-center gap-0.5 py-2 text-xs font-semibold ${active ? 'text-primary' : 'text-muted-foreground'}`} data-testid={id} aria-current={active ? 'page' : undefined}>
+            <Icon size={20} />{label}
+          </button>
+        ))}
+      </nav>
+      <div className="h-16 sm:hidden" aria-hidden />
       <footer className="border-t border-border bg-card/60">
         <div className="mx-auto flex max-w-[1440px] flex-col gap-2 px-4 py-5 text-[11px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <p className="flex items-center gap-1.5"><Fish size={13} />바다자리 · 출항 정보는 각 운영사 예약처를 기준으로 합니다.</p>
