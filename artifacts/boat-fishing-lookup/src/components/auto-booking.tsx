@@ -103,6 +103,20 @@ function defaultSiteCfg(s: Site): SiteCfg {
   return { ships, seatMode: s.seat ? 'auto' : 'none', preferred: '', sameDates: true, dates: [], ...b };
 }
 
+// 작업 카드에 "누구 이름으로 예약되는지" 보여 주기 위해, 제출 내용에서 예약자명과 번호(가운데는 가림)를 읽는다
+function bookerFromPayload(p: string): string {
+  try {
+    const q = new URLSearchParams(p);
+    const name = (q.get('BI_NAME') ?? '').trim();
+    const t1 = q.get('BI_TEL1') ?? '';
+    const t3 = q.get('BI_TEL3') ?? '';
+    const phone = t1 || t3 ? `${t1}-****-${t3}` : '';
+    return [name, phone].filter(Boolean).join(' · ');
+  } catch {
+    return '';
+  }
+}
+
 function maskPayload(p: string) {
   // 화면 표시용: 이름·전화번호 값은 가림
   return p.replace(/(BI_NAME=)[^&]*/, '$1***').replace(/(BI_TEL2=)[^&]*/, '$1****').replace(/(BI_TEL3=)[^&]*/, '$1****');
@@ -754,6 +768,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
                     <b>{j.result.ship.name}</b> · {j.result.species} · {j.result.people}명 · {j.result.price}
                   </p>
                   <p>좌석: {j.result.seats.length ? j.result.seats.join(', ') + '번' : '선택 안 함'} ({j.result.seatNote})</p>
+                  {bookerFromPayload(j.result.payload) ? <p data-testid={`text-booker-${j.id}`}>예약자: <b>{bookerFromPayload(j.result.payload)}</b></p> : null}
                   {j.result.unresolved.length > 0 && <p className="text-amber-800">확인 필요: {j.result.unresolved.join(', ')}</p>}
                   <button type="button" className="underline" onClick={() => setShowPayload((p) => ({ ...p, [j.id]: !p[j.id] }))}>
                     {j.result.dryRun === false ? '제출한 내용' : '제출될 내용'} {showPayload[j.id] ? '숨기기' : '보기'}
