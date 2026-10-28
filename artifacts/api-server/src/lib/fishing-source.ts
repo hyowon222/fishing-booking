@@ -29,6 +29,8 @@ export type FishingSchedule = {
   // 바다타임(badatime.com) 기준 조류 세기(%). 매핑되지 않은 항구이거나 조회
   // 실패 시 null — 이 부가 정보 하나 때문에 검색 전체가 실패하지는 않는다.
   tideStrengthPercent: number | null;
+  // 낮 시간(06~18시)의 간조·만조 시각과 높이 차이 요약 (예: "간조 09:10 · 만조 15:41 · 차 604cm")
+  tideRange: string | null;
   genre: string;
   operator: string;
   vessel: string;
@@ -381,6 +383,7 @@ function parseDayBlock(
       port: config.port,
       tide,
       tideStrengthPercent: null,
+      tideRange: null,
       genre: genre || "선상 낚시",
       operator,
       vessel,
@@ -762,6 +765,7 @@ function parseSunsangDayBlock(
       port: config.port,
       tide,
       tideStrengthPercent: null,
+      tideRange: null,
       genre,
       operator: cleanText(config.name),
       vessel,
@@ -841,6 +845,7 @@ async function fetchSunsangMonth(
         port: config.port,
         tide,
         tideStrengthPercent: null,
+        tideRange: null,
         genre,
         operator: cleanText(config.name),
         vessel,
@@ -1189,13 +1194,58 @@ const TIDE_FETCH_TIMEOUT_MS = 8_000;
 // 예약처 조회가 끝난 뒤 조류 세기를 더 기다려 줄 최대 시간. 조류 세기는 예약처 조회와
 // 동시에 미리 받아 두므로 보통은 기다릴 일이 없다.
 const TIDE_WAIT_AFTER_SCRAPE_MS = 2_000;
-const tideStrengthMonthCache = new Map<string, { expiresAt: number; days: Map<string, number> }>();
+// 하루치 조류 정보: 물흐름(%)과 낮 시간 간조·만조 요약
+type TideDay = { percent: number; range: string | null };
+const tideStrengthMonthCache = new Map<string, { expiresAt: number; days: Map<string, TideDay> }>();
 const tideFailureUntil = new Map<string, number>();
-const tideInflight = new Map<string, Promise<Map<string, number> | null>>();
+const tideInflight = new Map<string, Promise<Map<string, TideDay> | null>>();
 // 같은 사이트(바다타임)에 요청이 한꺼번에 몰리지 않게 예약처 조회와는 따로 제한한다.
 const tideLimiter = createPriorityLimiter({ maxConcurrent: 4 });
 
-async function loadTideStrengthMonth(locationId: number, year: number, month: number): Promise<Map<string, number>> {
+// 낚시하는 시간(새벽 6시~오후 6시) 안에 있는 간조·만조만 골라 "간조 09:10 · 만조 15:41 · 차 604cm" 로 요약한다.
+// 차 = 그 시간대 만조 중 가장 높은 값 − 간조 중 가장 낮은 값 (둘 다 있을 때만). 해당 시간대에 하나도 없으면 null.
+export type TideEvent = { kind: "만조" | "간조"; minutes: number; height: number };
+const FISHING_START_MIN = 6 * 60;
+const FISHING_END_MIN = 18 * 60;
+
+export function summarizeDaytimeTide(events: TideEvent[]): string | null {
+  const day = events.filter((e) => e.minutes >= FISHING_START_MIN && e.minutes <= FISHING_END_MIN).sort((a, b) => a.minutes - b.minutes);
+  if (day.length === 0) return null;
+  const clock = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const parts = day.map((e) => `${e.kind} ${clock(e.minutes)}`);
+  const highs = day.filter((e) => e.kind === "만조").map((e) => e.height);
+  const lows = day.filter((e) => e.kind === "간조").map((e) => e.height);
+  if (highs.length && lows.length) parts.push(`차 ${Math.max(...highs) - Math.min(...lows)}cm`);
+  return parts.join(" · ");
+}
+
+// 날짜 한 줄(PC용 tr)에는 만조(td.manjo)·간조(td.ganjo) 칸이 있고, 칸마다 "<b>00:09 (585) </b>▲+322" 형태가 한두 개 들어 있다.
+// (괄호 안 숫자가 물 높이 cm). 같은 줄의 /graph/YYYY-M-D 링크에서 정확한 날짜를 얻는다.
+export function parseTideEvents($: cheerio.CheerioAPI): Map<string, TideEvent[]> {
+  const byDate = new Map<string, TideEvent[]>();
+  $("tr").each((_, row) => {
+    const manjo = $(row).find("td.manjo").first();
+    const ganjo = $(row).find("td.ganjo").first();
+    if (!manjo.length && !ganjo.length) return;
+    const href = $(row).find('a[href*="/graph/"]').first().attr("href") ?? "";
+    const dateMatch = href.match(/\/graph\/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!dateMatch) return;
+    const events: TideEvent[] = [];
+    const collect = (cell: cheerio.Cheerio<any>, kind: TideEvent["kind"]) => {
+      cell.find("b").each((__, b) => {
+        const m = $(b).text().match(/(\d{1,2}):(\d{2})\s*\(\s*(-?\d+)\s*\)/);
+        if (m) events.push({ kind, minutes: Number(m[1]) * 60 + Number(m[2]), height: Number(m[3]) });
+      });
+    };
+    collect(manjo, "만조");
+    collect(ganjo, "간조");
+    const [, y, mo, d] = dateMatch;
+    byDate.set(`${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`, events);
+  });
+  return byDate;
+}
+
+async function loadTideStrengthMonth(locationId: number, year: number, month: number): Promise<Map<string, TideDay>> {
   const url = `https://www.badatime.com/${locationId}/daily/${year}-${String(month).padStart(2, "0")}`;
   const response = await fetch(url, { headers: browserHeaders(url), signal: AbortSignal.timeout(TIDE_FETCH_TIMEOUT_MS) });
   if (!response.ok) {
@@ -1207,7 +1257,14 @@ async function loadTideStrengthMonth(locationId: number, year: number, month: nu
 
   // 날짜당 모바일용 "mo-row-only" 줄이 하나씩 있고, 그 안에 progress-bar의
   // data-value(물흐름 %)와 /{id}/graph/YYYY-M-D 링크(정확한 날짜)가 같이 있다.
-  const days = new Map<string, number>();
+  // 간조·만조 시각은 같은 날짜의 PC용 줄에 있어서 따로 읽어 합친다 (못 읽어도 물흐름은 그대로 쓴다).
+  let events = new Map<string, TideEvent[]>();
+  try {
+    events = parseTideEvents($);
+  } catch {
+    /* 간조·만조는 부가 정보 */
+  }
+  const days = new Map<string, TideDay>();
   $("tr.mo-row-only").each((_, row) => {
     const value = $(row).find(".progress-bar").first().attr("data-value");
     const href = $(row).find('a[href*="/graph/"]').first().attr("href") ?? "";
@@ -1216,7 +1273,8 @@ async function loadTideStrengthMonth(locationId: number, year: number, month: nu
     const percent = Number(value);
     if (!Number.isFinite(percent)) return;
     const [, y, m, d] = dateMatch;
-    days.set(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`, percent);
+    const date = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    days.set(date, { percent, range: summarizeDaytimeTide(events.get(date) ?? []) });
   });
   if (days.size === 0) {
     throw new Error(`바다타임 파싱 결과 0건 (HTML 구조가 바뀌었을 수 있음): ${url}`);
@@ -1227,7 +1285,7 @@ async function loadTideStrengthMonth(locationId: number, year: number, month: nu
 // 한 (바다타임 지역, 연-월)의 날짜별 조류 세기. 캐시, 이미 진행 중인 요청에 합류, 실패 후
 // 쿨다운을 처리하고, 어떤 이유로든 못 가져오면 null을 돌려준다. 이 부가 정보 때문에 검색이
 // 실패하거나 오래 멈추는 일이 없도록 절대 throw하지 않는다.
-function fetchTideStrengthMonth(locationId: number, year: number, month: number): Promise<Map<string, number> | null> {
+function fetchTideStrengthMonth(locationId: number, year: number, month: number): Promise<Map<string, TideDay> | null> {
   const key = `${locationId}:${year}-${month}`;
   const cached = tideStrengthMonthCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.days);
@@ -1238,12 +1296,12 @@ function fetchTideStrengthMonth(locationId: number, year: number, month: number)
   const promise = tideLimiter
     .run(() => loadTideStrengthMonth(locationId, year, month))
     .then(
-      (days): Map<string, number> | null => {
+      (days): Map<string, TideDay> | null => {
         tideStrengthMonthCache.set(key, { expiresAt: Date.now() + TIDE_STRENGTH_CACHE_TTL_MS, days });
         tideFailureUntil.delete(key);
         return days;
       },
-      (err: unknown): Map<string, number> | null => {
+      (err: unknown): Map<string, TideDay> | null => {
         tideFailureUntil.set(key, Date.now() + TIDE_FAILURE_COOLDOWN_MS);
         logger.warn({ err }, `[tide] 바다타임 ${key} 조회 실패 — 5분간 다시 시도하지 않음`);
         return null;
@@ -1265,7 +1323,7 @@ function tideLocationIdFor(port: string): number | undefined {
 }
 
 // 항구 → (날짜 → 조류 세기 %)
-type TideByPort = Map<string, Map<string, number>>;
+type TideByPort = Map<string, Map<string, TideDay>>;
 
 // 조류 세기는 (항구, 연-월)만 알면 가져올 수 있어서, 예약처 조회가 끝나길 기다리지 않고 검색을
 // 시작하자마자 동시에 받아 둔다. byPort는 받는 대로 채워지고, done은 전부 끝나면 풀린다
@@ -1279,12 +1337,12 @@ function prefetchTideStrength(
   for (const port of new Set(sources.map((source) => source.port))) {
     const locationId = tideLocationIdFor(port);
     if (!locationId) continue;
-    const merged = new Map<string, number>();
+    const merged = new Map<string, TideDay>();
     byPort.set(port, merged);
     for (const { year, month } of months) {
       jobs.push(
         fetchTideStrengthMonth(locationId, year, month).then((days) => {
-          if (days) for (const [date, percent] of days) merged.set(date, percent);
+          if (days) for (const [date, day] of days) merged.set(date, day);
         }),
       );
     }
@@ -1294,7 +1352,9 @@ function prefetchTideStrength(
 
 function applyTideStrength(items: FishingSchedule[], byPort: TideByPort): void {
   for (const item of items) {
-    item.tideStrengthPercent = byPort.get(item.port)?.get(item.departureDate) ?? null;
+    const day = byPort.get(item.port)?.get(item.departureDate);
+    item.tideStrengthPercent = day?.percent ?? null;
+    item.tideRange = day?.range ?? null;
   }
 }
 

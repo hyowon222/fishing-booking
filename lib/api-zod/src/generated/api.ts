@@ -39,6 +39,7 @@ export const SearchFishingSchedulesResponse = zod.object({
   "port": zod.string(),
   "tide": zod.string(),
   "tideStrengthPercent": zod.number().int().nullable().describe('바다타임(badatime.com) 기준 조류 세기(%). 매핑되지 않은 항구이거나 조회에 실패하면 null.'),
+  "tideRange": zod.string().nullable().describe('낮 시간(06~18시)의 간조·만조 시각과 높이 차이 요약. 예: "간조 09:10 · 만조 15:41 · 차 604cm". 없으면 null.'),
   "genre": zod.string(),
   "operator": zod.string(),
   "vessel": zod.string(),

@@ -536,7 +536,10 @@ function ScheduleRow({ schedule }: { schedule: FishingSchedule }) {
       <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">선박</span><span className="font-semibold">{schedule.vessel}</span></div>
       <div className="flex min-w-0 items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">운영사</span>{schedule.operatorUrl ? <a href={schedule.operatorUrl} target="_blank" rel="noreferrer" className="truncate font-medium hover:text-primary hover:underline">{schedule.operator}</a> : <span className="truncate">{schedule.operator}</span>}</div>
       <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">장르</span><span className="rounded-md bg-secondary px-2 py-1 text-xs font-semibold text-secondary-foreground">{schedule.genre}</span></div>
-      <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">물때</span><span>{schedule.tide}</span><TideStrength percent={schedule.tideStrengthPercent} /></div>
+      <div className="flex flex-col gap-1 text-sm">
+        <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground md:hidden">물때</span><span>{schedule.tide}</span><TideStrength percent={schedule.tideStrengthPercent} /></div>
+        {schedule.tideRange ? <p className="text-[11px] leading-tight text-muted-foreground" title="낚시 시간(06~18시)의 간조·만조와 높이 차이 (바다타임 기준)" data-testid="text-tide-range">{schedule.tideRange}</p> : null}
+      </div>
       <div className="flex items-center justify-between gap-2 pt-2 md:justify-end md:pt-0">
         <span className={`hidden rounded-full px-2.5 py-1 text-xs font-bold md:inline-flex ${seatClass}`}>{seatState}</span>
         {schedule.bookingUrl && schedule.remainingSeats !== 0 ? (

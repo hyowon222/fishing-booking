@@ -21,6 +21,11 @@ export interface FishingSchedule {
      * @nullable
      */
   tideStrengthPercent: number | null;
+  /**
+     * 낮 시간(06~18시)의 간조·만조 시각과 높이 차이 요약. 예: "간조 09:10 · 만조 15:41 · 차 604cm". 없으면 null.
+     * @nullable
+     */
+  tideRange: string | null;
   genre: string;
   operator: string;
   vessel: string;
