@@ -97,6 +97,30 @@ async function fetchWhy(label: string, url: string, init: RequestInit): Promise<
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+// 조회 간격. 오픈(openAt, 없으면 조회를 시작한 때) 직후 30초는 설정한 간격(기본 0.7초)으로 빠르게,
+// 그 뒤 3분까지는 2초, 그 이후는 5초로 늘린다. 오픈 순간이 지나도 열리지 않는 배를 계속 0.7초마다 두드려
+// 예약처에 부담을 주거나 막히는 일을 줄이기 위해서다 (이미 지나간 시각으로 시작해도 시작한 때부터 30초는 빠르게).
+export function pollDelayFor(baseMs: number, sinceMs: number, nowMs: number): number {
+  const elapsed = nowMs - sinceMs;
+  if (elapsed < 30_000) return baseMs;
+  if (elapsed < 180_000) return Math.max(baseMs, 2000);
+  return Math.max(baseMs, 5000);
+}
+
+function makePoller(cfg: BookingConfig, log: (m: string) => void): () => number {
+  const since = Math.max(cfg.openAt ? new Date(cfg.openAt).getTime() : 0, Date.now());
+  let phase = 0;
+  return () => {
+    const delay = pollDelayFor(cfg.pollMs!, since, Date.now());
+    const now = delay <= cfg.pollMs! ? 0 : delay <= 2000 ? 1 : 2;
+    if (now > phase) {
+      phase = now;
+      log(`아직 열리지 않아 조회 간격을 ${delay / 1000}초로 늘립니다 (예약처 부담을 줄이기 위해).`);
+    }
+    return delay;
+  };
+}
+
 // ------------------------------------------------------------------ 전송 (중계기 암호화 + 쿠키 + 리다이렉트)
 type RawResponse = { status: number; location: string; contentType: string; setCookies: string[]; body: Buffer; upMs?: number; dnsMs?: number; srvMs?: number };
 
@@ -1082,6 +1106,7 @@ async function runJob(job: Job, cfg: BookingConfig) {
       return;
     }
     const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 60_000;
+    const nextDelay = makePoller(cfg, log);
     const listSeeds = await discoverSeeds(sess, cfg.date);
     if (listSeeds.length) log(`예약 목록에서 배 번호 ${listSeeds.length}개 확인`);
     const seeds = [...new Set([...(cfg.ships.map(guessUid).filter(Boolean) as string[]), ...listSeeds, ...(cfg.seedUids ?? KNOWN_SEEDS)])];
@@ -1149,7 +1174,7 @@ async function runJob(job: Job, cfg: BookingConfig) {
       }
       if (attempt % 10 === 1 && open.length) log(`원하는 배가 아직 안 열렸습니다 (열린 배: ${open.map((o) => o.label).join(", ")})`);
       // 요청에 걸린 시간을 빼서 일정한 간격으로 조회 (불필요한 대기 제거)
-      await sleep(Math.max(0, cfg.pollMs! - (Date.now() - t0)) + Math.random() * 100);
+      await sleep(Math.max(0, nextDelay() - (Date.now() - t0)) + Math.random() * 100);
     }
     throw new Error("제한 시간 안에 예약 가능한 배를 찾지 못했습니다");
   } catch (e: any) {
@@ -1311,6 +1336,7 @@ class SkipShip extends Error {}
 
 async function runSunsang(job: Job, cfg: BookingConfig, sess: Session, log: (m: string) => void) {
   const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 60_000;
+  const nextDelay = makePoller(cfg, log);
   const skipped = new Set<string>();
   let attempt = 0;
   while (Date.now() < deadline) {
@@ -1357,7 +1383,7 @@ async function runSunsang(job: Job, cfg: BookingConfig, sess: Session, log: (m: 
       return;
     }
     if (attempt % 10 === 1) log(ships.length ? `원하는 배가 아직 안 열렸습니다 (목록: ${ships.map((x) => `${x.name}${x.bookable ? "✔" : ""}`).join(", ")})` : "이 날짜의 일정이 아직 없습니다. 계속 확인합니다.");
-    await sleep(Math.max(0, cfg.pollMs! - (Date.now() - t0)) + Math.random() * 100);
+    await sleep(Math.max(0, nextDelay() - (Date.now() - t0)) + Math.random() * 100);
   }
   throw new Error("제한 시간 안에 예약 가능한 배를 찾지 못했습니다");
 }
