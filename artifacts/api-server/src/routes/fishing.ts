@@ -32,6 +32,7 @@ import {
 } from "../lib/fishing-source";
 import { readIntEnv } from "../lib/fetch-scheduler";
 import { logger } from "../lib/logger";
+import { TIDE_PORTS, getTideMonth } from "../lib/tide-table";
 
 const router: IRouter = Router();
 
@@ -255,6 +256,28 @@ router.get("/fishing/options", async (req, res) => {
   } catch (error) {
     req.log.error({ err: error }, "Fishing filter options failed to load");
     res.status(502).json({ error: "필터 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." });
+  }
+});
+
+// 서해 물때표(몇물, 조류 세기, 간조·만조, 날씨). 항구·월 단위로 조회하고 서버에서 하루 캐시한다.
+// 값이 없는 칸은 null, 아직 제공되지 않는 달은 status="unpublished"로 내려 화면에서 "데이터 없음"으로 보여 준다.
+router.get("/fishing/tide-table", async (req, res) => {
+  const port = req.query.port === undefined ? "삼길포" : String(req.query.port);
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  if (!TIDE_PORTS.includes(port)) {
+    res.status(400).json({ error: `항구는 ${TIDE_PORTS.join(", ")} 중에서 골라 주세요.` });
+    return;
+  }
+  if (!Number.isInteger(year) || year < 2020 || year > 2035 || !Number.isInteger(month) || month < 1 || month > 12) {
+    res.status(400).json({ error: "연도와 월을 올바르게 입력해 주세요." });
+    return;
+  }
+  try {
+    res.json(await getTideMonth(port, year, month));
+  } catch (error) {
+    req.log.error({ err: error }, "Tide table failed to load");
+    res.status(502).json({ error: "물때 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." });
   }
 });
 

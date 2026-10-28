@@ -37,6 +37,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { SeatRadar } from '@/components/seat-radar';
 import SourceManager from '@/components/source-manager';
 import AutoBooking from '@/components/auto-booking';
+import TideTable from '@/components/tide-table';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Toaster } from '@/components/ui/toaster';
@@ -683,6 +684,7 @@ function Home() {
   const [appliedWeekdays, setAppliedWeekdays] = useState<number[]>([]);
   const [showSourceManager, setShowSourceManager] = useState(false);
   const [showAutoBooking, setShowAutoBooking] = useState(false);
+  const [showTide, setShowTide] = useState(false);
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
   // 사이트 진입 시 자동으로 일정을 조회하지 않고, "자리 찾기"를 눌렀을 때만 조회합니다.
   const [hasSearched, setHasSearched] = useState(false);
@@ -786,14 +788,18 @@ function Home() {
             <div className="hidden items-center gap-2 md:flex"><span className="h-1.5 w-1.5 rounded-full bg-sidebar-primary" />실시간 예약처 연결됨</div>
             <button onClick={() => setShowSourceManager(true)} className="rounded-lg p-2 hover:bg-sidebar-accent md:hidden" data-testid="button-mobile-menu" aria-label="예약처 관리"><Menu size={18} /></button>
             <button type="button" onClick={() => setShowAutoBooking(true)} className="rounded-lg px-2 py-1.5 text-sm hover:bg-sidebar-accent md:hidden" data-testid="button-mobile-auto-booking">자동예약</button>
+            <button type="button" onClick={() => setShowTide(true)} className="rounded-lg px-2 py-1.5 text-sm hover:bg-sidebar-accent md:hidden" data-testid="button-mobile-tide">물때 정보</button>
             <div className="hidden h-8 w-px bg-sidebar-border sm:block" />
             <button type="button" onClick={() => setShowSourceManager(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-manage-sources"><Settings2 size={15} />예약처 관리</button>
             <button type="button" onClick={() => setShowAutoBooking(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-auto-booking">자동 예약</button>
+            <button type="button" onClick={() => setShowTide(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-tide"><Waves size={15} />물때 정보</button>
           </div>
         </div>
       </header>
 
-      {showAutoBooking ? (
+      {showTide ? (
+        <TideTable onBack={() => setShowTide(false)} />
+      ) : showAutoBooking ? (
         <AutoBooking onBack={() => setShowAutoBooking(false)} />
       ) : showSourceManager ? (
         <SourceManager onBack={() => setShowSourceManager(false)} />
