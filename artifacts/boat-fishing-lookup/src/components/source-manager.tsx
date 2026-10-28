@@ -543,11 +543,11 @@ function VesselBulkImport({
           <span className="px-3 py-2">우리호</span><span className="border-l border-border px-3 py-2">삼길포</span><span className="truncate border-l border-border px-3 py-2">https://example.com</span>
         </div>
       </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,240px)_1fr]">
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,240px)_1fr]">
         <select
           value={source?.id ?? ''}
           onChange={(event) => onSourceChange(Number(event.target.value))}
-          className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-10 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
           disabled={!sources.length}
         >
           {!sources.length && <option value="">등록된 예약처 없음</option>}

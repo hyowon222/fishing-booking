@@ -821,7 +821,7 @@ function Home() {
   };
 
   return (
-    <div className="noise-layer app-shell min-h-[100dvh] text-foreground">
+    <div className="noise-layer app-shell min-h-[100dvh] overflow-x-clip text-foreground">
       <header className="border-b border-sidebar-border bg-sidebar text-sidebar-foreground">
         <div className="mx-auto flex h-[72px] max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
