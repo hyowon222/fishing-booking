@@ -154,10 +154,11 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   // 실제 제출 모드 (화면을 열 때마다 항상 테스트 모드로 시작)
   const [realMode, setRealMode] = useState(false);
   const [realOk, setRealOk] = useState(false);
-  // 일자별 예약자: same=true 이면 바로 앞 일자와 동일
+  // 예약처·날짜별 예약자: same=true 이면 맨 위 공통 예약자를 그대로 쓴다 (기본값)
   const [bookerMap, setBookerMap] = useState<Record<string, { same: boolean; name: string; phone: string }>>({});
-  const bookerOf = (d: string) => bookerMap[d] ?? { same: true, name: '', phone: '' };
-  const setBooker = (d: string, v: Partial<{ same: boolean; name: string; phone: string }>) => setBookerMap((m) => ({ ...m, [d]: { ...bookerOf(d), ...v } }));
+  const bookerOf = (s: Site, d: string) => bookerMap[`${s.id}|${d}`] ?? { same: true, name: '', phone: '' };
+  const setBooker = (s: Site, d: string, v: Partial<{ same: boolean; name: string; phone: string }>) =>
+    setBookerMap((m) => ({ ...m, [`${s.id}|${d}`]: { ...bookerOf(s, d), ...v } }));
   // 예약처별 실제 출조 날짜: "공통 날짜 사용"이면 위의 공통 날짜, 아니면 그 예약처에 따로 정한 날짜
   const datesOf = (s: Site): string[] => [...(cfgOf(s).sameDates ? dates : cfgOf(s).dates)].sort();
   const allDates = [...new Set(selSites.flatMap(datesOf))].sort();
@@ -167,20 +168,13 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     if (v && !c.dates.includes(v) && c.dates.length < 10) setCfg(s, { dates: [...c.dates, v].sort() });
     setSiteDateInput((m) => ({ ...m, [s.id]: '' }));
   };
-  // 예약처별로 정렬된 날짜 순서대로 실제 적용될 예약자 계산
-  //  · 공통 예약자를 쓰는 예약처: 첫 일자는 위의 기본 예약자, 이후는 일자별 설정(앞 일자와 동일/따로)
-  //  · 자기 예약자를 따로 정한 예약처: 모든 일자에 그 예약자
+  // 예약처·날짜마다 실제 적용될 예약자: 따로 입력하지 않았으면 위의 공통 예약자
   const effectiveBookers = (s: Site) => {
-    const c = cfgOf(s);
-    const common = selSites.length < 2 || c.same; // 예약처가 한 곳이면 항상 공통 예약자
-    const base = common ? { name: name.trim(), phone } : { name: c.name.trim(), phone: c.phone };
+    const base = { name: name.trim(), phone };
     const out: Record<string, { name: string; phone: string }> = {};
-    let prev = base;
-    datesOf(s).forEach((d, i) => {
-      const b = bookerOf(d);
-      const cur = !common || i === 0 || b.same ? prev : { name: b.name.trim(), phone: b.phone };
-      out[d.replace(/-/g, '')] = cur;
-      prev = cur;
+    datesOf(s).forEach((d) => {
+      const b = bookerOf(s, d);
+      out[d.replace(/-/g, '')] = b.same ? base : { name: b.name.trim(), phone: b.phone };
     });
     return out;
   };
@@ -261,7 +255,6 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     save('autoBooking.site', sel[0]);
     for (const t of targets) {
       save(shipsKey(t.site.id), JSON.stringify(t.list));
-      save(bookerKey(t.site.id), JSON.stringify({ same: t.cfg.same, name: t.cfg.name, phone: t.cfg.phone }));
     }
     if (realMode) {
       if (!realOk) return setError('실제 제출을 시작하려면 아래 확인란에 체크해 주세요');
@@ -559,8 +552,8 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
           </div>
         </div>
         <p className="-mt-2 text-[11px] text-muted-foreground">
-          {allDates.length > 1 ? `위 정보는 ${allDates[0].slice(5)} 예약자입니다. ` : ''}이름·번호는 이 기기 브라우저에만 저장됩니다. 입금자명은 사용하지 않습니다.
-          {selSites.length > 1 ? ' 예약처별 설정에서 "공통 예약자와 동일"을 끄면 그 예약처만 다른 예약자로 넣을 수 있어요.' : ''}
+          이름·번호는 이 기기 브라우저에만 저장됩니다. 입금자명은 사용하지 않습니다.
+          {selSites.length > 1 || allDates.length > 1 ? ' 예약처·날짜마다 다른 사람으로 예약하려면 아래 각 예약처의 "날짜별 예약자"에서 바꾸세요.' : ''}
         </p>
 
         {selSites.map((x, idx) => {
@@ -645,47 +638,31 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
                 {c.seatMode === 'auto' && <input className={`${input} mt-2`} placeholder="원하는 좌석 번호 (선택, 예: 10, 11)" value={c.preferred} onChange={(e) => setCfg(x, { preferred: e.target.value })} />}
               </div>
 
-              {selSites.length > 1 && (
+              {(selSites.length > 1 || datesOf(x).length > 1) && datesOf(x).length > 0 && (
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={c.same} onChange={(e) => setCfg(x, { same: e.target.checked })} />
-                    공통 예약자와 동일
-                  </label>
-                  {!c.same && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <input className={input} placeholder="이 예약처 예약자명" value={c.name} onChange={(e) => setCfg(x, { name: e.target.value })} autoComplete="off" />
-                      <input className={input} inputMode="tel" placeholder="010-1234-5678" value={c.phone} onChange={(e) => setCfg(x, { phone: e.target.value })} autoComplete="off" />
-                    </div>
-                  )}
+                  <div className="text-xs font-medium text-muted-foreground">날짜별 예약자 (기본은 위의 공통 예약자)</div>
+                  {datesOf(x).map((d) => {
+                    const b = bookerOf(x, d);
+                    return (
+                      <div key={d} className="space-y-2 rounded border p-2">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input type="checkbox" checked={b.same} onChange={(e) => setBooker(x, d, { same: e.target.checked })} />
+                          <b>{d.slice(5).replace('-', '/')}</b> 공통 예약자
+                        </label>
+                        {!b.same && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <input className={input} placeholder="예약자명" value={b.name} onChange={(e) => setBooker(x, d, { name: e.target.value })} autoComplete="off" />
+                            <input className={input} inputMode="tel" placeholder="010-1234-5678" value={b.phone} onChange={(e) => setBooker(x, d, { phone: e.target.value })} autoComplete="off" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           );
         })}
-
-        {allDates.length > 1 && (
-          <div className="space-y-2 rounded-md border p-3">
-            <div className="text-xs font-medium">일자별 예약자{selSites.length > 1 ? ' (공통 예약자를 쓰는 예약처에 적용)' : ''}</div>
-            {allDates.map((d, i) => {
-              if (i === 0) return null;
-              const b = bookerOf(d);
-              return (
-                <div key={d} className="space-y-2 rounded border p-2">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={b.same} onChange={(e) => setBooker(d, { same: e.target.checked })} />
-                    <b>{d.slice(5)}</b> 이전 일자와 예약자 동일
-                  </label>
-                  {!b.same && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <input className={input} placeholder="예약자명" value={b.name} onChange={(e) => setBooker(d, { name: e.target.value })} />
-                      <input className={input} inputMode="tel" placeholder="010-1234-5678" value={b.phone} onChange={(e) => setBooker(d, { phone: e.target.value })} />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
 
         <div>
           <label className={label}>오픈 시각 (한국 시간, 비워두면 지금 바로 시작)</label>
