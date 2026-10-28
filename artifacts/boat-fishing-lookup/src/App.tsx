@@ -282,6 +282,7 @@ function SearchForm({
       return;
     }
     setDateError('');
+    setMobileOpen(false);
     onSubmit(event);
   };
   const toggleWeekday = (day: number) => {
@@ -474,22 +475,22 @@ function SearchForm({
                 {isOptionsLoading && <span className="text-xs text-muted-foreground">물때 목록을 불러오는 중입니다.</span>}
               </div>
             </div>
-            <div className="flex shrink-0 gap-2">
+            <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex">
               <button
                 type="button"
                 onClick={onForceRefresh}
                 disabled={isRefreshingAll || isOptionsRefreshing}
                 title="예약처 전체를 스캔하여 새로 추가된 선박과 항구 목록을 찾아 업데이트합니다"
-                className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-input px-4 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-70"
+                className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-input px-3 text-xs font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-70 sm:h-10 sm:px-4 sm:text-sm"
                 data-testid="button-force-refresh"
               >
                 <RefreshCw size={14} className={isRefreshingAll || isOptionsRefreshing ? 'animate-spin' : undefined} />
                 {isRefreshingAll || isOptionsRefreshing ? '신규 선박 찾는 중...' : '신규 선박 찾기'}
               </button>
-              <button type="button" onClick={clearAll} className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-input px-4 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground" data-testid="button-reset-filters">
+              <button type="button" onClick={clearAll} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-input px-3 text-xs font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground sm:h-10 sm:px-4 sm:text-sm" data-testid="button-reset-filters">
                 <RefreshCw size={14} /> 초기화
               </button>
-              <button type="submit" className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-bold text-primary-foreground shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:cursor-wait disabled:opacity-70" disabled={isFetching} data-testid="button-search-schedules">
+              <button type="submit" className="order-first col-span-2 flex h-12 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-base font-bold sm:order-none sm:col-span-1 sm:h-10 sm:text-sm text-primary-foreground shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:cursor-wait disabled:opacity-70" disabled={isFetching} data-testid="button-search-schedules">
                 {isFetching ? <RefreshCw size={15} className="animate-spin" /> : <Search size={15} />}
                 {isFetching ? '찾는 중' : '자리 찾기'}
               </button>
@@ -525,7 +526,7 @@ function ScheduleRow({ schedule }: { schedule: FishingSchedule }) {
   const seatState = schedule.remainingSeats === null ? '확인 필요' : schedule.remainingSeats === 0 ? '마감' : `${schedule.remainingSeats}석`;
   const seatClass = schedule.remainingSeats === null ? 'bg-muted text-muted-foreground' : schedule.remainingSeats === 0 ? 'bg-destructive/10 text-destructive' : schedule.remainingSeats <= 3 ? 'bg-accent/20 text-[#966516]' : 'bg-primary/10 text-primary';
   return (
-    <div className="group grid gap-2 border-b border-border px-4 py-4 transition-colors last:border-0 hover:bg-muted/35 md:grid-cols-[1.1fr_.9fr_1fr_1.1fr_.85fr_1fr_110px] md:items-center md:gap-4 md:px-5" data-testid={`row-schedule-${schedule.id}`}>
+    <div className="group grid gap-2 border-b border-border px-4 py-4 transition-colors last:border-0 hover:bg-muted/35 md:grid-cols-[1.1fr_.9fr_1fr_1.1fr_.85fr_1fr_110px] md:items-center md:gap-4 md:px-5 max-md:gap-1.5 max-md:py-3" data-testid={`row-schedule-${schedule.id}`}>
       <div className="flex items-start justify-between md:block">
         <div>
           <p className="text-sm font-bold">{formatDate(schedule.departureDate)} <span className="font-medium text-muted-foreground">{schedule.weekday}</span></p>
@@ -533,10 +534,12 @@ function ScheduleRow({ schedule }: { schedule: FishingSchedule }) {
         </div>
         <span className={`rounded-full px-2.5 py-1 text-xs font-bold md:hidden ${seatClass}`}>{seatState}</span>
       </div>
-      <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">지역</span><span>{schedule.region}</span></div>
-      <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">선박</span><span className="font-semibold">{schedule.vessel}</span></div>
-      <div className="flex min-w-0 items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">운영사</span>{schedule.operatorUrl ? <a href={schedule.operatorUrl} target="_blank" rel="noreferrer" className="truncate font-medium hover:text-primary hover:underline">{schedule.operator}</a> : <span className="truncate">{schedule.operator}</span>}</div>
-      <div className="flex items-center gap-2 text-sm"><span className="text-xs text-muted-foreground md:hidden">장르</span><span className="rounded-md bg-secondary px-2 py-1 text-xs font-semibold text-secondary-foreground">{schedule.genre}</span></div>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 md:contents">
+      <div className="flex items-center gap-2 text-sm"><span>{schedule.region}</span></div>
+      <div className="flex items-center gap-2 text-sm"><span className="font-semibold">{schedule.vessel}</span></div>
+      <div className="flex min-w-0 items-center gap-2 text-sm">{schedule.operatorUrl ? <a href={schedule.operatorUrl} target="_blank" rel="noreferrer" className="truncate font-medium hover:text-primary hover:underline">{schedule.operator}</a> : <span className="truncate">{schedule.operator}</span>}</div>
+      <div className="flex items-center gap-2 text-sm"><span className="rounded-md bg-secondary px-2 py-1 text-xs font-semibold text-secondary-foreground">{schedule.genre}</span></div>
+      </div>
       <div className="flex flex-col gap-1 text-sm">
         <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground md:hidden">물때</span><span>{schedule.tide}</span><TideStrength percent={schedule.tideStrengthPercent} /></div>
         {schedule.tideRange ? <p className="text-[11px] leading-tight text-muted-foreground" title="낚시 시간(06~18시)의 간조·만조와 높이 차이 (바다타임 기준)" data-testid="text-tide-range">{schedule.tideRange}</p> : null}
@@ -544,7 +547,7 @@ function ScheduleRow({ schedule }: { schedule: FishingSchedule }) {
       <div className="flex items-center justify-between gap-2 pt-2 md:justify-end md:pt-0">
         <span className={`hidden rounded-full px-2.5 py-1 text-xs font-bold md:inline-flex ${seatClass}`}>{seatState}</span>
         {schedule.bookingUrl && schedule.remainingSeats !== 0 ? (
-          <a href={schedule.bookingUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs font-bold text-primary opacity-100 transition group-hover:translate-x-0.5 hover:underline md:opacity-0 md:group-hover:opacity-100" data-testid={`link-book-${schedule.id}`}>
+          <a href={schedule.bookingUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground transition hover:opacity-90 md:rounded-none md:bg-transparent md:p-0 md:text-xs md:text-primary md:opacity-0 md:group-hover:translate-x-0.5 md:group-hover:opacity-100 md:hover:underline" data-testid={`link-book-${schedule.id}`}>
             예약 <ArrowUpRight size={13} />
           </a>
         ) : <span className="text-[11px] text-muted-foreground md:hidden">{schedule.source}</span>}
@@ -728,6 +731,7 @@ function Home() {
     setAppliedParams(nextParams);
     setAppliedWeekdays(weekdays);
     setHasSearched(true);
+    window.setTimeout(() => document.getElementById('section-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
     if (unchanged) {
       searchQuery.refetch();
     }
@@ -788,7 +792,7 @@ function Home() {
             <div className="hidden items-center gap-2 md:flex"><span className="h-1.5 w-1.5 rounded-full bg-sidebar-primary" />실시간 예약처 연결됨</div>
             <button onClick={() => setShowSourceManager(true)} className="rounded-lg p-2 hover:bg-sidebar-accent md:hidden" data-testid="button-mobile-menu" aria-label="예약처 관리"><Menu size={18} /></button>
             <button type="button" onClick={() => setShowAutoBooking(true)} className="rounded-lg px-2 py-1.5 text-sm hover:bg-sidebar-accent md:hidden" data-testid="button-mobile-auto-booking">자동예약</button>
-            <button type="button" onClick={() => setShowTide(true)} className="rounded-lg px-2 py-1.5 text-sm hover:bg-sidebar-accent md:hidden" data-testid="button-mobile-tide">물때 정보</button>
+            <button type="button" onClick={() => setShowTide(true)} className="rounded-lg px-2 py-1.5 text-sm hover:bg-sidebar-accent md:hidden" data-testid="button-mobile-tide">물때</button>
             <div className="hidden h-8 w-px bg-sidebar-border sm:block" />
             <button type="button" onClick={() => setShowSourceManager(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-manage-sources"><Settings2 size={15} />예약처 관리</button>
             <button type="button" onClick={() => setShowAutoBooking(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-auto-booking">자동 예약</button>
@@ -805,19 +809,19 @@ function Home() {
         <SourceManager onBack={() => setShowSourceManager(false)} />
       ) : (
       <main className="pb-12">
-        <section className="mx-auto max-w-[1440px] px-4 pb-7 pt-8 sm:px-6 sm:pt-10 lg:px-8">
-          <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+        <section className="mx-auto max-w-[1440px] px-4 pb-4 pt-5 sm:px-6 sm:pb-7 sm:pt-10 lg:px-8">
+          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end md:gap-5">
             <div className="screen-reveal">
-              <div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-primary"><span className="h-px w-6 bg-primary" />Open seat radar</div>
-              <h1 className="max-w-2xl font-serif text-[clamp(2rem,4.5vw,3.8rem)] font-bold leading-[1.02] tracking-[-0.045em]">이번 출항,<br /><span className="text-primary">탈 수 있는 자리</span>부터.</h1>
-              <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">흩어진 예약처를 한 번에 살펴보고, 실제로 예약할 가치가 있는 출항만 빠르게 비교하세요.</p>
+              <div className="mb-3 hidden items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-primary sm:flex"><span className="h-px w-6 bg-primary" />Open seat radar</div>
+              <h1 className="max-w-2xl font-serif text-[clamp(1.6rem,4.5vw,3.8rem)] font-bold leading-[1.02] tracking-[-0.045em]">이번 출항,<br /><span className="text-primary">탈 수 있는 자리</span>부터.</h1>
+              <p className="mt-4 hidden max-w-xl text-sm leading-6 text-muted-foreground sm:block sm:text-base">흩어진 예약처를 한 번에 살펴보고, 실제로 예약할 가치가 있는 출항만 빠르게 비교하세요.</p>
             </div>
-            <div className="screen-reveal-delay flex items-center gap-3 md:pb-1">
-              <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <div className="screen-reveal-delay flex items-center gap-2 text-xs md:gap-3 md:pb-1">
+              <div className="rounded-xl border border-border bg-card px-3 py-2 md:px-4 md:py-3">
                 <p className="text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground">Last checked</p>
                 <p className="mono mt-1 text-sm font-medium">{formatSearchedAt(data?.searchedAt)}</p>
               </div>
-              <div className="rounded-xl border border-border bg-card px-4 py-3">
+              <div className="rounded-xl border border-border bg-card px-3 py-2 md:px-4 md:py-3">
                 <p className="text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground">Source</p>
                 <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold"><span className="h-1.5 w-1.5 rounded-full bg-primary" />{data?.source ?? '연결 대기'}</p>
               </div>
@@ -827,7 +831,7 @@ function Home() {
 
         <SearchForm criteria={criteria} setCriteria={setCriteria} options={options} isOptionsLoading={optionsQuery.isLoading} isOptionsRefreshing={options?.refreshing ?? false} onSubmit={submit} onReset={reset} isFetching={searchQuery.isFetching} weekdays={weekdays} setWeekdays={setWeekdays} onForceRefresh={forceRefreshAll} isRefreshingAll={isRefreshingAll} />
 
-        <section className="mx-auto max-w-[1440px] px-4 pt-2 sm:px-6 lg:px-8">
+        <section id="section-results" className="mx-auto max-w-[1440px] scroll-mt-3 px-4 pt-2 sm:px-6 lg:px-8">
           <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
             <div>
               <div className="flex flex-wrap items-center gap-2">

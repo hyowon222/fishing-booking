@@ -26,8 +26,9 @@ type TideMonth = {
   ports: string[];
 };
 
-const YEARS = [2026, 2027];
-const MONTHS = [9, 10, 11];
+const NOW = new Date();
+const YEARS = [NOW.getFullYear(), NOW.getFullYear() + 1];
+const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const DEFAULT_PORTS = ['삼길포', '대천항', '신진도', '오천항', '마검포'];
 const NO_DATA = '데이터 없음';
 
@@ -67,8 +68,8 @@ function weekdayClass(weekday: string) {
 
 export default function TideTable({ onBack }: { onBack: () => void }) {
   const [port, setPort] = useState('삼길포');
-  const [year, setYear] = useState(2027);
-  const [month, setMonth] = useState(9);
+  const [year, setYear] = useState(NOW.getFullYear());
+  const [month, setMonth] = useState(NOW.getMonth() + 1);
   const [data, setData] = useState<TideMonth | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
@@ -101,7 +102,7 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
 
   const ports = data?.ports?.length ? data.ports : DEFAULT_PORTS;
   const chip = (active: boolean) =>
-    `rounded-full border px-3.5 py-1.5 text-sm font-semibold transition ${
+    `rounded-full border px-3.5 py-2 text-sm font-semibold transition ${
       active ? 'border-primary bg-primary text-primary-foreground' : 'border-input hover:bg-muted'
     }`;
 
@@ -141,13 +142,15 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center gap-2" data-testid="tide-month-select">
-            <span className="w-12 text-xs font-bold text-muted-foreground">월</span>
-            {MONTHS.map((value) => (
-              <button key={value} type="button" onClick={() => setMonth(value)} className={chip(month === value)}>
-                {value}월
-              </button>
-            ))}
+          <div className="flex items-start gap-2" data-testid="tide-month-select">
+            <span className="w-12 shrink-0 pt-2 text-xs font-bold text-muted-foreground">월</span>
+            <div className="grid flex-1 grid-cols-6 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
+              {MONTHS.map((value) => (
+                <button key={value} type="button" onClick={() => setMonth(value)} className={`${chip(month === value)} whitespace-nowrap px-0 text-center text-xs sm:px-3.5 sm:text-sm`}>
+                  {value}월
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -176,8 +179,31 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
             <p className="mt-1.5 text-xs text-muted-foreground">{data?.message ?? '이 달의 물때 정보가 아직 제공되지 않았습니다.'}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border bg-card" data-testid="tide-table">
-            <table className="w-full min-w-[920px] border-collapse text-sm">
+          <>
+          <div className="space-y-2 md:hidden" data-testid="tide-cards">
+            {data.days.map((day) => (
+              <div key={day.date} className="rounded-xl border border-border bg-card p-3" data-testid={`tide-card-${day.date}`}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className={`text-sm font-bold ${weekdayClass(day.weekday)}`}>
+                    {Number(day.date.slice(8, 10))}일({day.weekday})
+                    <span className="ml-2 text-[11px] font-normal text-muted-foreground">{day.lunar ? `음력 ${day.lunar}` : ''}</span>
+                  </div>
+                  <div className="text-sm font-semibold">{day.mulddae ?? <NoData />}</div>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <FlowBar day={day} />
+                  <span className="mono text-sm">{day.range === null ? '' : `고저차 ${day.range}cm`}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  <div><p className="mb-0.5 text-[11px] font-bold text-muted-foreground">만조</p><EventList events={day.highs} /></div>
+                  <div><p className="mb-0.5 text-[11px] font-bold text-muted-foreground">간조</p><EventList events={day.lows} /></div>
+                </div>
+                {day.weather ? <p className="mt-2 text-xs text-muted-foreground">날씨 {day.weather.am === day.weather.pm ? day.weather.am : `${day.weather.am} / ${day.weather.pm}`}</p> : null}
+              </div>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto rounded-xl border border-border bg-card md:block" data-testid="tide-table">
+            <table className="w-full min-w-[820px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/50 text-left text-xs font-bold text-muted-foreground">
                   <th className="px-3 py-2.5">날짜</th>
@@ -187,7 +213,6 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
                   <th className="px-3 py-2.5">간조</th>
                   <th className="px-3 py-2.5">고저차</th>
                   <th className="px-3 py-2.5">날씨(오전/오후)</th>
-                  <th className="px-3 py-2.5">바람</th>
                 </tr>
               </thead>
               <tbody>
@@ -207,15 +232,15 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
                     <td className="whitespace-nowrap px-3 py-2.5">
                       {day.weather ? (day.weather.am === day.weather.pm ? day.weather.am : `${day.weather.am} / ${day.weather.pm}`) : <NoData />}
                     </td>
-                    <td className="px-3 py-2.5"><NoData /></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </>
         )}
         <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
-          고저차는 그날 가장 높은 만조와 가장 낮은 간조의 차이입니다. 조류 세기는 바다타임의 물흐름(%) 값입니다. 날씨는 예보가 있는 날짜만 표시됩니다.
+          고저차는 그날 가장 높은 만조와 가장 낮은 간조의 차이입니다. 조류 세기는 바다타임의 물흐름(%) 값입니다. 날씨는 예보가 있는 날짜만 표시됩니다. 값이 없는 달은 아직 바다타임에 올라오지 않은 것입니다.
         </p>
       </section>
     </main>
