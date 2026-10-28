@@ -1209,6 +1209,27 @@ export function parseSunsangDay(html: string): SunShip[] {
   });
 }
 
+// 달력(월) 페이지에서 해당 날짜 칸(id="dYYYY-MM-DD")만 잘라, 선박 단위(.ship_unit)를 느슨하게 읽는다.
+// 예약처마다 날짜별 목록(simple_day) 모양이 달라 못 읽을 때를 위한 대비책이다.
+export function parseSunsangMonthDay(html: string, date: string): SunShip[] {
+  const iso = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
+  const at = html.search(new RegExp(`id=["']d${iso}["']`));
+  if (at < 0) return [];
+  const rest = html.slice(at + 10);
+  const nextDay = rest.search(/id=["']d\d{4}-\d{2}-\d{2}["']/);
+  const day = nextDay < 0 ? rest : rest.slice(0, nextDay);
+  const marks = [...day.matchAll(/<[a-z]+[^>]*class=["'][^"']*\bship_unit\b(?!_)[^"']*["'][^>]*>/g)];
+  return marks.map((m, i) => {
+    const chunk = day.slice(m.index! + m[0].length, i + 1 < marks.length ? marks[i + 1].index! : day.length);
+    const name = stripTags(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+    const scheduleNo = /data-schedule_no=["'](\d+)["']/.exec(chunk)?.[1] ?? "";
+    const fish = stripTags(/id=["']fish["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+    const closed = /data-status_code=["']END["']/.test(chunk) || /예약\s*마감/.test(chunk);
+    const shipNo = /ship_unit_ship_no_(\d+)/.exec(m[0])?.[1] ?? "";
+    return { shipNo, name, scheduleNo, bookable: !!scheduleNo && !closed, fish };
+  });
+}
+
 // 페이지 안의 `var data = {...};` 를 JSON 으로 읽는다 (문자열 안의 중괄호는 무시)
 export function parseJsVar(html: string, varName = "data"): any {
   const start = html.indexOf(`var ${varName} = `);
@@ -1347,6 +1368,23 @@ async function runSunsang(job: Job, cfg: BookingConfig, sess: Session, log: (m: 
     try {
       const r = await sess.request("GET", `/ship/schedule_fleet/${cfg.date}/0/simple_day`, { ajax: true, referer: `${sess.base}/ship/schedule_fleet` });
       ships = parseSunsangDay(r.text).filter((x) => x.scheduleNo && !skipped.has(x.scheduleNo));
+      if (!ships.length) {
+        // 날짜별 목록에서 못 읽으면 달력 페이지로 한 번 더 찾아본다
+        let how = "";
+        try {
+          const m = await sess.request("GET", `/ship/schedule_fleet/${cfg.date.slice(0, 6)}`, { referer: `${sess.base}/ship/schedule_fleet` });
+          ships = parseSunsangMonthDay(m.text, cfg.date).filter((x) => x.scheduleNo && !skipped.has(x.scheduleNo));
+          how = ` · 달력 페이지 ${m.status} ${m.text.length}자, 선박 ${ships.length}척`;
+          if (ships.length && attempt === 1) log("날짜별 목록에서는 못 읽어서 달력 페이지에서 배를 찾았습니다.");
+        } catch (e: any) {
+          how = ` · 달력 페이지 오류: ${String(e.message).slice(0, 60)}`;
+        }
+        if (!ships.length && attempt % 10 === 1) {
+          const units = (r.text.match(/ship_unit/g) ?? []).length;
+          const sched = (r.text.match(/schedule_no/g) ?? []).length;
+          log(`진단: 날짜별 목록 ${r.status} ${r.text.length}자 · ship_unit ${units}곳 · schedule_no ${sched}곳 · "${stripTags(r.text).slice(0, 70)}"${how}`);
+        }
+      }
     } catch (e: any) {
       log(`조회 오류: ${e.message}`);
       if (/중계기 오류\((auth|config)\)/.test(e.message)) throw e;
