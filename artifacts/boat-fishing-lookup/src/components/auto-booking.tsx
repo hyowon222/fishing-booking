@@ -186,6 +186,8 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   };
 
   const [jobs, setJobs] = useState<Job[]>([]);
+  // 집 PC 중계: null = 사용 안 함, true = 연결됨, false = 꺼져 있음
+  const [home, setHome] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showPayload, setShowPayload] = useState<Record<string, boolean>>({});
@@ -211,6 +213,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
       const s = await api('/status');
       setNeedKey(false);
       setRelayOk(s.relay);
+      setHome(s.home?.enabled ? Boolean(s.home.online) : null);
       const j = await api('/jobs');
       setJobs(j.jobs);
     } catch {
@@ -337,6 +340,12 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">테스트 모드 · 제출 안 함</span>
         )}
       </div>
+
+      {home !== null && (
+        <p className={`rounded-lg border p-3 text-xs ${home ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`} data-testid="text-home-status">
+          {home ? '집 PC 연결됨 · 더피싱 같은 막힌 사이트도 예약할 수 있어요.' : '집 PC가 꺼져 있어요. 더피싱 같은 막힌 사이트는 집 PC를 켜야 예약돼요. (start.bat 실행)'}
+        </p>
+      )}
 
       {relayOk === false && (
         <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
@@ -536,7 +545,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
 
         <div>
           <label className={label}>낚시 종류</label>
-          <p className="h-10 rounded-lg bg-muted px-3 text-sm leading-10">쭈꾸미 · 갑오징어 · 쭈갑 (이 중 하나라도 있으면 진행)</p>
+          <p className="rounded-lg bg-muted px-3 py-2 text-sm leading-6">쭈꾸미 · 갑오징어 · 쭈갑 (이 중 하나라도 있으면 진행)</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">

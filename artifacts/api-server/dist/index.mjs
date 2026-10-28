@@ -21328,7 +21328,7 @@ var require_application = __commonJS({
       return this;
     };
     app2.render = function render3(name, options, callback) {
-      var cache = this.cache;
+      var cache2 = this.cache;
       var done = callback;
       var engines = this.engines;
       var opts = options;
@@ -21342,7 +21342,7 @@ var require_application = __commonJS({
         renderOptions.cache = this.enabled("view cache");
       }
       if (renderOptions.cache) {
-        view = cache[name];
+        view = cache2[name];
       }
       if (!view) {
         var View3 = this.get("view");
@@ -21358,7 +21358,7 @@ var require_application = __commonJS({
           return done(err);
         }
         if (renderOptions.cache) {
-          cache[name] = view;
+          cache2[name] = view;
         }
       }
       tryRender(view, renderOptions, done);
@@ -27010,12 +27010,12 @@ var require_levels = __commonJS({
     function genLsCache(instance) {
       const formatter = instance[formattersSym].level;
       const { labels } = instance.levels;
-      const cache = {};
+      const cache2 = {};
       for (const label in labels) {
         const level = formatter(labels[label], Number(label));
-        cache[label] = JSON.stringify(level).slice(0, -1);
+        cache2[label] = JSON.stringify(level).slice(0, -1);
       }
-      instance[lsCacheSym] = cache;
+      instance[lsCacheSym] = cache2;
       return instance;
     }
     function isStandardLevel(level, useOnlyCustomLevels) {
@@ -60351,8 +60351,8 @@ var require_cache3 = __commonJS({
        * @returns {requestResponseList}
        */
       #batchCacheOperations(operations) {
-        const cache = this.#relevantRequestResponseList;
-        const backupCache = [...cache];
+        const cache2 = this.#relevantRequestResponseList;
+        const backupCache = [...cache2];
         const addedItems = [];
         const resultList = [];
         try {
@@ -60379,9 +60379,9 @@ var require_cache3 = __commonJS({
                 return [];
               }
               for (const requestResponse of requestResponses) {
-                const idx = cache.indexOf(requestResponse);
+                const idx = cache2.indexOf(requestResponse);
                 assert2(idx !== -1);
-                cache.splice(idx, 1);
+                cache2.splice(idx, 1);
               }
             } else if (operation.type === "put") {
               if (operation.response == null) {
@@ -60411,11 +60411,11 @@ var require_cache3 = __commonJS({
               }
               requestResponses = this.#queryCache(operation.request);
               for (const requestResponse of requestResponses) {
-                const idx = cache.indexOf(requestResponse);
+                const idx = cache2.indexOf(requestResponse);
                 assert2(idx !== -1);
-                cache.splice(idx, 1);
+                cache2.splice(idx, 1);
               }
-              cache.push([operation.request, operation.response]);
+              cache2.push([operation.request, operation.response]);
               addedItems.push([operation.request, operation.response]);
             }
             resultList.push([operation.request, operation.response]);
@@ -60592,13 +60592,13 @@ var require_cachestorage = __commonJS({
         if (options.cacheName != null) {
           if (this.#caches.has(options.cacheName)) {
             const cacheList = this.#caches.get(options.cacheName);
-            const cache = new Cache2(kConstruct, cacheList);
-            return await cache.match(request, options);
+            const cache2 = new Cache2(kConstruct, cacheList);
+            return await cache2.match(request, options);
           }
         } else {
           for (const cacheList of this.#caches.values()) {
-            const cache = new Cache2(kConstruct, cacheList);
-            const response = await cache.match(request, options);
+            const cache2 = new Cache2(kConstruct, cacheList);
+            const response = await cache2.match(request, options);
             if (response !== void 0) {
               return response;
             }
@@ -60628,12 +60628,12 @@ var require_cachestorage = __commonJS({
         webidl.argumentLengthCheck(arguments, 1, prefix);
         cacheName = webidl.converters.DOMString(cacheName, prefix, "cacheName");
         if (this.#caches.has(cacheName)) {
-          const cache2 = this.#caches.get(cacheName);
-          return new Cache2(kConstruct, cache2);
+          const cache3 = this.#caches.get(cacheName);
+          return new Cache2(kConstruct, cache3);
         }
-        const cache = [];
-        this.#caches.set(cacheName, cache);
-        return new Cache2(kConstruct, cache);
+        const cache2 = [];
+        this.#caches.set(cacheName, cache2);
+        return new Cache2(kConstruct, cache2);
       }
       /**
        * @see https://w3c.github.io/ServiceWorker/#cache-storage-delete
@@ -68466,6 +68466,7 @@ var SearchFishingSchedulesResponse = objectType({
     "port": stringType(),
     "tide": stringType(),
     "tideStrengthPercent": numberType().int().nullable().describe("\uBC14\uB2E4\uD0C0\uC784(badatime.com) \uAE30\uC900 \uC870\uB958 \uC138\uAE30(%). \uB9E4\uD551\uB418\uC9C0 \uC54A\uC740 \uD56D\uAD6C\uC774\uAC70\uB098 \uC870\uD68C\uC5D0 \uC2E4\uD328\uD558\uBA74 null."),
+    "tideRange": stringType().nullable().describe('\uB0AE \uC2DC\uAC04(06~18\uC2DC)\uC758 \uAC04\uC870\xB7\uB9CC\uC870 \uC2DC\uAC01\uACFC \uB192\uC774 \uCC28\uC774 \uC694\uC57D. \uC608: "\uAC04\uC870 09:10 \xB7 \uB9CC\uC870 15:41 \xB7 \uCC28 604cm". \uC5C6\uC73C\uBA74 null.'),
     "genre": stringType(),
     "operator": stringType(),
     "vessel": stringType(),
@@ -75144,12 +75145,12 @@ async function hashQuery(sql2, params) {
 
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/session.js
 var PgPreparedQuery = class {
-  constructor(query, cache, queryMetadata, cacheConfig) {
+  constructor(query, cache2, queryMetadata, cacheConfig) {
     this.query = query;
-    this.cache = cache;
+    this.cache = cache2;
     this.queryMetadata = queryMetadata;
     this.cacheConfig = cacheConfig;
-    if (cache && cache.strategy() === "all" && cacheConfig === void 0) {
+    if (cache2 && cache2.strategy() === "all" && cacheConfig === void 0) {
       this.cacheConfig = { enable: true, autoInvalidate: true };
     }
     if (!this.cacheConfig?.enable) {
@@ -75305,8 +75306,8 @@ var PgTransaction = class extends PgDatabase {
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/node-postgres/session.js
 var { Pool: Pool2, types: types2 } = esm_default;
 var NodePgPreparedQuery = class extends PgPreparedQuery {
-  constructor(client, queryString, params, logger2, cache, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
-    super({ sql: queryString, params }, cache, queryMetadata, cacheConfig);
+  constructor(client, queryString, params, logger2, cache2, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
+    super({ sql: queryString, params }, cache2, queryMetadata, cacheConfig);
     this.client = client;
     this.queryString = queryString;
     this.params = params;
@@ -102049,10 +102050,10 @@ function parseSeatCountText(value) {
   const match = cleanText(value).match(/^(?:남은\s*자리\s*)?(\d+)\s*명$/);
   return match ? Number(match[1]) : null;
 }
-function genreFromStatusCell(cell, $2) {
+function genreFromStatusCell(cell2, $2) {
   const labeled = (label) => {
     let value = "";
-    cell.find("tr").each((_index, tr) => {
+    cell2.find("tr").each((_index, tr) => {
       const tds = $2(tr).children("td");
       if (tds.length >= 2 && cleanText(tds.eq(0).text()) === label) {
         value = cleanText(tds.eq(1).text());
@@ -102127,6 +102128,7 @@ function parseDayBlock(block, config2) {
       port: config2.port,
       tide,
       tideStrengthPercent: null,
+      tideRange: null,
       genre: genre || "\uC120\uC0C1 \uB09A\uC2DC",
       operator,
       vessel,
@@ -102410,6 +102412,7 @@ function parseSunsangDayBlock($2, dayTable, config2) {
       port: config2.port,
       tide,
       tideStrengthPercent: null,
+      tideRange: null,
       genre,
       operator: cleanText(config2.name),
       vessel,
@@ -102471,6 +102474,7 @@ async function fetchSunsangMonth(year, month, config2, ctx = USER_FETCH_CONTEXT)
         port: config2.port,
         tide,
         tideStrengthPercent: null,
+        tideRange: null,
         genre,
         operator: cleanText(config2.name),
         vessel,
@@ -102701,6 +102705,41 @@ var tideStrengthMonthCache = /* @__PURE__ */ new Map();
 var tideFailureUntil = /* @__PURE__ */ new Map();
 var tideInflight = /* @__PURE__ */ new Map();
 var tideLimiter = createPriorityLimiter({ maxConcurrent: 4 });
+var FISHING_START_MIN = 6 * 60;
+var FISHING_END_MIN = 18 * 60;
+function summarizeDaytimeTide(events) {
+  const day = events.filter((e) => e.minutes >= FISHING_START_MIN && e.minutes <= FISHING_END_MIN).sort((a, b) => a.minutes - b.minutes);
+  if (day.length === 0) return null;
+  const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const parts = day.map((e) => `${e.kind} ${clock(e.minutes)}`);
+  const highs = day.filter((e) => e.kind === "\uB9CC\uC870").map((e) => e.height);
+  const lows = day.filter((e) => e.kind === "\uAC04\uC870").map((e) => e.height);
+  if (highs.length && lows.length) parts.push(`\uCC28 ${Math.max(...highs) - Math.min(...lows)}cm`);
+  return parts.join(" \xB7 ");
+}
+function parseTideEvents($2) {
+  const byDate = /* @__PURE__ */ new Map();
+  $2("tr").each((_, row) => {
+    const manjo = $2(row).find("td.manjo").first();
+    const ganjo = $2(row).find("td.ganjo").first();
+    if (!manjo.length && !ganjo.length) return;
+    const href = $2(row).find('a[href*="/graph/"]').first().attr("href") ?? "";
+    const dateMatch = href.match(/\/graph\/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!dateMatch) return;
+    const events = [];
+    const collect = (cell2, kind) => {
+      cell2.find("b").each((__, b) => {
+        const m = $2(b).text().match(/(\d{1,2}):(\d{2})\s*\(\s*(-?\d+)\s*\)/);
+        if (m) events.push({ kind, minutes: Number(m[1]) * 60 + Number(m[2]), height: Number(m[3]) });
+      });
+    };
+    collect(manjo, "\uB9CC\uC870");
+    collect(ganjo, "\uAC04\uC870");
+    const [, y, mo, d] = dateMatch;
+    byDate.set(`${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`, events);
+  });
+  return byDate;
+}
 async function loadTideStrengthMonth(locationId, year, month) {
   const url2 = `https://www.badatime.com/${locationId}/daily/${year}-${String(month).padStart(2, "0")}`;
   const response = await fetch(url2, { headers: browserHeaders(url2), signal: AbortSignal.timeout(TIDE_FETCH_TIMEOUT_MS) });
@@ -102710,6 +102749,11 @@ async function loadTideStrengthMonth(locationId, year, month) {
   }
   const html3 = await response.text();
   const $2 = load(html3);
+  let events = /* @__PURE__ */ new Map();
+  try {
+    events = parseTideEvents($2);
+  } catch {
+  }
   const days = /* @__PURE__ */ new Map();
   $2("tr.mo-row-only").each((_, row) => {
     const value = $2(row).find(".progress-bar").first().attr("data-value");
@@ -102719,7 +102763,8 @@ async function loadTideStrengthMonth(locationId, year, month) {
     const percent = Number(value);
     if (!Number.isFinite(percent)) return;
     const [, y, m, d] = dateMatch;
-    days.set(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`, percent);
+    const date6 = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    days.set(date6, { percent, range: summarizeDaytimeTide(events.get(date6) ?? []) });
   });
   if (days.size === 0) {
     throw new Error(`\uBC14\uB2E4\uD0C0\uC784 \uD30C\uC2F1 \uACB0\uACFC 0\uAC74 (HTML \uAD6C\uC870\uAC00 \uBC14\uB00C\uC5C8\uC744 \uC218 \uC788\uC74C): ${url2}`);
@@ -102764,7 +102809,7 @@ function prefetchTideStrength(sources, months) {
     for (const { year, month } of months) {
       jobs2.push(
         fetchTideStrengthMonth(locationId, year, month).then((days) => {
-          if (days) for (const [date6, percent] of days) merged.set(date6, percent);
+          if (days) for (const [date6, day] of days) merged.set(date6, day);
         })
       );
     }
@@ -102773,7 +102818,9 @@ function prefetchTideStrength(sources, months) {
 }
 function applyTideStrength(items, byPort) {
   for (const item of items) {
-    item.tideStrengthPercent = byPort.get(item.port)?.get(item.departureDate) ?? null;
+    const day = byPort.get(item.port)?.get(item.departureDate);
+    item.tideStrengthPercent = day?.percent ?? null;
+    item.tideRange = day?.range ?? null;
   }
 }
 function logSearchSummary(args) {
@@ -103322,6 +103369,166 @@ async function discoverSourcesByPort(rawKeyword, regionOverride, scanSources = {
   };
 }
 
+// src/lib/tide-parser.ts
+var WEEKDAYS = ["\uC77C", "\uC6D4", "\uD654", "\uC218", "\uBAA9", "\uAE08", "\uD1A0"];
+var pad2 = (n) => String(n).padStart(2, "0");
+function cell(row, cls) {
+  const m = row.match(new RegExp(`<td[^>]*class="${cls}"[^>]*>([\\s\\S]*?)</td>`));
+  return m ? m[1] : null;
+}
+function parseEvents(block) {
+  if (!block) return [];
+  const events = [];
+  const re = /<b>\s*(\d{1,2}):(\d{2})\s*\(\s*(?:&nbsp;|\s)*(-?\d+)\s*\)\s*<\/b>\s*(?:<span[^>]*>\s*<font[^>]*>\s*[▲▼]\s*([+-]?\d+)\s*<\/font>\s*<\/span>)?/g;
+  for (const m of block.matchAll(re)) {
+    const height = Number(m[3]);
+    const delta = m[4] === void 0 ? null : Number(m[4]);
+    events.push({
+      time: `${pad2(Number(m[1]))}:${m[2]}`,
+      height: Number.isFinite(height) ? height : null,
+      delta: delta !== null && Number.isFinite(delta) ? delta : null
+    });
+  }
+  return events;
+}
+function textOf(html3) {
+  return html3.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+function parseTideMonthHtml(html3) {
+  const days = [];
+  for (const rowMatch of html3.matchAll(/<tr[^>]*class="day-row"[^>]*>([\s\S]*?)<\/tr>/g)) {
+    const row = rowMatch[1];
+    const link = row.match(/\/\d+\/graph\/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!link) continue;
+    const [y, m, d] = [Number(link[1]), Number(link[2]), Number(link[3])];
+    const date6 = `${y}-${pad2(m)}-${pad2(d)}`;
+    const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+    const lunarMatch = (cell(row, "day-cell") ?? row).match(/<span[^>]*>\s*(\d{1,2}\.\d{1,2})\s*<\/span>/);
+    const lunar = lunarMatch ? lunarMatch[1] : null;
+    const mulddaeMatch = row.match(/<div class="tide-text">\s*<b>([\s\S]*?)<\/b>/);
+    const mulddaeRaw = mulddaeMatch ? textOf(mulddaeMatch[1]).replace(/\s+/g, "") : "";
+    const mulddae = mulddaeRaw || null;
+    const flowCell = cell(row, "pc-flow");
+    let flowPercent = null;
+    let flowLabel = null;
+    if (flowCell) {
+      const value = flowCell.match(/data-value="(\d{1,3})"/);
+      if (value) flowPercent = Math.min(100, Number(value[1]));
+      const label = flowCell.match(/<span[^>]*class="progress-label"[^>]*>\s*<b>([\s\S]*?)<\/b>/);
+      flowLabel = label ? textOf(label[1]) || null : null;
+      if (flowLabel === null && flowPercent !== null) flowLabel = `${flowPercent}%`;
+    }
+    const weatherCell = cell(row, "weather");
+    let weather = null;
+    if (weatherCell) {
+      const alts = [...weatherCell.matchAll(/alt="([^"]*)"/g)].map((a) => a[1].trim()).filter(Boolean);
+      if (alts.length >= 1) weather = { am: alts[0], pm: alts[1] ?? alts[0] };
+    }
+    const highs = parseEvents(cell(row, "manjo"));
+    const lows = parseEvents(cell(row, "ganjo"));
+    const highHeights = highs.map((e) => e.height).filter((h) => h !== null);
+    const lowHeights = lows.map((e) => e.height).filter((h) => h !== null);
+    const range = highHeights.length && lowHeights.length ? Math.max(...highHeights) - Math.min(...lowHeights) : null;
+    days.push({ date: date6, weekday, lunar, mulddae, flowPercent, flowLabel, weather, highs, lows, range });
+  }
+  return days;
+}
+
+// src/lib/tide-table.ts
+var TIDE_PORT_IDS = {
+  \uC0BC\uAE38\uD3EC: 144,
+  \uB300\uCC9C\uD56D: 126,
+  \uC2E0\uC9C4\uB3C4: 132,
+  \uC624\uCC9C\uD56D: 355,
+  \uB9C8\uAC80\uD3EC: 1400
+};
+var TIDE_PORTS = Object.keys(TIDE_PORT_IDS);
+var SOURCE_LABEL = "\uBC14\uB2E4\uD0C0\uC784(\uAD6D\uB9BD\uD574\uC591\uC870\uC0AC\uC6D0 \uC790\uB8CC \uAE30\uBC18)";
+var FETCH_TIMEOUT_MS2 = 1e4;
+var CACHE_OK_MS = 24 * 60 * 60 * 1e3;
+var CACHE_UNPUBLISHED_MS = 60 * 60 * 1e3;
+var CACHE_ERROR_MS = 10 * 60 * 1e3;
+var GAP_BETWEEN_REQUESTS_MS = 500;
+var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+var cache = /* @__PURE__ */ new Map();
+var inflight2 = /* @__PURE__ */ new Map();
+var queueTail = Promise.resolve();
+function enqueue(task) {
+  const run = queueTail.then(task, task);
+  queueTail = run.then(
+    () => new Promise((resolve) => setTimeout(resolve, GAP_BETWEEN_REQUESTS_MS)),
+    () => new Promise((resolve) => setTimeout(resolve, GAP_BETWEEN_REQUESTS_MS))
+  );
+  return run;
+}
+function describeError(error40) {
+  if (error40 instanceof Error && (error40.name === "TimeoutError" || error40.name === "AbortError")) {
+    return `\uC751\uB2F5 \uC2DC\uAC04 \uCD08\uACFC ${FETCH_TIMEOUT_MS2 / 1e3}\uCD08`;
+  }
+  return error40 instanceof Error ? error40.message : "\uC54C \uC218 \uC5C6\uB294 \uC624\uB958";
+}
+function build(port2, year, month, status, message, days) {
+  return {
+    port: port2,
+    year,
+    month,
+    status,
+    message,
+    source: SOURCE_LABEL,
+    fetchedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    days,
+    ports: TIDE_PORTS
+  };
+}
+async function loadMonth(port2, year, month) {
+  const url2 = `https://www.badatime.com/${TIDE_PORT_IDS[port2]}/daily/${year}-${String(month).padStart(2, "0")}`;
+  const response = await fetch(url2, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      Accept: "text/html,application/xhtml+xml",
+      "Accept-Language": "ko-KR,ko;q=0.9"
+    },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS2)
+  });
+  if (response.status === 404) {
+    await response.body?.cancel().catch(() => void 0);
+    return build(port2, year, month, "unpublished", "\uC774 \uB2EC\uC758 \uBB3C\uB54C \uC815\uBCF4\uAC00 \uC544\uC9C1 \uC81C\uACF5\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", []);
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => void 0);
+    throw new Error(`\uBC14\uB2E4\uD0C0\uC784 \uC751\uB2F5 \uC624\uB958 (HTTP ${response.status})`);
+  }
+  const html3 = await response.text();
+  const prefix = `${year}-${String(month).padStart(2, "0")}-`;
+  const days = parseTideMonthHtml(html3).filter((day) => day.date.startsWith(prefix));
+  if (days.length === 0) {
+    return build(port2, year, month, "unpublished", "\uC774 \uB2EC\uC758 \uBB3C\uB54C \uC815\uBCF4\uAC00 \uC544\uC9C1 \uC81C\uACF5\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", []);
+  }
+  return build(port2, year, month, "ok", null, days);
+}
+async function getTideMonth(port2, year, month) {
+  if (!(port2 in TIDE_PORT_IDS)) throw new RangeError(`\uC9C0\uC6D0\uD558\uC9C0 \uC54A\uB294 \uD56D\uAD6C: ${port2}`);
+  const key = `${port2}|${year}-${month}`;
+  const cached2 = cache.get(key);
+  if (cached2 && cached2.expiresAt > Date.now()) return cached2.value;
+  const running = inflight2.get(key);
+  if (running) return running;
+  const promise2 = enqueue(() => loadMonth(port2, year, month)).then((value) => {
+    const ttl = value.status === "ok" ? CACHE_OK_MS : CACHE_UNPUBLISHED_MS;
+    cache.set(key, { expiresAt: Date.now() + ttl, value });
+    return value;
+  }).catch((error40) => {
+    logger.warn({ err: error40 }, `[tide-table] ${key} \uC870\uD68C \uC2E4\uD328`);
+    const value = build(port2, year, month, "error", `\uBB3C\uB54C \uC815\uBCF4\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 (${describeError(error40)}).`, []);
+    cache.set(key, { expiresAt: Date.now() + CACHE_ERROR_MS, value });
+    return value;
+  }).finally(() => {
+    inflight2.delete(key);
+  });
+  inflight2.set(key, promise2);
+  return promise2;
+}
+
 // src/routes/fishing.ts
 var router2 = (0, import_express2.Router)();
 var SEARCH_SOFT_DEADLINE_MS = readIntEnv("FISHING_SEARCH_SOFT_DEADLINE_MS", 6e3, 0);
@@ -103501,6 +103708,25 @@ router2.get("/fishing/options", async (req, res) => {
   } catch (error40) {
     req.log.error({ err: error40 }, "Fishing filter options failed to load");
     res.status(502).json({ error: "\uD544\uD130 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694." });
+  }
+});
+router2.get("/fishing/tide-table", async (req, res) => {
+  const port2 = req.query.port === void 0 ? "\uC0BC\uAE38\uD3EC" : String(req.query.port);
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  if (!TIDE_PORTS.includes(port2)) {
+    res.status(400).json({ error: `\uD56D\uAD6C\uB294 ${TIDE_PORTS.join(", ")} \uC911\uC5D0\uC11C \uACE8\uB77C \uC8FC\uC138\uC694.` });
+    return;
+  }
+  if (!Number.isInteger(year) || year < 2020 || year > 2035 || !Number.isInteger(month) || month < 1 || month > 12) {
+    res.status(400).json({ error: "\uC5F0\uB3C4\uC640 \uC6D4\uC744 \uC62C\uBC14\uB974\uAC8C \uC785\uB825\uD574 \uC8FC\uC138\uC694." });
+    return;
+  }
+  try {
+    res.json(await getTideMonth(port2, year, month));
+  } catch (error40) {
+    req.log.error({ err: error40 }, "Tide table failed to load");
+    res.status(502).json({ error: "\uBB3C\uB54C \uC815\uBCF4\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694." });
   }
 });
 router2.get("/fishing/diagnostics", async (_req, res) => {
@@ -103698,6 +103924,25 @@ async function fetchWhy(label, url2, init) {
   }
 }
 var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function pollDelayFor(baseMs, sinceMs, nowMs) {
+  const elapsed = nowMs - sinceMs;
+  if (elapsed < 3e4) return baseMs;
+  if (elapsed < 18e4) return Math.max(baseMs, 2e3);
+  return Math.max(baseMs, 5e3);
+}
+function makePoller(cfg, log) {
+  const since = Math.max(cfg.openAt ? new Date(cfg.openAt).getTime() : 0, Date.now());
+  let phase = 0;
+  return () => {
+    const delay = pollDelayFor(cfg.pollMs, since, Date.now());
+    const now = delay <= cfg.pollMs ? 0 : delay <= 2e3 ? 1 : 2;
+    if (now > phase) {
+      phase = now;
+      log(`\uC544\uC9C1 \uC5F4\uB9AC\uC9C0 \uC54A\uC544 \uC870\uD68C \uAC04\uACA9\uC744 ${delay / 1e3}\uCD08\uB85C \uB298\uB9BD\uB2C8\uB2E4 (\uC608\uC57D\uCC98 \uBD80\uB2F4\uC744 \uC904\uC774\uAE30 \uC704\uD574).`);
+    }
+    return delay;
+  };
+}
 var relayEnabled = () => Boolean(process.env.BOOKING_RELAY_URL && process.env.BOOKING_RELAY_TOKEN);
 var viaHome = (url2) => {
   if (!homeAgentOnline()) return false;
@@ -104544,6 +104789,7 @@ async function runJob(job, cfg) {
       return;
     }
     const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 6e4;
+    const nextDelay = makePoller(cfg, log);
     const listSeeds = await discoverSeeds(sess, cfg.date);
     if (listSeeds.length) log(`\uC608\uC57D \uBAA9\uB85D\uC5D0\uC11C \uBC30 \uBC88\uD638 ${listSeeds.length}\uAC1C \uD655\uC778`);
     const seeds = [.../* @__PURE__ */ new Set([...cfg.ships.map(guessUid).filter(Boolean), ...listSeeds, ...cfg.seedUids ?? KNOWN_SEEDS])];
@@ -104607,7 +104853,7 @@ async function runJob(job, cfg) {
         return;
       }
       if (attempt % 10 === 1 && open.length) log(`\uC6D0\uD558\uB294 \uBC30\uAC00 \uC544\uC9C1 \uC548 \uC5F4\uB838\uC2B5\uB2C8\uB2E4 (\uC5F4\uB9B0 \uBC30: ${open.map((o) => o.label).join(", ")})`);
-      await sleep(Math.max(0, cfg.pollMs - (Date.now() - t0)) + Math.random() * 100);
+      await sleep(Math.max(0, nextDelay() - (Date.now() - t0)) + Math.random() * 100);
     }
     throw new Error("\uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uC608\uC57D \uAC00\uB2A5\uD55C \uBC30\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
   } catch (e) {
@@ -104751,6 +104997,7 @@ var SkipShip = class extends Error {
 };
 async function runSunsang(job, cfg, sess, log) {
   const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 6e4;
+  const nextDelay = makePoller(cfg, log);
   const skipped = /* @__PURE__ */ new Set();
   let attempt = 0;
   while (Date.now() < deadline) {
@@ -104795,7 +105042,7 @@ async function runSunsang(job, cfg, sess, log) {
       return;
     }
     if (attempt % 10 === 1) log(ships.length ? `\uC6D0\uD558\uB294 \uBC30\uAC00 \uC544\uC9C1 \uC548 \uC5F4\uB838\uC2B5\uB2C8\uB2E4 (\uBAA9\uB85D: ${ships.map((x) => `${x.name}${x.bookable ? "\u2714" : ""}`).join(", ")})` : "\uC774 \uB0A0\uC9DC\uC758 \uC77C\uC815\uC774 \uC544\uC9C1 \uC5C6\uC2B5\uB2C8\uB2E4. \uACC4\uC18D \uD655\uC778\uD569\uB2C8\uB2E4.");
-    await sleep(Math.max(0, cfg.pollMs - (Date.now() - t0)) + Math.random() * 100);
+    await sleep(Math.max(0, nextDelay() - (Date.now() - t0)) + Math.random() * 100);
   }
   throw new Error("\uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uC608\uC57D \uAC00\uB2A5\uD55C \uBC30\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
 }
