@@ -107,9 +107,10 @@ function defaultSiteCfg(s: Site): SiteCfg {
 function bookerFromPayload(p: string): string {
   try {
     const q = new URLSearchParams(p);
-    const name = (q.get('BI_NAME') ?? '').trim();
-    const t1 = q.get('BI_TEL1') ?? '';
-    const t3 = q.get('BI_TEL3') ?? '';
+    // 더피싱은 BI_NAME/BI_TEL*, 선상24는 name/phone1~3 로 담겨 있다
+    const name = (q.get('BI_NAME') ?? q.get('name') ?? '').trim();
+    const t1 = q.get('BI_TEL1') ?? q.get('phone1') ?? '';
+    const t3 = q.get('BI_TEL3') ?? q.get('phone3') ?? '';
     const phone = t1 || t3 ? `${t1}-****-${t3}` : '';
     return [name, phone].filter(Boolean).join(' · ');
   } catch {
