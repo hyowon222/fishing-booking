@@ -1,0 +1,26 @@
+{
+  "name": "바다자리",
+  "short_name": "바다자리",
+  "description": "선상낚시 빈자리 조회와 자동 예약",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef2f9",
+  "theme_color": "#1b2a41",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

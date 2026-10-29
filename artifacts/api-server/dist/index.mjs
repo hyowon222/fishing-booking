@@ -104880,6 +104880,24 @@ function parseSunsangDay(html3) {
     return { shipNo: m[1], name, scheduleNo, bookable: btn.includes("\uBC14\uB85C\uC608\uC57D"), fish };
   });
 }
+function parseSunsangMonthDay(html3, date6) {
+  const iso = `${date6.slice(0, 4)}-${date6.slice(4, 6)}-${date6.slice(6, 8)}`;
+  const at = html3.search(new RegExp(`id=["']d${iso}["']`));
+  if (at < 0) return [];
+  const rest = html3.slice(at + 10);
+  const nextDay = rest.search(/id=["']d\d{4}-\d{2}-\d{2}["']/);
+  const day = nextDay < 0 ? rest : rest.slice(0, nextDay);
+  const marks = [...day.matchAll(/<[a-z]+[^>]*class=["'][^"']*\bship_unit\b(?!_)[^"']*["'][^>]*>/g)];
+  return marks.map((m, i) => {
+    const chunk = day.slice(m.index + m[0].length, i + 1 < marks.length ? marks[i + 1].index : day.length);
+    const name = stripTags(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+    const scheduleNo = /data-schedule_no=["'](\d+)["']/.exec(chunk)?.[1] ?? "";
+    const fish = stripTags(/id=["']fish["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+    const closed = /data-status_code=["']END["']/.test(chunk) || /예약\s*마감/.test(chunk);
+    const shipNo = /ship_unit_ship_no_(\d+)/.exec(m[0])?.[1] ?? "";
+    return { shipNo, name, scheduleNo, bookable: !!scheduleNo && !closed, fish };
+  });
+}
 function parseJsVar(html3, varName = "data") {
   const start = html3.indexOf(`var ${varName} = `);
   if (start < 0) return null;
@@ -105008,6 +105026,22 @@ async function runSunsang(job, cfg, sess, log) {
     try {
       const r = await sess.request("GET", `/ship/schedule_fleet/${cfg.date}/0/simple_day`, { ajax: true, referer: `${sess.base}/ship/schedule_fleet` });
       ships = parseSunsangDay(r.text).filter((x) => x.scheduleNo && !skipped.has(x.scheduleNo));
+      if (!ships.length) {
+        let how = "";
+        try {
+          const m = await sess.request("GET", `/ship/schedule_fleet/${cfg.date.slice(0, 6)}`, { referer: `${sess.base}/ship/schedule_fleet` });
+          ships = parseSunsangMonthDay(m.text, cfg.date).filter((x) => x.scheduleNo && !skipped.has(x.scheduleNo));
+          how = ` \xB7 \uB2EC\uB825 \uD398\uC774\uC9C0 ${m.status} ${m.text.length}\uC790, \uC120\uBC15 ${ships.length}\uCC99`;
+          if (ships.length && attempt === 1) log("\uB0A0\uC9DC\uBCC4 \uBAA9\uB85D\uC5D0\uC11C\uB294 \uBABB \uC77D\uC5B4\uC11C \uB2EC\uB825 \uD398\uC774\uC9C0\uC5D0\uC11C \uBC30\uB97C \uCC3E\uC558\uC2B5\uB2C8\uB2E4.");
+        } catch (e) {
+          how = ` \xB7 \uB2EC\uB825 \uD398\uC774\uC9C0 \uC624\uB958: ${String(e.message).slice(0, 60)}`;
+        }
+        if (!ships.length && attempt % 10 === 1) {
+          const units = (r.text.match(/ship_unit/g) ?? []).length;
+          const sched = (r.text.match(/schedule_no/g) ?? []).length;
+          log(`\uC9C4\uB2E8: \uB0A0\uC9DC\uBCC4 \uBAA9\uB85D ${r.status} ${r.text.length}\uC790 \xB7 ship_unit ${units}\uACF3 \xB7 schedule_no ${sched}\uACF3 \xB7 "${stripTags(r.text).slice(0, 70)}"${how}`);
+        }
+      }
     } catch (e) {
       log(`\uC870\uD68C \uC624\uB958: ${e.message}`);
       if (/중계기 오류\((auth|config)\)/.test(e.message)) throw e;
