@@ -3,6 +3,8 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { homeAgentRouter } from "./routes/home-agent";
+import { authRouter } from "./routes/auth";
+import { authMiddleware } from "./lib/auth";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -33,6 +35,9 @@ app.use("/api", homeAgentRouter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// 로그인 검문: 집 PC 중계(위에서 이미 처리) 외의 모든 /api 요청은 로그인이 필요하다
+app.use("/api", authMiddleware);
+app.use("/api", authRouter);
 app.use("/api", router);
 
 export default app;

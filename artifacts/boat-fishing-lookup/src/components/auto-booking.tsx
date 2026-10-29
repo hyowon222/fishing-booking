@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, LoaderCircle, Play, Plus, Square, X } from 'lucide-react';
+import { DateMultiPicker } from '@/components/date-multi-picker';
 
 type BookingResult = {
   ship: { uid: string; name: string };
@@ -61,7 +62,6 @@ function statusInfo(j: Job): { label: string; style: string } {
 const LS = {
   name: 'autoBooking.name',
   phone: 'autoBooking.phone',
-  key: 'autoBooking.key',
   ships: 'autoBooking.ships',
 };
 const load = (k: string, d = '') => {
@@ -124,8 +124,6 @@ function maskPayload(p: string) {
 }
 
 export default function AutoBooking({ onBack }: { onBack: () => void }) {
-  const [adminKey, setAdminKey] = useState(() => load(LS.key));
-  const [needKey, setNeedKey] = useState(false);
   const [relayOk, setRelayOk] = useState<boolean | null>(null);
 
   // 예약처는 여러 곳을 동시에 고를 수 있다 (곳마다 따로 진행)
@@ -158,8 +156,6 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const cfgOf = (s: Site): SiteCfg => cfgMap[s.id] ?? defaultSiteCfg(s);
   const setCfg = (s: Site, v: Partial<SiteCfg>) => setCfgMap((m) => ({ ...m, [s.id]: { ...(m[s.id] ?? defaultSiteCfg(s)), ...v } }));
   const [dates, setDates] = useState<string[]>([]);
-  const [dateInput, setDateInput] = useState('');
-  const [siteDateInput, setSiteDateInput] = useState<Record<string, string>>({});
   const [stopOthers, setStopOthers] = useState(false);
   const [people, setPeople] = useState(2);
   const [sternSide, setSternSide] = useState<'right' | 'left'>('right');
@@ -177,12 +173,6 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   // 예약처별 실제 출조 날짜: "공통 날짜 사용"이면 위의 공통 날짜, 아니면 그 예약처에 따로 정한 날짜
   const datesOf = (s: Site): string[] => [...(cfgOf(s).sameDates ? dates : cfgOf(s).dates)].sort();
   const allDates = [...new Set(selSites.flatMap(datesOf))].sort();
-  const addSiteDate = (s: Site) => {
-    const v = siteDateInput[s.id];
-    const c = cfgOf(s);
-    if (v && !c.dates.includes(v) && c.dates.length < 10) setCfg(s, { dates: [...c.dates, v].sort() });
-    setSiteDateInput((m) => ({ ...m, [s.id]: '' }));
-  };
   // 예약처·날짜마다 실제 적용될 예약자: 따로 입력하지 않았으면 위의 공통 예약자
   const effectiveBookers = (s: Site) => {
     const base = { name: name.trim(), phone };
@@ -200,18 +190,14 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showPayload, setShowPayload] = useState<Record<string, boolean>>({});
-  const keyRef = useRef(adminKey);
-  keyRef.current = adminKey;
 
   const api = useCallback(async (path: string, init?: RequestInit) => {
     const res = await fetch(`/api/booking${path}`, {
       ...init,
-      headers: { 'content-type': 'application/json', 'x-booking-key': keyRef.current, ...(init?.headers ?? {}) },
+      headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
     });
-    if (res.status === 401) {
-      setNeedKey(true);
-      throw new Error('접근 키를 입력하세요');
-    }
+    if (res.status === 401) throw new Error('로그인이 필요합니다');
+    if (res.status === 403) throw new Error('권한이 없습니다. 관리자에게 문의하세요');
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error ?? `오류 (${res.status})`);
     return body;
@@ -220,7 +206,6 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const refresh = useCallback(async () => {
     try {
       const s = await api('/status');
-      setNeedKey(false);
       setRelayOk(s.relay);
       setHome(s.home?.enabled ? Boolean(s.home.online) : null);
       const j = await api('/jobs');
@@ -234,7 +219,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     void refresh();
     const t = setInterval(() => void refresh(), 2500);
     return () => clearInterval(t);
-  }, [refresh, adminKey]);
+  }, [refresh]);
 
   const setShip = (s: Site, i: number, v: string) => setCfg(s, { ships: cfgOf(s).ships.map((x, k) => (k === i ? v : x)) });
   const addShip = (s: Site, v = '') => {
@@ -361,20 +346,6 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
         </p>
       )}
 
-      {needKey && (
-        <div className="rounded-lg border p-3">
-          <label className={label}>접근 키 (Secrets의 BOOKING_ADMIN_KEY)</label>
-          <input
-            type="password"
-            className={input}
-            value={adminKey}
-            onChange={(e) => {
-              setAdminKey(e.target.value);
-              save(LS.key, e.target.value);
-            }}
-          />
-        </div>
-      )}
 
       <section className="space-y-4 rounded-xl border p-4">
         <div>
@@ -498,19 +469,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
 
         <div>
           <label className={label}>{selSites.length > 1 ? '공통 출조 날짜' : '출조 날짜'} (여러 날짜를 추가하면 날짜마다 동시에 진행해요, 최대 10개){selSites.length > 1 ? ' · 예약처마다 따로 정하려면 아래 예약처 설정에서 "공통 날짜 사용"을 끄세요' : ''}</label>
-          <div className="flex gap-2">
-            <input type="date" className={input} value={dateInput} onChange={(e) => setDateInput(e.target.value)} />
-            <button
-              type="button"
-              className="shrink-0 rounded-lg border px-3 text-sm"
-              onClick={() => {
-                if (dateInput && !dates.includes(dateInput) && dates.length < 10) setDates((d) => [...d, dateInput].sort());
-                setDateInput('');
-              }}
-            >
-              추가
-            </button>
-          </div>
+          <DateMultiPicker value={dates} onChange={setDates} title="출조 날짜" testId="button-booking-dates" />
           {dates.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {dates.map((d) => (
@@ -593,12 +552,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
                   {!c.sameDates && (
                     <div>
                       <label className={label}>이 예약처 출조 날짜 (최대 10개)</label>
-                      <div className="flex gap-2">
-                        <input type="date" className={input} value={siteDateInput[x.id] ?? ''} onChange={(e) => setSiteDateInput((m) => ({ ...m, [x.id]: e.target.value }))} />
-                        <button type="button" className="shrink-0 rounded-lg border px-3 text-sm" onClick={() => addSiteDate(x)}>
-                          추가
-                        </button>
-                      </div>
+                      <DateMultiPicker value={c.dates} onChange={(v) => setCfg(x, { dates: v })} title={`${x.label} 출조 날짜`} testId={`button-site-dates-${x.id}`} />
                       {c.dates.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {c.dates.map((d) => (

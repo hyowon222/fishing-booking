@@ -18,7 +18,9 @@ import {
   RefreshCw,
   Search,
   Ship,
+  LogOut,
   Settings2,
+  Users,
   SlidersHorizontal,
   Sparkles,
   Waves,
@@ -38,6 +40,10 @@ import { SeatRadar } from '@/components/seat-radar';
 import SourceManager from '@/components/source-manager';
 import AutoBooking from '@/components/auto-booking';
 import TideTable from '@/components/tide-table';
+import AdminUsers from '@/components/admin-users';
+import LoginPage from '@/components/login-page';
+import { AuthProvider, useAuth } from '@/lib/auth';
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -801,6 +807,10 @@ function Home() {
   const [showSourceManager, setShowSourceManager] = useState(false);
   const [showAutoBooking, setShowAutoBooking] = useState(false);
   const [showTide, setShowTide] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [noPerm, setNoPerm] = useState(false);
+  const { user, logout } = useAuth();
+  const canBook = Boolean(user?.canBook);
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
   // 사이트 진입 시 자동으로 일정을 조회하지 않고, "자리 찾기"를 눌렀을 때만 조회합니다.
   const [hasSearched, setHasSearched] = useState(false);
@@ -907,18 +917,23 @@ function Home() {
           <div className="flex items-center gap-3 text-xs text-sidebar-foreground/65">
             <div className="hidden items-center gap-2 md:flex"><span className="h-1.5 w-1.5 rounded-full bg-sidebar-primary" />실시간 예약처 연결됨</div>
             <div className="hidden h-8 w-px bg-sidebar-border sm:block" />
-            <button type="button" onClick={() => setShowSourceManager(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-manage-sources"><Settings2 size={15} />예약처 관리</button>
-            <button type="button" onClick={() => setShowAutoBooking(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-auto-booking">자동 예약</button>
-            <button type="button" onClick={() => setShowTide(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-tide"><Waves size={15} />물때 정보</button>
+            <button type="button" onClick={() => (canBook ? (setShowAdmin(false), setShowSourceManager(true)) : setNoPerm(true))} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-manage-sources"><Settings2 size={15} />예약처 관리</button>
+            <button type="button" onClick={() => (canBook ? (setShowAdmin(false), setShowAutoBooking(true)) : setNoPerm(true))} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-auto-booking">자동 예약</button>
+            <button type="button" onClick={() => { setShowAdmin(false); setShowTide(true); }} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-tide"><Waves size={15} />물때 정보</button>
+            {user?.isAdmin && <button type="button" onClick={() => setShowAdmin(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-admin-users"><Users size={15} />계정 관리</button>}
+            <div className="hidden h-8 w-px bg-sidebar-border sm:block" />
+            <button type="button" onClick={() => void logout()} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent" data-testid="button-logout" aria-label="로그아웃"><span className="max-w-[6rem] truncate">{user?.username}</span><LogOut size={15} /></button>
           </div>
         </div>
       </header>
 
-      {showTide ? (
+      {showAdmin && user?.isAdmin ? (
+        <AdminUsers onBack={() => setShowAdmin(false)} />
+      ) : showTide ? (
         <TideTable onBack={() => setShowTide(false)} />
-      ) : showAutoBooking ? (
+      ) : showAutoBooking && canBook ? (
         <AutoBooking onBack={() => setShowAutoBooking(false)} />
-      ) : showSourceManager ? (
+      ) : showSourceManager && canBook ? (
         <SourceManager onBack={() => setShowSourceManager(false)} />
       ) : (
       <main className="pb-12">
@@ -966,18 +981,40 @@ function Home() {
         </section>
       </main>
       )}
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden" aria-label="메뉴" data-testid="tab-bar">
-        {([
-          ['조회', Search, !showTide && !showAutoBooking && !showSourceManager, () => { setShowTide(false); setShowAutoBooking(false); setShowSourceManager(false); }, 'tab-search'],
-          ['자동 예약', Ship, showAutoBooking, () => { setShowTide(false); setShowSourceManager(false); setShowAutoBooking(true); }, 'button-mobile-auto-booking'],
-          ['물때', Waves, showTide, () => { setShowAutoBooking(false); setShowSourceManager(false); setShowTide(true); }, 'button-mobile-tide'],
-          ['예약처', Settings2, showSourceManager, () => { setShowAutoBooking(false); setShowTide(false); setShowSourceManager(true); }, 'button-mobile-menu'],
-        ] as const).map(([label, Icon, active, go, id]) => (
-          <button key={id} type="button" onClick={go} className={`flex flex-col items-center gap-0.5 py-2 text-xs font-semibold ${active ? 'text-primary' : 'text-muted-foreground'}`} data-testid={id} aria-current={active ? 'page' : undefined}>
-            <Icon size={20} />{label}
-          </button>
-        ))}
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden" style={{ gridTemplateColumns: `repeat(${user?.isAdmin ? 5 : 4}, minmax(0, 1fr))` }} aria-label="메뉴" data-testid="tab-bar">
+        {(() => {
+          const none = !showTide && !showAutoBooking && !showSourceManager && !showAdmin;
+          const only = (set: 'tide' | 'auto' | 'src' | 'admin' | 'none') => {
+            setShowTide(set === 'tide');
+            setShowAutoBooking(set === 'auto');
+            setShowSourceManager(set === 'src');
+            setShowAdmin(set === 'admin');
+          };
+          const tabs: Array<readonly [string, typeof Search, boolean, () => void, string]> = [
+            ['조회', Search, none, () => only('none'), 'tab-search'],
+            ['자동 예약', Ship, showAutoBooking && canBook, () => (canBook ? only('auto') : setNoPerm(true)), 'button-mobile-auto-booking'],
+            ['물때', Waves, showTide, () => only('tide'), 'button-mobile-tide'],
+            ['예약처', Settings2, showSourceManager && canBook, () => (canBook ? only('src') : setNoPerm(true)), 'button-mobile-menu'],
+          ];
+          if (user?.isAdmin) tabs.push(['계정', Users, showAdmin, () => only('admin'), 'button-mobile-admin']);
+          return tabs.map(([label, Icon, active, go, id]) => (
+            <button key={id} type="button" onClick={go} className={`flex flex-col items-center gap-0.5 py-2 text-xs font-semibold ${active ? 'text-primary' : 'text-muted-foreground'}`} data-testid={id} aria-current={active ? 'page' : undefined}>
+              <Icon size={20} />{label}
+            </button>
+          ));
+        })()}
       </nav>
+      <AlertDialog open={noPerm} onOpenChange={setNoPerm}>
+        <AlertDialogContent data-testid="dialog-no-permission">
+          <AlertDialogHeader>
+            <AlertDialogTitle>권한이 없습니다</AlertDialogTitle>
+            <AlertDialogDescription>권한이 없습니다. 관리자에게 문의하세요.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction data-testid="button-no-permission-ok">확인</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="h-16 sm:hidden" aria-hidden />
       <footer className="border-t border-border bg-card/60">
         <div className="mx-auto flex max-w-[1440px] flex-col gap-2 px-4 py-5 text-[11px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
@@ -1005,12 +1042,21 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
 
+const clearQueryCache = () => queryClient.clear();
+
+function Gate() {
+  const { user } = useAuth();
+  return user ? <Router /> : <LoginPage />;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
+          <AuthProvider loading={<div className="min-h-screen bg-background" />} onLoggedOut={clearQueryCache}>
+            <Gate />
+          </AuthProvider>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

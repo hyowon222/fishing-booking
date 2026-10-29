@@ -12,11 +12,9 @@ import { getJob, listJobs, startJobs, stopJob, validateConfigs } from "../lib/bo
 export const bookingRouter = Router();
 
 function guard(req: Request, res: Response, next: NextFunction) {
-  const key = process.env.BOOKING_ADMIN_KEY;
-  if (key && req.header("x-booking-key") !== key) {
-    res.status(401).json({ error: "접근 키가 맞지 않습니다" });
-    return;
-  }
+  // 접근 권한은 로그인 검문(lib/auth.ts)에서 이미 확인했다 (예전 접근 키는 더 이상 쓰지 않는다)
+  void req;
+  void res;
   next();
 }
 
@@ -25,7 +23,7 @@ bookingRouter.get("/booking/status", guard, (_req, res) => {
     mode: "test", // 최종 제출 기능은 아직 없음
     relay: Boolean(process.env.BOOKING_RELAY_URL && process.env.BOOKING_RELAY_TOKEN),
     home: homeAgentStatus(),
-    keyRequired: Boolean(process.env.BOOKING_ADMIN_KEY),
+    keyRequired: false,
   });
 });
 
