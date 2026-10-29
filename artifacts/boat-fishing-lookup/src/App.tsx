@@ -40,6 +40,8 @@ import AutoBooking from '@/components/auto-booking';
 import TideTable from '@/components/tide-table';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useAutoRetryWhilePending } from '@/hooks/use-auto-retry-pending';
@@ -168,6 +170,29 @@ function MultiOption({
   );
 }
 
+// 폰에서는 평소에 한 줄(이름 + 지금 선택한 값)로 접어 두고, 눌러야 펼쳐진다. 넓은 화면에서는 늘 펼쳐져 있다.
+function MobileSection({ label, summary, children }: { label: string; summary: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="max-sm:rounded-lg max-sm:border max-sm:border-input">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left text-sm sm:hidden"
+        aria-expanded={open}
+        data-testid={`section-toggle-${label}`}
+      >
+        <span className="font-bold">{label}</span>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className={`max-w-[11rem] truncate ${summary === '전체' ? '' : 'font-semibold text-primary'}`}>{summary}</span>
+          <ChevronDown size={15} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
+      <div className={`${open ? 'block' : 'hidden'} max-sm:px-3 max-sm:pb-3 sm:block`}>{children}</div>
+    </div>
+  );
+}
+
 function FilterColumn({
   title,
   values,
@@ -265,6 +290,7 @@ function SearchForm({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dateError, setDateError] = useState('');
   const [rangeOpen, setRangeOpen] = useState(false);
+  const isMobile = useIsMobile();
   const [pendingRange, setPendingRange] = useState<DateRange | undefined>(
     criteria.startDate && criteria.endDate
       ? { from: parseInputDate(criteria.startDate), to: parseInputDate(criteria.endDate) }
@@ -368,15 +394,16 @@ function SearchForm({
           </div>
         </div>
 
-        <div className={`${mobileOpen ? 'block' : 'hidden'} space-y-5 p-4 sm:block sm:p-5`}>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[0.9fr_1.1fr_2.2fr]">
+        <div className={`${mobileOpen ? 'block' : 'hidden'} space-y-3 p-4 sm:block sm:space-y-5 sm:p-5`}>
+          <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-[0.9fr_1.1fr_2.2fr]">
             <div>
               <FieldLabel icon={CalendarDays}>출항 기간</FieldLabel>
-              <Popover open={rangeOpen} onOpenChange={openRangePicker}>
-                <PopoverTrigger asChild>
+              {(() => {
+                const dateButton = (
                   <button
                     type="button"
-                    className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+                    onClick={isMobile ? () => openRangePicker(true) : undefined}
+                    className="flex h-11 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 sm:h-10"
                     data-testid="button-date-range"
                   >
                     <span className="truncate">
@@ -388,37 +415,73 @@ function SearchForm({
                     </span>
                     <CalendarDays size={15} className="shrink-0 text-muted-foreground" />
                   </button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-auto p-0">
-                  <Calendar
-                    mode="range"
-                    locale={ko}
-                    selected={pendingRange}
-                    onSelect={setPendingRange}
-                    defaultMonth={pendingRange?.from ?? today}
-                    numberOfMonths={1}
-                  />
+                );
+                const summary = pendingRange?.from
+                  ? `${formatDate(toInputDate(pendingRange.from))} — ${formatDate(toInputDate(pendingRange.to ?? pendingRange.from))}`
+                  : '날짜를 선택하세요';
+                const confirmBar = (
                   <div className="flex items-center justify-between gap-2 border-t border-border p-3">
-                    <p className="text-xs text-muted-foreground">
-                      {pendingRange?.from
-                        ? `${formatDate(toInputDate(pendingRange.from))} — ${formatDate(toInputDate(pendingRange.to ?? pendingRange.from))}`
-                        : '날짜를 선택하세요'}
-                    </p>
+                    <p className="text-xs text-muted-foreground sm:text-xs">{summary}</p>
                     <button
                       type="button"
                       onClick={confirmRange}
                       disabled={!pendingRange?.from}
-                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground transition disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground transition disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:py-1.5 sm:text-xs"
                       data-testid="button-confirm-date-range"
                     >
                       확인
                     </button>
                   </div>
-                </PopoverContent>
-              </Popover>
+                );
+                if (isMobile) {
+                  // 폰에서는 작은 말풍선 대신 아래에서 올라오는 시트로 크게 보여 준다
+                  return (
+                    <>
+                      {dateButton}
+                      <Sheet open={rangeOpen} onOpenChange={(open) => { if (!open) setRangeOpen(false); }}>
+                        <SheetContent side="bottom" className="rounded-t-2xl px-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]" data-testid="sheet-date-range">
+                          <SheetHeader className="px-4 text-left">
+                            <SheetTitle>출항 기간</SheetTitle>
+                          </SheetHeader>
+                          <p className="px-4 pt-1 text-xs text-muted-foreground">시작일과 종료일을 차례로 눌러요. 하루만이면 같은 날을 두 번 눌러요.</p>
+                          <div className="flex justify-center py-2">
+                            <Calendar
+                              mode="range"
+                              locale={ko}
+                              selected={pendingRange}
+                              onSelect={setPendingRange}
+                              defaultMonth={pendingRange?.from ?? today}
+                              numberOfMonths={1}
+                              style={{ '--cell-size': '2.75rem' } as React.CSSProperties}
+                            />
+                          </div>
+                          {confirmBar}
+                        </SheetContent>
+                      </Sheet>
+                    </>
+                  );
+                }
+                return (
+                  <Popover open={rangeOpen} onOpenChange={openRangePicker}>
+                    <PopoverTrigger asChild>{dateButton}</PopoverTrigger>
+                    <PopoverContent align="start" className="w-auto p-0">
+                      <Calendar
+                        mode="range"
+                        locale={ko}
+                        selected={pendingRange}
+                        onSelect={setPendingRange}
+                        defaultMonth={pendingRange?.from ?? today}
+                        numberOfMonths={1}
+                      />
+                      {confirmBar}
+                    </PopoverContent>
+                  </Popover>
+                );
+              })()}
               <p className="mt-1.5 text-[11px] text-muted-foreground">하루만 이용하시려면 같은 날짜를 두 번 선택한 뒤 확인을 눌러주세요.</p>
               {dateError && <p className="mt-1.5 flex items-center gap-1 text-xs text-destructive"><CircleAlert size={12} />{dateError}</p>}
             </div>
+            <MobileSection label="출항 항구" summary={selectedRegions.length ? selectedRegions.join(', ') : '전체'}>
             <FilterColumn
               title="출항 항구"
               values={options?.regions ?? []}
@@ -431,6 +494,8 @@ function SearchForm({
               disabledHint={'선박 선택을 해제하면 다시 고를 수 있어요.'}
               layout="grid"
             />
+            </MobileSection>
+            <MobileSection label="선박" summary={(criteria.ship ?? []).length ? `${(criteria.ship ?? []).length}척 선택` : '전체'}>
             <FilterColumn
               title="선박"
                values={availableShips}
@@ -441,10 +506,12 @@ function SearchForm({
               testPrefix="ship"
               layout="grid2"
             />
+            </MobileSection>
           </div>
 
-          <div className="border-t border-border pt-4">
-            <FieldLabel icon={CalendarDays}>요일</FieldLabel>
+          <div className="sm:border-t sm:border-border sm:pt-4">
+          <MobileSection label="요일" summary={weekdays.length ? weekdays.map((d) => WEEKDAY_LABELS[d]).join('') : '전체'}>
+            <div className="hidden sm:block"><FieldLabel icon={CalendarDays}>요일</FieldLabel></div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -473,11 +540,13 @@ function SearchForm({
               ))}
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">기간을 넓게 잡고 특정 요일만 골라 잔여석을 확인할 수 있어요.</p>
+          </MobileSection>
           </div>
 
-          <div className="flex flex-col gap-4 border-t border-border pt-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4 sm:border-t sm:border-border sm:pt-4">
             <div className="min-w-0 flex-1">
-              <FieldLabel icon={Waves}>물때</FieldLabel>
+              <MobileSection label="물때" summary={criteria.tide ?? '전체'}>
+              <div className="hidden sm:block"><FieldLabel icon={Waves}>물때</FieldLabel></div>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -500,6 +569,7 @@ function SearchForm({
                 ))}
                 {isOptionsLoading && <span className="text-xs text-muted-foreground">물때 목록을 불러오는 중입니다.</span>}
               </div>
+              </MobileSection>
             </div>
             <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex">
               <button
