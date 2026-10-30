@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, LoaderCircle, Play, Plus, Square, X } from 'lucide-react';
 import { DateMultiPicker } from '@/components/date-multi-picker';
 
@@ -39,6 +39,26 @@ function loadSites(): Site[] {
     return Array.isArray(v) ? v.filter((x) => x && x.id && x.url).map((x) => ({ id: String(x.id), label: String(x.label || x.url), url: String(x.url), hint: x.seat ? '자리 지정 선사' : '자리 지정 없는 선사', seat: !!x.seat, custom: true })) : [];
   } catch {
     return [];
+  }
+}
+// 기본 예약처 중 사용자가 목록에서 지운 것 (되돌리기 가능)
+const LS_HIDDEN = 'autoBooking.hiddenSites';
+function loadHidden(): string[] {
+  try {
+    const v = JSON.parse(load(LS_HIDDEN, '[]'));
+    return Array.isArray(v) ? v.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+// 예약처 주소별로 조회해 둔 배 목록
+const LS_SHIPLIST = 'autoBooking.shipList';
+function loadShipList(): Record<string, string[]> {
+  try {
+    const v = JSON.parse(load(LS_SHIPLIST, '{}'));
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
   }
 }
 const KNOWN_SHIPS = ['승주호', '헌터호', '골드피싱', '으리호', '블루오션', '바다호', '영스타호', '뚜기호', '유리호', '나대세호', '아산호', '박찬호', '히트호', '헤르메스호', '만석호'];
@@ -143,7 +163,11 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const [newSeat, setNewSeat] = useState(false);
   const [directUrl, setDirectUrl] = useState(() => load('autoBooking.directUrl'));
   const DIRECT: Site = { id: 'direct', label: '직접 URL 입력', url: directUrl.trim(), hint: '더피싱·선상24 주소를 바로 입력해서 예약 (저장 안 해도 돼요)', seat: false };
-  const allSites = [...BUILTIN_SITES, ...mySites];
+  const [hidden, setHidden] = useState<string[]>(loadHidden);
+  const [shipList, setShipList] = useState<Record<string, string[]>>(loadShipList);
+  const [shipLoading, setShipLoading] = useState<Record<string, boolean>>({});
+  const [shipNote, setShipNote] = useState<Record<string, string>>({});
+  const allSites = [...BUILTIN_SITES.filter((x) => !hidden.includes(x.id)), ...mySites];
   const siteOf = (id: string): Site | undefined => (id === 'direct' ? DIRECT : allSites.find((x) => x.id === id));
   const selSites = sel.map(siteOf).filter((x): x is Site => !!x);
   const toggleSite = (id: string) => {
@@ -220,6 +244,44 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
     const t = setInterval(() => void refresh(), 2500);
     return () => clearInterval(t);
   }, [refresh]);
+
+  // 예약처에서 배 목록을 조회해 온다 (예약처 관리에 등록된 배가 있으면 그것, 없으면 사이트에서 직접 찾기)
+  const fetchShips = useCallback(
+    async (url: string) => {
+      if (!url) return;
+      setShipLoading((m) => ({ ...m, [url]: true }));
+      setShipNote((m) => ({ ...m, [url]: '' }));
+      try {
+        const r = await api('/ships', { method: 'POST', body: JSON.stringify({ url }) });
+        const names: string[] = Array.isArray(r.ships) ? r.ships.map(String) : [];
+        if (names.length) {
+          setShipList((m) => {
+            const next = { ...m, [url]: names };
+            save(LS_SHIPLIST, JSON.stringify(next));
+            return next;
+          });
+        } else {
+          setShipNote((m) => ({ ...m, [url]: '이 예약처에서 배 목록을 찾지 못했어요. 배 이름은 직접 입력하세요.' }));
+        }
+      } catch (e) {
+        setShipNote((m) => ({ ...m, [url]: `배 목록을 불러오지 못했어요: ${e instanceof Error ? e.message : String(e)}` }));
+      } finally {
+        setShipLoading((m) => ({ ...m, [url]: false }));
+      }
+    },
+    [api],
+  );
+  // 고른 예약처의 배 목록이 아직 없으면 자동으로 한 번 조회한다
+  const triedShips = useRef(new Set<string>());
+  const selUrls = selSites.filter((x) => x.id !== 'direct').map((x) => x.url).filter(Boolean).join('|');
+  useEffect(() => {
+    for (const u of selUrls.split('|').filter(Boolean)) {
+      if (shipList[u]?.length || triedShips.current.has(u)) continue;
+      triedShips.current.add(u);
+      void fetchShips(u);
+    }
+  }, [selUrls, shipList, fetchShips]);
+  const chipShips = (s: Site): string[] => shipList[s.url]?.length ? shipList[s.url]! : s.id === 'mscu' ? KNOWN_SHIPS : (s.ships ?? []);
 
   const setShip = (s: Site, i: number, v: string) => setCfg(s, { ships: cfgOf(s).ships.map((x, k) => (k === i ? v : x)) });
   const addShip = (s: Site, v = '') => {
@@ -366,17 +428,22 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
                         </span>
                       </span>
                     </label>
-                    {x.custom && (
+                    {x.id !== 'direct' && (
                       <button
                         type="button"
                         className="shrink-0 text-[11px] text-red-600 underline"
                         onClick={() => {
                           if (!confirm(`'${x.label}' 예약처를 삭제할까요?`)) return;
-                          const next = mySites.filter((y) => y.id !== x.id);
-                          setMySites(next);
-                          save(LS_SITES, JSON.stringify(next));
-                          const left = sel.filter((id) => id !== x.id);
-                          const nextSel = left.length ? left : ['mscu'];
+                          if (x.custom) {
+                            const next = mySites.filter((y) => y.id !== x.id);
+                            setMySites(next);
+                            save(LS_SITES, JSON.stringify(next));
+                          } else {
+                            const nextHidden = [...new Set([...hidden, x.id])];
+                            setHidden(nextHidden);
+                            save(LS_HIDDEN, JSON.stringify(nextHidden));
+                          }
+                          const nextSel = sel.filter((id) => id !== x.id);
                           setSel(nextSel);
                           save('autoBooking.sel', JSON.stringify(nextSel));
                         }}
@@ -413,6 +480,18 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
               );
             })}
           </div>
+          {hidden.length > 0 && (
+            <button
+              type="button"
+              className="mt-2 block text-[11px] text-muted-foreground underline"
+              onClick={() => {
+                setHidden([]);
+                save(LS_HIDDEN, '[]');
+              }}
+            >
+              삭제한 기본 예약처 되돌리기 ({hidden.length})
+            </button>
+          )}
           <button type="button" className="mt-2 flex items-center gap-1 text-xs underline" onClick={() => setAdding(true)}>
             <Plus size={12} />
             예약처 추가
@@ -586,7 +665,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
                   ))}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {(x.id === 'mscu' ? KNOWN_SHIPS : (x.ships ?? [])).map((k) => (
+                  {chipShips(x).map((k) => (
                     <button key={k} type="button" onClick={() => addShip(x, k)} className="rounded-full border px-2.5 py-1 text-xs hover:bg-accent">
                       {k}
                     </button>
@@ -596,6 +675,18 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
                     직접 추가
                   </button>
                 </div>
+                {x.url && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                    {shipLoading[x.url] ? (
+                      <span className="flex items-center gap-1"><LoaderCircle size={11} className="animate-spin" />배 목록 불러오는 중…</span>
+                    ) : (
+                      <button type="button" className="underline" onClick={() => void fetchShips(x.url)}>
+                        배 목록 새로고침
+                      </button>
+                    )}
+                    {shipNote[x.url] && <span className="text-amber-700">{shipNote[x.url]}</span>}
+                  </div>
+                )}
               </div>
 
               <div>

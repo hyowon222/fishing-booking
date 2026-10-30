@@ -16554,7 +16554,7 @@ var require_sign = __commonJS({
   "../../node_modules/.pnpm/math-intrinsics@1.1.0/node_modules/math-intrinsics/sign.js"(exports, module) {
     "use strict";
     var $isNaN = require_isNaN();
-    module.exports = function sign(number4) {
+    module.exports = function sign2(number4) {
       if ($isNaN(number4) || number4 === 0) {
         return number4;
       }
@@ -16918,7 +16918,7 @@ var require_get_intrinsic = __commonJS({
     var min = require_min();
     var pow = require_pow();
     var round = require_round();
-    var sign = require_sign();
+    var sign2 = require_sign();
     var $Function = Function;
     var getEvalledConstructor = function(expressionSyntax) {
       try {
@@ -17032,7 +17032,7 @@ var require_get_intrinsic = __commonJS({
       "%Math.min%": min,
       "%Math.pow%": pow,
       "%Math.round%": round,
-      "%Math.sign%": sign,
+      "%Math.sign%": sign2,
       "%Reflect.getPrototypeOf%": $ReflectGPO
     };
     if (getProto) {
@@ -18994,14 +18994,14 @@ var require_etag = __commonJS({
   "../../node_modules/.pnpm/etag@1.8.1/node_modules/etag/index.js"(exports, module) {
     "use strict";
     module.exports = etag;
-    var crypto4 = __require("crypto");
+    var crypto5 = __require("crypto");
     var Stats = __require("fs").Stats;
     var toString2 = Object.prototype.toString;
     function entitytag(entity) {
       if (entity.length === 0) {
         return '"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"';
       }
-      var hash = crypto4.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
+      var hash = crypto5.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
       var len = typeof entity === "string" ? Buffer.byteLength(entity, "utf8") : entity.length;
       return '"' + len.toString(16) + "-" + hash + '"';
     }
@@ -20740,11 +20740,11 @@ var require_router = __commonJS({
     var slice2 = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router6;
+    module.exports = Router7;
     module.exports.Route = Route;
-    function Router6(options) {
-      if (!(this instanceof Router6)) {
-        return new Router6(options);
+    function Router7(options) {
+      if (!(this instanceof Router7)) {
+        return new Router7(options);
       }
       const opts = options || {};
       function router4(req, res, next2) {
@@ -20758,9 +20758,9 @@ var require_router = __commonJS({
       router4.stack = [];
       return router4;
     }
-    Router6.prototype = function() {
+    Router7.prototype = function() {
     };
-    Router6.prototype.param = function param(name, fn) {
+    Router7.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20780,7 +20780,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router6.prototype.handle = function handle(req, res, callback) {
+    Router7.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20907,7 +20907,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router6.prototype.use = function use(handler) {
+    Router7.prototype.use = function use(handler) {
       let offset = 0;
       let path2 = "/";
       if (typeof handler !== "function") {
@@ -20940,7 +20940,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router6.prototype.route = function route(path2) {
+    Router7.prototype.route = function route(path2) {
       const route2 = new Route(path2);
       const layer = new Layer(path2, {
         sensitive: this.caseSensitive,
@@ -20955,7 +20955,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router6.prototype[method] = function(path2) {
+      Router7.prototype[method] = function(path2) {
         const route = this.route(path2);
         route[method].apply(route, slice2.call(arguments, 1));
         return this;
@@ -21138,7 +21138,7 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router6 = require_router();
+    var Router7 = require_router();
     var slice2 = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
@@ -21154,7 +21154,7 @@ var require_application = __commonJS({
         enumerable: true,
         get: function getrouter() {
           if (router4 === null) {
-            router4 = new Router6({
+            router4 = new Router7({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
@@ -22428,17 +22428,17 @@ var require_content_disposition = __commonJS({
 // ../../node_modules/.pnpm/cookie-signature@1.2.2/node_modules/cookie-signature/index.js
 var require_cookie_signature = __commonJS({
   "../../node_modules/.pnpm/cookie-signature@1.2.2/node_modules/cookie-signature/index.js"(exports) {
-    var crypto4 = __require("crypto");
-    exports.sign = function(val2, secret) {
+    var crypto5 = __require("crypto");
+    exports.sign = function(val2, secret2) {
       if ("string" != typeof val2) throw new TypeError("Cookie value must be provided as a string.");
-      if (null == secret) throw new TypeError("Secret key must be provided.");
-      return val2 + "." + crypto4.createHmac("sha256", secret).update(val2).digest("base64").replace(/\=+$/, "");
+      if (null == secret2) throw new TypeError("Secret key must be provided.");
+      return val2 + "." + crypto5.createHmac("sha256", secret2).update(val2).digest("base64").replace(/\=+$/, "");
     };
-    exports.unsign = function(input, secret) {
+    exports.unsign = function(input, secret2) {
       if ("string" != typeof input) throw new TypeError("Signed cookie string must be provided.");
-      if (null == secret) throw new TypeError("Secret key must be provided.");
-      var tentativeValue = input.slice(0, input.lastIndexOf(".")), expectedInput = exports.sign(tentativeValue, secret), expectedBuffer = Buffer.from(expectedInput), inputBuffer = Buffer.from(input);
-      return expectedBuffer.length === inputBuffer.length && crypto4.timingSafeEqual(expectedBuffer, inputBuffer) ? tentativeValue : false;
+      if (null == secret2) throw new TypeError("Secret key must be provided.");
+      var tentativeValue = input.slice(0, input.lastIndexOf(".")), expectedInput = exports.sign(tentativeValue, secret2), expectedBuffer = Buffer.from(expectedInput), inputBuffer = Buffer.from(input);
+      return expectedBuffer.length === inputBuffer.length && crypto5.timingSafeEqual(expectedBuffer, inputBuffer) ? tentativeValue : false;
     };
   }
 });
@@ -23180,7 +23180,7 @@ var require_response = __commonJS({
     var path2 = __require("node:path");
     var pathIsAbsolute = __require("node:path").isAbsolute;
     var statuses = require_statuses();
-    var sign = require_cookie_signature().sign;
+    var sign2 = require_cookie_signature().sign;
     var normalizeType = require_utils3().normalizeType;
     var normalizeTypes = require_utils3().normalizeTypes;
     var setCharset = require_utils3().setCharset;
@@ -23464,14 +23464,14 @@ var require_response = __commonJS({
     };
     res.cookie = function(name, value, options) {
       var opts = { ...options };
-      var secret = this.req.secret;
+      var secret2 = this.req.secret;
       var signed = opts.signed;
-      if (signed && !secret) {
+      if (signed && !secret2) {
         throw new Error('cookieParser("secret") required for signed cookies');
       }
       var val2 = typeof value === "object" ? "j:" + JSON.stringify(value) : String(value);
       if (signed) {
-        val2 = "s:" + sign(val2, secret);
+        val2 = "s:" + sign2(val2, secret2);
       }
       if (opts.maxAge != null) {
         var maxAge = opts.maxAge - 0;
@@ -23747,7 +23747,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router6 = require_router();
+    var Router7 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23769,8 +23769,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router6.Route;
-    exports.Router = Router6;
+    exports.Route = Router7.Route;
+    exports.Router = Router7;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -28812,9 +28812,9 @@ var require_postgres_date = __commonJS({
       if (type === "Z") {
         return 0;
       }
-      var sign = type === "-" ? -1 : 1;
+      var sign2 = type === "-" ? -1 : 1;
       var offset = parseInt(zone[2], 10) * 3600 + parseInt(zone[3] || 0, 10) * 60 + parseInt(zone[4] || 0, 10);
-      return offset * sign * 1e3;
+      return offset * sign2 * 1e3;
     }
     function bcYearToNegativeYear(year) {
       return -(year - 1);
@@ -29179,11 +29179,11 @@ var require_pg_int8 = __commonJS({
     function readInt8(buffer) {
       var high = buffer.readInt32BE(0);
       var low = buffer.readUInt32BE(4);
-      var sign = "";
+      var sign2 = "";
       if (high < 0) {
         high = ~high + (low === 0);
         low = ~low + 1 >>> 0;
-        sign = "-";
+        sign2 = "-";
       }
       var result = "";
       var carry;
@@ -29199,7 +29199,7 @@ var require_pg_int8 = __commonJS({
         low = t / BASE >>> 0;
         digits = "" + (t - BASE * low);
         if (low === 0 && high === 0) {
-          return sign + digits + result;
+          return sign2 + digits + result;
         }
         pad = "";
         l = 6 - digits.length;
@@ -29215,7 +29215,7 @@ var require_pg_int8 = __commonJS({
         low = t / BASE >>> 0;
         digits = "" + (t - BASE * low);
         if (low === 0 && high === 0) {
-          return sign + digits + result;
+          return sign2 + digits + result;
         }
         pad = "";
         l = 6 - digits.length;
@@ -29231,7 +29231,7 @@ var require_pg_int8 = __commonJS({
         low = t / BASE >>> 0;
         digits = "" + (t - BASE * low);
         if (low === 0 && high === 0) {
-          return sign + digits + result;
+          return sign2 + digits + result;
         }
         pad = "";
         l = 6 - digits.length;
@@ -29244,7 +29244,7 @@ var require_pg_int8 = __commonJS({
         carry = high % BASE;
         t = 4294967296 * carry + low;
         digits = "" + t % BASE;
-        return sign + digits + result;
+        return sign2 + digits + result;
       }
     }
     module.exports = readInt8;
@@ -29293,7 +29293,7 @@ var require_binaryParsers = __commonJS({
     };
     var parseFloatFromBits = function(data2, precisionBits, exponentBits) {
       var bias = Math.pow(2, exponentBits - 1) - 1;
-      var sign = parseBits(data2, 1);
+      var sign2 = parseBits(data2, 1);
       var exponent = parseBits(data2, exponentBits, 1);
       if (exponent === 0) {
         return 0;
@@ -29314,11 +29314,11 @@ var require_binaryParsers = __commonJS({
       var mantissa = parseBits(data2, precisionBits, exponentBits + 1, false, parsePrecisionBits);
       if (exponent == Math.pow(2, exponentBits + 1) - 1) {
         if (mantissa === 0) {
-          return sign === 0 ? Infinity : -Infinity;
+          return sign2 === 0 ? Infinity : -Infinity;
         }
         return NaN;
       }
-      return (sign === 0 ? 1 : -1) * Math.pow(2, exponent - bias) * mantissa;
+      return (sign2 === 0 ? 1 : -1) * Math.pow(2, exponent - bias) * mantissa;
     };
     var parseInt16 = function(value) {
       if (parseBits(value, 1) == 1) {
@@ -29339,8 +29339,8 @@ var require_binaryParsers = __commonJS({
       return parseFloatFromBits(value, 52, 11);
     };
     var parseNumeric = function(value) {
-      var sign = parseBits(value, 16, 32);
-      if (sign == 49152) {
+      var sign2 = parseBits(value, 16, 32);
+      if (sign2 == 49152) {
         return NaN;
       }
       var weight = Math.pow(1e4, parseBits(value, 16, 16));
@@ -29352,12 +29352,12 @@ var require_binaryParsers = __commonJS({
         weight /= 1e4;
       }
       var scale = Math.pow(10, parseBits(value, 16, 48));
-      return (sign === 0 ? 1 : -1) * Math.round(result * scale) / scale;
+      return (sign2 === 0 ? 1 : -1) * Math.round(result * scale) / scale;
     };
     var parseDate = function(isUTC, value) {
-      var sign = parseBits(value, 1);
+      var sign2 = parseBits(value, 1);
       var rawValue = parseBits(value, 63, 1);
-      var result = new Date((sign === 0 ? 1 : -1) * rawValue / 1e3 + 9466848e5);
+      var result = new Date((sign2 === 0 ? 1 : -1) * rawValue / 1e3 + 9466848e5);
       if (!isUTC) {
         result.setTime(result.getTime() + result.getTimezoneOffset() * 6e4);
       }
@@ -29945,7 +29945,7 @@ var require_cert_signatures = __commonJS({
 var require_sasl = __commonJS({
   "../../node_modules/.pnpm/pg@8.23.0/node_modules/pg/lib/crypto/sasl.js"(exports, module) {
     "use strict";
-    var crypto4 = require_utils5();
+    var crypto5 = require_utils5();
     var { signatureAlgorithmHashFromCertificate } = require_cert_signatures();
     function saslprep(password) {
       const nonAsciiSpace = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
@@ -29963,7 +29963,7 @@ var require_sasl = __commonJS({
       if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream.getPeerCertificate !== "function") {
         throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
       }
-      const clientNonce = crypto4.randomBytes(18).toString("base64");
+      const clientNonce = crypto5.randomBytes(18).toString("base64");
       const gs2Header = mechanism === "SCRAM-SHA-256-PLUS" ? "p=tls-server-end-point" : stream ? "y" : "n";
       return {
         mechanism,
@@ -30005,20 +30005,20 @@ var require_sasl = __commonJS({
         const peerCert = stream.getPeerCertificate().raw;
         let hashName = signatureAlgorithmHashFromCertificate(peerCert);
         if (hashName === "MD5" || hashName === "SHA-1") hashName = "SHA-256";
-        const certHash = await crypto4.hashByName(hashName, peerCert);
+        const certHash = await crypto5.hashByName(hashName, peerCert);
         const bindingData = Buffer.concat([Buffer.from("p=tls-server-end-point,,"), Buffer.from(certHash)]);
         channelBinding = bindingData.toString("base64");
       }
       const clientFinalMessageWithoutProof = "c=" + channelBinding + ",r=" + sv.nonce;
       const authMessage = clientFirstMessageBare + "," + serverFirstMessage + "," + clientFinalMessageWithoutProof;
       const saltBytes = Buffer.from(sv.salt, "base64");
-      const saltedPassword = await crypto4.deriveKey(saslprep(password), saltBytes, sv.iteration);
-      const clientKey = await crypto4.hmacSha256(saltedPassword, "Client Key");
-      const storedKey = await crypto4.sha256(clientKey);
-      const clientSignature = await crypto4.hmacSha256(storedKey, authMessage);
-      const clientProof = xorBuffers(Buffer.from(clientKey), Buffer.from(clientSignature)).toString("base64");
-      const serverKey = await crypto4.hmacSha256(saltedPassword, "Server Key");
-      const serverSignatureBytes = await crypto4.hmacSha256(serverKey, authMessage);
+      const saltedPassword = await crypto5.deriveKey(saslprep(password), saltBytes, sv.iteration);
+      const clientKey2 = await crypto5.hmacSha256(saltedPassword, "Client Key");
+      const storedKey = await crypto5.sha256(clientKey2);
+      const clientSignature = await crypto5.hmacSha256(storedKey, authMessage);
+      const clientProof = xorBuffers(Buffer.from(clientKey2), Buffer.from(clientSignature)).toString("base64");
+      const serverKey = await crypto5.hmacSha256(saltedPassword, "Server Key");
+      const serverSignatureBytes = await crypto5.hmacSha256(serverKey, authMessage);
       session.message = "SASLResponse";
       session.serverSignature = Buffer.from(serverSignatureBytes).toString("base64");
       session.response = clientFinalMessageWithoutProof + ",p=" + clientProof;
@@ -32252,7 +32252,7 @@ var require_client = __commonJS({
     var Query2 = require_query();
     var defaults2 = require_defaults();
     var Connection2 = require_connection();
-    var crypto4 = require_utils5();
+    var crypto5 = require_utils5();
     var activeQueryDeprecationNotice = nodeUtils.deprecate(
       () => {
       },
@@ -32507,7 +32507,7 @@ var require_client = __commonJS({
       _handleAuthMD5Password(msg) {
         this._getPassword(async () => {
           try {
-            const hashedPassword = await crypto4.postgresMd5PasswordHash(this.user, this.password, msg.salt);
+            const hashedPassword = await crypto5.postgresMd5PasswordHash(this.user, this.password, msg.salt);
             this.connection.password(hashedPassword);
           } catch (e) {
             this.emit("error", e);
@@ -52066,8 +52066,8 @@ var require_snapshot_utils = __commonJS({
         match: new Set(matchHeaders.map((header) => caseSensitive ? header : header.toLowerCase()))
       };
     }
-    var crypto4 = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
-    var hashId = crypto4?.hash ? (value) => crypto4.hash("sha256", value, "base64url") : (value) => Buffer.from(value).toString("base64url");
+    var crypto5 = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
+    var hashId = crypto5?.hash ? (value) => crypto5.hash("sha256", value, "base64url") : (value) => Buffer.from(value).toString("base64url");
     function isUndiciHeaders(headers) {
       return Array.isArray(headers) && (headers.length & 1) === 0;
     }
@@ -58709,10 +58709,10 @@ var require_subresource_integrity = __commonJS({
     var assert2 = __require("node:assert");
     var { runtimeFeatures } = require_runtime_features();
     var validSRIHashAlgorithmTokenSet = /* @__PURE__ */ new Map([["sha256", 0], ["sha384", 1], ["sha512", 2]]);
-    var crypto4;
+    var crypto5;
     if (runtimeFeatures.has("crypto")) {
-      crypto4 = __require("node:crypto");
-      const cryptoHashes = crypto4.getHashes();
+      crypto5 = __require("node:crypto");
+      const cryptoHashes = crypto5.getHashes();
       if (cryptoHashes.length === 0) {
         validSRIHashAlgorithmTokenSet.clear();
       }
@@ -58802,7 +58802,7 @@ var require_subresource_integrity = __commonJS({
       return result;
     }
     var applyAlgorithmToBytes = (algorithm, bytes) => {
-      return crypto4.hash(algorithm, bytes, "base64");
+      return crypto5.hash(algorithm, bytes, "base64");
     };
     function caseSensitiveMatch(actualValue, expectedValue) {
       let actualValueLength = actualValue.length;
@@ -61785,7 +61785,7 @@ var require_connection2 = __commonJS({
     var { WebsocketFrameSend } = require_frame();
     var assert2 = __require("node:assert");
     var { runtimeFeatures } = require_runtime_features();
-    var crypto4 = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
+    var crypto5 = runtimeFeatures.has("crypto") ? __require("node:crypto") : null;
     var warningEmitted = false;
     function establishWebSocketConnection(url2, protocols, client, handler, options) {
       const requestURL = url2;
@@ -61805,7 +61805,7 @@ var require_connection2 = __commonJS({
         const headersList = getHeadersList(new Headers2(options.headers));
         request.headersList = headersList;
       }
-      const keyValue = crypto4.randomBytes(16).toString("base64");
+      const keyValue = crypto5.randomBytes(16).toString("base64");
       request.headersList.append("sec-websocket-key", keyValue, true);
       request.headersList.append("sec-websocket-version", "13", true);
       for (const protocol of protocols) {
@@ -61845,7 +61845,7 @@ var require_connection2 = __commonJS({
             return;
           }
           const secWSAccept = response.headersList.get("Sec-WebSocket-Accept");
-          const digest = crypto4.hash("sha1", keyValue + uid, "base64");
+          const digest = crypto5.hash("sha1", keyValue + uid, "base64");
           if (secWSAccept !== digest) {
             failWebsocketConnection(handler, 1002, "Incorrect hash received in Sec-WebSocket-Accept header.");
             return;
@@ -64549,7 +64549,7 @@ var require_mime_type = __commonJS({
 });
 
 // src/app.ts
-var import_express6 = __toESM(require_express2(), 1);
+var import_express7 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
@@ -71220,8 +71220,8 @@ var PgTimestampString = class extends PgColumn {
     const shortened = value.toISOString().slice(0, -1).replace("T", " ");
     if (this.withTimezone) {
       const offset = value.getTimezoneOffset();
-      const sign = offset <= 0 ? "+" : "-";
-      return `${shortened}${sign}${Math.floor(Math.abs(offset) / 60).toString().padStart(2, "0")}`;
+      const sign2 = offset <= 0 ? "+" : "-";
+      return `${shortened}${sign2}${Math.floor(Math.abs(offset) / 60).toString().padStart(2, "0")}`;
     }
     return shortened;
   }
@@ -91287,24 +91287,24 @@ function parse3(formula) {
   }
   let idx = 0;
   let a = 0;
-  let sign = readSign();
+  let sign2 = readSign();
   let number4 = readNumber();
   if (idx < formula.length && formula.charAt(idx) === "n") {
     idx++;
-    a = sign * (number4 !== null && number4 !== void 0 ? number4 : 1);
+    a = sign2 * (number4 !== null && number4 !== void 0 ? number4 : 1);
     skipWhitespace();
     if (idx < formula.length) {
-      sign = readSign();
+      sign2 = readSign();
       skipWhitespace();
       number4 = readNumber();
     } else {
-      sign = number4 = 0;
+      sign2 = number4 = 0;
     }
   }
   if (number4 === null || idx < formula.length) {
     throw new Error(`n-th rule couldn't be parsed ('${formula}')`);
   }
-  return [a, sign * number4];
+  return [a, sign2 * number4];
   function readSign() {
     if (formula.charAt(idx) === "-") {
       idx++;
@@ -105084,11 +105084,8 @@ async function runSunsang(job, cfg, sess, log) {
 // src/routes/booking.ts
 var bookingRouter = (0, import_express3.Router)();
 function guard(req, res, next2) {
-  const key = process.env.BOOKING_ADMIN_KEY;
-  if (key && req.header("x-booking-key") !== key) {
-    res.status(401).json({ error: "\uC811\uADFC \uD0A4\uAC00 \uB9DE\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4" });
-    return;
-  }
+  void req;
+  void res;
   next2();
 }
 bookingRouter.get("/booking/status", guard, (_req, res) => {
@@ -105097,7 +105094,7 @@ bookingRouter.get("/booking/status", guard, (_req, res) => {
     // 최종 제출 기능은 아직 없음
     relay: Boolean(process.env.BOOKING_RELAY_URL && process.env.BOOKING_RELAY_TOKEN),
     home: homeAgentStatus(),
-    keyRequired: Boolean(process.env.BOOKING_ADMIN_KEY)
+    keyRequired: false
   });
 });
 bookingRouter.get("/booking/jobs", guard, (_req, res) => {
@@ -105223,8 +105220,285 @@ homeAgentRouter.get("/home-agent/start.bat", agentGuard, (req, res) => {
   res.type("application/octet-stream").set("content-disposition", 'attachment; filename="start.bat"').send(lines.join("\r\n"));
 });
 
+// src/routes/auth.ts
+var import_express6 = __toESM(require_express2(), 1);
+
+// src/lib/auth.ts
+import crypto4 from "node:crypto";
+var COOKIE = "badajari_session";
+var MAX_AGE_MS = 30 * 24 * 60 * 60 * 1e3;
+function adminCreds() {
+  const user = process.env.ADMIN_USER ?? process.env.SITE_AUTH_USER ?? "";
+  const pass = process.env.ADMIN_PASSWORD ?? process.env.SITE_AUTH_PASSWORD ?? "";
+  return user && pass ? { user, pass } : null;
+}
+function secret() {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  const a = adminCreds();
+  return crypto4.createHash("sha256").update(`badajari|${a?.user ?? ""}|${a?.pass ?? ""}|${process.env.HOME_AGENT_TOKEN ?? ""}`).digest("hex");
+}
+function safeEqual(a, b) {
+  const ha = crypto4.createHash("sha256").update(a).digest();
+  const hb = crypto4.createHash("sha256").update(b).digest();
+  return crypto4.timingSafeEqual(ha, hb);
+}
+function hashPassword(pw) {
+  const salt = crypto4.randomBytes(16);
+  const hash = crypto4.scryptSync(pw, salt, 32);
+  return `${salt.toString("hex")}:${hash.toString("hex")}`;
+}
+function verifyPassword(pw, stored) {
+  const [saltHex, hashHex] = stored.split(":");
+  if (!saltHex || !hashHex) return false;
+  const expected = Buffer.from(hashHex, "hex");
+  const got = crypto4.scryptSync(pw, Buffer.from(saltHex, "hex"), expected.length);
+  return crypto4.timingSafeEqual(got, expected);
+}
+var tableReady = null;
+function ensureUsersTable() {
+  tableReady ??= pool.query(
+    `CREATE TABLE IF NOT EXISTS app_users (
+         username text PRIMARY KEY,
+         password_hash text NOT NULL,
+         can_book boolean NOT NULL DEFAULT false,
+         created_at timestamptz NOT NULL DEFAULT now()
+       )`
+  ).then(() => void 0).catch((err) => {
+    tableReady = null;
+    throw err;
+  });
+  return tableReady;
+}
+async function listUsers() {
+  await ensureUsersTable();
+  const r = await pool.query("SELECT username, can_book, created_at FROM app_users ORDER BY created_at");
+  return r.rows.map((x) => ({ username: x.username, canBook: x.can_book, createdAt: new Date(x.created_at).toISOString() }));
+}
+var NAME_RE = /^[\p{L}\p{N}_.-]{2,30}$/u;
+async function createUser(username, password, canBook) {
+  if (!NAME_RE.test(username)) return "\uC544\uC774\uB514\uB294 2~30\uC790\uC758 \uAE00\uC790\xB7\uC22B\uC790\xB7_ . - \uB9CC \uC4F8 \uC218 \uC788\uC5B4\uC694";
+  if (password.length < 6 || password.length > 100) return "\uBE44\uBC00\uBC88\uD638\uB294 6\uC790 \uC774\uC0C1\uC73C\uB85C \uD574 \uC8FC\uC138\uC694";
+  const admin = adminCreds();
+  if (admin && username.toLowerCase() === admin.user.toLowerCase()) return "\uAD00\uB9AC\uC790 \uC544\uC774\uB514\uC640 \uAC19\uC740 \uC544\uC774\uB514\uB294 \uC4F8 \uC218 \uC5C6\uC5B4\uC694";
+  await ensureUsersTable();
+  const exists2 = await pool.query("SELECT 1 FROM app_users WHERE lower(username) = lower($1)", [username]);
+  if (exists2.rowCount) return "\uC774\uBBF8 \uC788\uB294 \uC544\uC774\uB514\uC608\uC694";
+  await pool.query("INSERT INTO app_users (username, password_hash, can_book) VALUES ($1, $2, $3)", [username, hashPassword(password), canBook]);
+  return null;
+}
+async function updateUser(username, patch) {
+  await ensureUsersTable();
+  if (patch.password !== void 0) {
+    if (patch.password.length < 6 || patch.password.length > 100) return "\uBE44\uBC00\uBC88\uD638\uB294 6\uC790 \uC774\uC0C1\uC73C\uB85C \uD574 \uC8FC\uC138\uC694";
+    await pool.query("UPDATE app_users SET password_hash = $2 WHERE username = $1", [username, hashPassword(patch.password)]);
+  }
+  if (patch.canBook !== void 0) await pool.query("UPDATE app_users SET can_book = $2 WHERE username = $1", [username, patch.canBook]);
+  return null;
+}
+async function deleteUser(username) {
+  await ensureUsersTable();
+  await pool.query("DELETE FROM app_users WHERE username = $1", [username]);
+}
+async function checkLogin(username, password) {
+  const admin = adminCreds();
+  if (admin && safeEqual(username, admin.user) && safeEqual(password, admin.pass)) {
+    return { username: admin.user, isAdmin: true, canBook: true };
+  }
+  await ensureUsersTable();
+  const r = await pool.query("SELECT username, password_hash, can_book FROM app_users WHERE lower(username) = lower($1)", [username]);
+  const row = r.rows[0];
+  const ok = verifyPassword(password, row?.password_hash ?? "00:00");
+  if (!row || !ok) return null;
+  return { username: row.username, isAdmin: false, canBook: row.can_book };
+}
+function sign(payload) {
+  return crypto4.createHmac("sha256", secret()).update(payload).digest("base64url");
+}
+function makeToken(username) {
+  const payload = Buffer.from(JSON.stringify({ u: username, e: Date.now() + MAX_AGE_MS })).toString("base64url");
+  return `${payload}.${sign(payload)}`;
+}
+function readCookie(req, name) {
+  const raw = req.headers.cookie ?? "";
+  for (const part of raw.split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return "";
+}
+function setSessionCookie(req, res, username) {
+  const secure = (req.header("x-forwarded-proto") ?? req.protocol) === "https";
+  res.append(
+    "Set-Cookie",
+    `${COOKIE}=${encodeURIComponent(makeToken(username))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(MAX_AGE_MS / 1e3)}${secure ? "; Secure" : ""}`
+  );
+}
+function clearSessionCookie(res) {
+  res.append("Set-Cookie", `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+}
+async function sessionFromRequest(req) {
+  const token = readCookie(req, COOKIE);
+  const [payload, sig] = token.split(".");
+  if (!payload || !sig || !safeEqual(sign(payload), sig)) return null;
+  let data2;
+  try {
+    data2 = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (!data2.u || !data2.e || data2.e < Date.now()) return null;
+  const admin = adminCreds();
+  if (admin && data2.u === admin.user) return { username: admin.user, isAdmin: true, canBook: true };
+  await ensureUsersTable();
+  const r = await pool.query("SELECT username, can_book FROM app_users WHERE username = $1", [data2.u]);
+  const row = r.rows[0];
+  return row ? { username: row.username, isAdmin: false, canBook: row.can_book } : null;
+}
+var fails = /* @__PURE__ */ new Map();
+var WINDOW = 10 * 60 * 1e3;
+function clientKey(req) {
+  return (req.header("x-forwarded-for") ?? req.ip ?? "").split(",")[0].trim();
+}
+function tooManyFails(key) {
+  const f = fails.get(key);
+  if (!f) return false;
+  if (Date.now() - f.first > WINDOW) {
+    fails.delete(key);
+    return false;
+  }
+  return f.n >= 8;
+}
+function noteFail(key) {
+  const f = fails.get(key);
+  if (!f || Date.now() - f.first > WINDOW) fails.set(key, { n: 1, first: Date.now() });
+  else f.n += 1;
+}
+function clearFails(key) {
+  fails.delete(key);
+}
+var PUBLIC = /* @__PURE__ */ new Set(["/healthz", "/auth/login", "/auth/logout", "/auth/me"]);
+async function authMiddleware(req, res, next2) {
+  if (PUBLIC.has(req.path)) {
+    next2();
+    return;
+  }
+  try {
+    const s = await sessionFromRequest(req);
+    if (!s) {
+      res.status(401).json({ error: "\uB85C\uADF8\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4" });
+      return;
+    }
+    const p = req.path;
+    if (p.startsWith("/admin") && !s.isAdmin) {
+      res.status(403).json({ error: "\uAD00\uB9AC\uC790\uB9CC \uC0AC\uC6A9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4" });
+      return;
+    }
+    const needBook = p.startsWith("/booking") || p.startsWith("/fishing/sources") || p === "/fishing/diagnostics";
+    if (needBook && !s.canBook) {
+      res.status(403).json({ error: "\uAD8C\uD55C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uAD00\uB9AC\uC790\uC5D0\uAC8C \uBB38\uC758\uD558\uC138\uC694" });
+      return;
+    }
+    next2();
+  } catch (err) {
+    next2(err);
+  }
+}
+
+// src/routes/auth.ts
+var authRouter = (0, import_express6.Router)();
+authRouter.get("/auth/me", async (req, res, next2) => {
+  try {
+    const s = await sessionFromRequest(req);
+    res.setHeader("cache-control", "no-store");
+    res.json({ user: s, configured: Boolean(adminCreds()) });
+  } catch (err) {
+    next2(err);
+  }
+});
+authRouter.post("/auth/login", async (req, res, next2) => {
+  try {
+    const key = clientKey(req);
+    if (tooManyFails(key)) {
+      res.status(429).json({ error: "\uB85C\uADF8\uC778\uC744 \uC5EC\uB7EC \uBC88 \uD2C0\uB838\uC5B4\uC694. 10\uBD84 \uB4A4\uC5D0 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694" });
+      return;
+    }
+    const { username, password } = req.body ?? {};
+    if (typeof username !== "string" || typeof password !== "string" || !username || !password) {
+      res.status(400).json({ error: "\uC544\uC774\uB514\uC640 \uBE44\uBC00\uBC88\uD638\uB97C \uC785\uB825\uD558\uC138\uC694" });
+      return;
+    }
+    if (!adminCreds()) {
+      res.status(503).json({ error: "\uAD00\uB9AC\uC790 \uACC4\uC815\uC774 \uC124\uC815\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 (\uC11C\uBC84 \uD658\uACBD\uBCC0\uC218 ADMIN_USER / ADMIN_PASSWORD)" });
+      return;
+    }
+    const s = await checkLogin(username.trim(), password);
+    if (!s) {
+      noteFail(key);
+      res.status(401).json({ error: "\uC544\uC774\uB514 \uB610\uB294 \uBE44\uBC00\uBC88\uD638\uAC00 \uB9DE\uC9C0 \uC54A\uC544\uC694" });
+      return;
+    }
+    clearFails(key);
+    setSessionCookie(req, res, s.username);
+    res.json({ user: s });
+  } catch (err) {
+    next2(err);
+  }
+});
+authRouter.post("/auth/logout", (_req, res) => {
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+authRouter.get("/admin/users", async (_req, res, next2) => {
+  try {
+    res.json({ users: await listUsers() });
+  } catch (err) {
+    next2(err);
+  }
+});
+authRouter.post("/admin/users", async (req, res, next2) => {
+  try {
+    const { username, password, canBook } = req.body ?? {};
+    if (typeof username !== "string" || typeof password !== "string") {
+      res.status(400).json({ error: "\uC544\uC774\uB514\uC640 \uBE44\uBC00\uBC88\uD638\uB97C \uC785\uB825\uD558\uC138\uC694" });
+      return;
+    }
+    const err = await createUser(username.trim(), password, canBook === true);
+    if (err) {
+      res.status(400).json({ error: err });
+      return;
+    }
+    res.json({ users: await listUsers() });
+  } catch (err) {
+    next2(err);
+  }
+});
+authRouter.patch("/admin/users/:name", async (req, res, next2) => {
+  try {
+    const { password, canBook } = req.body ?? {};
+    const err = await updateUser(String(req.params.name), {
+      password: typeof password === "string" ? password : void 0,
+      canBook: typeof canBook === "boolean" ? canBook : void 0
+    });
+    if (err) {
+      res.status(400).json({ error: err });
+      return;
+    }
+    res.json({ users: await listUsers() });
+  } catch (err) {
+    next2(err);
+  }
+});
+authRouter.delete("/admin/users/:name", async (req, res, next2) => {
+  try {
+    await deleteUser(String(req.params.name));
+    res.json({ users: await listUsers() });
+  } catch (err) {
+    next2(err);
+  }
+});
+
 // src/app.ts
-var app = (0, import_express6.default)();
+var app = (0, import_express7.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -105245,10 +105519,12 @@ app.use(
   })
 );
 app.use((0, import_cors.default)());
-app.use("/api/home-agent", import_express6.default.json({ limit: "20mb" }));
+app.use("/api/home-agent", import_express7.default.json({ limit: "20mb" }));
 app.use("/api", homeAgentRouter);
-app.use(import_express6.default.json());
-app.use(import_express6.default.urlencoded({ extended: true }));
+app.use(import_express7.default.json());
+app.use(import_express7.default.urlencoded({ extended: true }));
+app.use("/api", authMiddleware);
+app.use("/api", authRouter);
 app.use("/api", routes_default);
 var app_default = app;
 

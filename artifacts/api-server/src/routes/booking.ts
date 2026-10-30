@@ -7,7 +7,8 @@
 import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
 import { homeAgentStatus } from "../lib/home-agent";
-import { getJob, listJobs, startJobs, stopJob, validateConfigs } from "../lib/booking";
+import { getJob, listJobs, normalizeBase, startJobs, stopJob, validateConfigs } from "../lib/booking";
+import { detectSource, listConfiguredSources } from "../lib/fishing-source";
 
 export const bookingRouter = Router();
 
@@ -51,6 +52,36 @@ bookingRouter.post("/booking/jobs", guard, (req, res) => {
 
 bookingRouter.post("/booking/jobs/:id/stop", guard, (req, res) => {
   res.json({ ok: stopJob(String(req.params.id)) });
+});
+
+// 예약처 주소로 배 목록을 알려 준다: 예약처 관리에 이미 등록된 배가 있으면 그것을, 없으면 사이트를 직접 조회해서 찾는다
+bookingRouter.post("/booking/ships", guard, async (req, res) => {
+  try {
+    const base = normalizeBase(req.body?.url);
+    const root = (h: string) => h.replace(/^www\./, "").toLowerCase();
+    const host = root(new URL(base).hostname);
+    let registered: Awaited<ReturnType<typeof listConfiguredSources>> = [];
+    try {
+      registered = (await listConfiguredSources()).filter((src) => {
+        try {
+          return root(new URL(src.sourceUrl).hostname) === host;
+        } catch {
+          return false;
+        }
+      });
+    } catch {
+      /* 등록된 예약처를 읽지 못하면 사이트를 직접 조회한다 */
+    }
+    const names = [...new Set(registered.flatMap((src) => src.vessels.map((v) => v.name)))];
+    if (names.length) {
+      res.json({ ships: names, via: "registered" });
+      return;
+    }
+    const found = await detectSource(base);
+    res.json({ ships: found?.vessels ?? [], via: "detected", platform: found?.platform ?? "unknown" });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message ?? "배 목록을 불러오지 못했습니다" });
+  }
 });
 
 export default bookingRouter;
