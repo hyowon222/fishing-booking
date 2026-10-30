@@ -7,7 +7,7 @@
 import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
 import { homeAgentStatus } from "../lib/home-agent";
-import { getJob, listJobs, normalizeBase, startJobs, stopJob, validateConfigs } from "../lib/booking";
+import { Session, getJob, listJobs, normalizeBase, startJobs, stopJob, validateConfigs } from "../lib/booking";
 import { detectSource, listConfiguredSources } from "../lib/fishing-source";
 
 export const bookingRouter = Router();
@@ -81,6 +81,40 @@ bookingRouter.post("/booking/ships", guard, async (req, res) => {
     res.json({ ships: found?.vessels ?? [], via: "detected", platform: found?.platform ?? "unknown" });
   } catch (e: any) {
     res.status(400).json({ error: e?.message ?? "배 목록을 불러오지 못했습니다" });
+  }
+});
+
+// 진단: 선상24 예약처의 달력 페이지에서 배가 어떻게 보이는지 보여 준다 (브라우저 주소창에서 열어 본다)
+//   /api/booking/ship-debug?url=https://daebak.sunsang24.com&month=202611
+bookingRouter.get("/booking/ship-debug", guard, async (req, res) => {
+  try {
+    const base = normalizeBase(req.query.url);
+    const now = new Date();
+    const month = typeof req.query.month === "string" && /^\d{6}$/.test(req.query.month) ? req.query.month : `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const sess = new Session(base);
+    const r = await sess.request("GET", `/ship/schedule_fleet/${month}`);
+    const html = r.text;
+    const strip = (t: string) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    const days = [...html.matchAll(/id=["']d(\d{4}-\d{2}-\d{2})["']/g)].map((m) => m[1]);
+    const marks = [...html.matchAll(/<[a-z]+[^>]*class=["'][^"']*\bship_unit\b[^"']*["'][^>]*>/g)];
+    const units = marks.map((m, i) => {
+      const chunk = html.slice(m.index! + m[0].length, i + 1 < marks.length ? marks[i + 1].index! : html.length).slice(0, 4000);
+      return {
+        tag: m[0].slice(0, 160),
+        title: strip(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? ""),
+        remain: strip(/class=["'][^"']*\bremain\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "").slice(0, 60),
+        status: /data-status_code=["']([A-Z]+)["']/.exec(chunk)?.[1] ?? "",
+        scheduleNo: /data-schedule_no=["'](\d+)["']/.exec(chunk)?.[1] ?? "",
+      };
+    });
+    const byTitle: Record<string, number> = {};
+    for (const u of units) byTitle[u.title || "(제목없음)"] = (byTitle[u.title || "(제목없음)"] ?? 0) + 1;
+    const allTitles = [...new Set([...html.matchAll(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/g)].map((m) => strip(m[1]!)))].slice(0, 60);
+    const shipNos = [...new Set([...html.matchAll(/ship_no[_=:"' ]+(\d+)/g)].map((m) => m[1]))].slice(0, 40);
+    const names = [...new Set([...html.matchAll(/(뉴항구[^<"'\s]{0,6}|레전드[^<"'\s]{0,6})/g)].map((m) => m[1]))].slice(0, 40);
+    res.json({ url: r.url, status: r.status, htmlLength: html.length, pageTitle: strip(/<title>([\s\S]*?)<\/title>/.exec(html)?.[1] ?? ""), dayCount: days.length, unitCount: units.length, unitsPerTitle: byTitle, allTitlesOnPage: allTitles, shipNosOnPage: shipNos, nameMentions: names, sampleUnits: units.slice(0, 6) });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message ?? String(e) });
   }
 });
 

@@ -105119,6 +105119,33 @@ bookingRouter.post("/booking/jobs", guard, (req, res) => {
 bookingRouter.post("/booking/jobs/:id/stop", guard, (req, res) => {
   res.json({ ok: stopJob(String(req.params.id)) });
 });
+bookingRouter.post("/booking/ships", guard, async (req, res) => {
+  try {
+    const base = normalizeBase(req.body?.url);
+    const root2 = (h) => h.replace(/^www\./, "").toLowerCase();
+    const host2 = root2(new URL(base).hostname);
+    let registered = [];
+    try {
+      registered = (await listConfiguredSources()).filter((src) => {
+        try {
+          return root2(new URL(src.sourceUrl).hostname) === host2;
+        } catch {
+          return false;
+        }
+      });
+    } catch {
+    }
+    const names = [...new Set(registered.flatMap((src) => src.vessels.map((v) => v.name)))];
+    if (names.length) {
+      res.json({ ships: names, via: "registered" });
+      return;
+    }
+    const found = await detectSource(base);
+    res.json({ ships: found?.vessels ?? [], via: "detected", platform: found?.platform ?? "unknown" });
+  } catch (e) {
+    res.status(400).json({ error: e?.message ?? "\uBC30 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" });
+  }
+});
 var booking_default = bookingRouter;
 
 // src/routes/index.ts
