@@ -73,8 +73,30 @@ bookingRouter.post("/booking/ships", guard, async (req, res) => {
       /* 등록된 예약처를 읽지 못하면 사이트를 직접 조회한다 */
     }
     const names = [...new Set(registered.flatMap((src) => src.vessels.map((v) => v.name)))];
+    let platform = "unknown";
+    // 선상24: 달력 페이지에 올라온 배를 전부 읽는다 (자리가 없거나 마감인 배도 목록에는 넣는다)
+    if (/sunsang24\.com$/i.test(new URL(base).hostname)) {
+      platform = "sunsang24";
+      const strip = (t: string) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+      const now = new Date();
+      for (let k = 0; k < 2; k++) {
+        const d = new Date(now.getFullYear(), now.getMonth() + k, 1);
+        const month = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
+        try {
+          const page = await new Session(base).request("GET", `/ship/schedule_fleet/${month}`);
+          const marks = [...page.text.matchAll(/<[a-z]+[^>]*class=["'][^"']*\bship_unit\b(?!_)[^"']*["'][^>]*>/g)];
+          marks.forEach((m, i) => {
+            const chunk = page.text.slice(m.index! + m[0].length, i + 1 < marks.length ? marks[i + 1].index! : page.text.length).slice(0, 4000);
+            const name = strip(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+            if (name && name.length <= 30 && !names.includes(name)) names.push(name);
+          });
+        } catch {
+          /* 이 달을 못 읽어도 다른 달·등록된 배로 계속한다 */
+        }
+      }
+    }
     if (names.length) {
-      res.json({ ships: names, via: "registered" });
+      res.json({ ships: names, via: "registered", platform });
       return;
     }
     const found = await detectSource(base);

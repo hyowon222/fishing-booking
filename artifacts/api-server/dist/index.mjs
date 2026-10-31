@@ -105146,6 +105146,37 @@ bookingRouter.post("/booking/ships", guard, async (req, res) => {
     res.status(400).json({ error: e?.message ?? "\uBC30 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4" });
   }
 });
+bookingRouter.get("/booking/ship-debug", guard, async (req, res) => {
+  try {
+    const base = normalizeBase(req.query.url);
+    const now = /* @__PURE__ */ new Date();
+    const month = typeof req.query.month === "string" && /^\d{6}$/.test(req.query.month) ? req.query.month : `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const sess = new Session(base);
+    const r = await sess.request("GET", `/ship/schedule_fleet/${month}`);
+    const html3 = r.text;
+    const strip = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    const days = [...html3.matchAll(/id=["']d(\d{4}-\d{2}-\d{2})["']/g)].map((m) => m[1]);
+    const marks = [...html3.matchAll(/<[a-z]+[^>]*class=["'][^"']*\bship_unit\b[^"']*["'][^>]*>/g)];
+    const units = marks.map((m, i) => {
+      const chunk = html3.slice(m.index + m[0].length, i + 1 < marks.length ? marks[i + 1].index : html3.length).slice(0, 4e3);
+      return {
+        tag: m[0].slice(0, 160),
+        title: strip(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? ""),
+        remain: strip(/class=["'][^"']*\bremain\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "").slice(0, 60),
+        status: /data-status_code=["']([A-Z]+)["']/.exec(chunk)?.[1] ?? "",
+        scheduleNo: /data-schedule_no=["'](\d+)["']/.exec(chunk)?.[1] ?? ""
+      };
+    });
+    const byTitle = {};
+    for (const u of units) byTitle[u.title || "(\uC81C\uBAA9\uC5C6\uC74C)"] = (byTitle[u.title || "(\uC81C\uBAA9\uC5C6\uC74C)"] ?? 0) + 1;
+    const allTitles = [...new Set([...html3.matchAll(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/g)].map((m) => strip(m[1])))].slice(0, 60);
+    const shipNos = [...new Set([...html3.matchAll(/ship_no[_=:"' ]+(\d+)/g)].map((m) => m[1]))].slice(0, 40);
+    const names = [...new Set([...html3.matchAll(/(뉴항구[^<"'\s]{0,6}|레전드[^<"'\s]{0,6})/g)].map((m) => m[1]))].slice(0, 40);
+    res.json({ url: r.url, status: r.status, htmlLength: html3.length, pageTitle: strip(/<title>([\s\S]*?)<\/title>/.exec(html3)?.[1] ?? ""), dayCount: days.length, unitCount: units.length, unitsPerTitle: byTitle, allTitlesOnPage: allTitles, shipNosOnPage: shipNos, nameMentions: names, sampleUnits: units.slice(0, 6) });
+  } catch (e) {
+    res.status(400).json({ error: e?.message ?? String(e) });
+  }
+});
 var booking_default = bookingRouter;
 
 // src/routes/index.ts

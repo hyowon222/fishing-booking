@@ -276,11 +276,11 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
   const selUrls = selSites.filter((x) => x.id !== 'direct').map((x) => x.url).filter(Boolean).join('|');
   useEffect(() => {
     for (const u of selUrls.split('|').filter(Boolean)) {
-      if (shipList[u]?.length || triedShips.current.has(u)) continue;
+      if (triedShips.current.has(u)) continue;
       triedShips.current.add(u);
       void fetchShips(u);
     }
-  }, [selUrls, shipList, fetchShips]);
+  }, [selUrls, fetchShips]);
   const chipShips = (s: Site): string[] => shipList[s.url]?.length ? shipList[s.url]! : s.id === 'mscu' ? KNOWN_SHIPS : (s.ships ?? []);
 
   const setShip = (s: Site, i: number, v: string) => setCfg(s, { ships: cfgOf(s).ships.map((x, k) => (k === i ? v : x)) });
