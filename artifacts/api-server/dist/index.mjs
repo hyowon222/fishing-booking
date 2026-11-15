@@ -105136,8 +105136,28 @@ bookingRouter.post("/booking/ships", guard, async (req, res) => {
     } catch {
     }
     const names = [...new Set(registered.flatMap((src) => src.vessels.map((v) => v.name)))];
+    let platform = "unknown";
+    if (/sunsang24\.com$/i.test(new URL(base).hostname)) {
+      platform = "sunsang24";
+      const strip = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+      const now = /* @__PURE__ */ new Date();
+      for (let k = 0; k < 2; k++) {
+        const d = new Date(now.getFullYear(), now.getMonth() + k, 1);
+        const month = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
+        try {
+          const page = await new Session(base).request("GET", `/ship/schedule_fleet/${month}`);
+          const marks = [...page.text.matchAll(/<[a-z]+[^>]*class=["'][^"']*\bship_unit\b(?!_)[^"']*["'][^>]*>/g)];
+          marks.forEach((m, i) => {
+            const chunk = page.text.slice(m.index + m[0].length, i + 1 < marks.length ? marks[i + 1].index : page.text.length).slice(0, 4e3);
+            const name = strip(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+            if (name && name.length <= 30 && !names.includes(name)) names.push(name);
+          });
+        } catch {
+        }
+      }
+    }
     if (names.length) {
-      res.json({ ships: names, via: "registered" });
+      res.json({ ships: names, via: "registered", platform });
       return;
     }
     const found = await detectSource(base);

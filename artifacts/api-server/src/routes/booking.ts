@@ -140,4 +140,31 @@ bookingRouter.get("/booking/ship-debug", guard, async (req, res) => {
   }
 });
 
+// 진단: 예약처 사이트에서 조황(조과) 게시판이 어디 있고 어떻게 생겼는지 찾아 본다
+//   /api/booking/catch-debug?url=https://daebak.sunsang24.com
+bookingRouter.get("/booking/catch-debug", guard, async (req, res) => {
+  try {
+    const base = normalizeBase(req.query.url);
+    const strip = (t: string) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    const home = await new Session(base).request("GET", "/");
+    const links = [...home.text.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)]
+      .map((m) => ({ href: m[1]!, text: strip(m[2]!).slice(0, 40) }))
+      .filter((l) => /조황|조과|포토|후기|갤러리|catch|report|photo|gallery|bbs|board/i.test(`${l.text} ${l.href}`));
+    const uniq = [...new Map(links.map((l) => [l.href, l])).values()].slice(0, 25);
+    const tried: any[] = [];
+    for (const l of uniq.filter((x) => /조황|조과|catch|report/i.test(`${x.text} ${x.href}`)).slice(0, 3)) {
+      try {
+        const u = new URL(l.href, base);
+        const page = await new Session(base).request("GET", u.pathname + u.search);
+        tried.push({ href: l.href, text: l.text, status: page.status, length: page.text.length, title: strip(/<title>([\s\S]*?)<\/title>/i.exec(page.text)?.[1] ?? ""), sample: strip(page.text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, "")).slice(0, 700) });
+      } catch (e: any) {
+        tried.push({ href: l.href, error: e?.message ?? String(e) });
+      }
+    }
+    res.json({ homeStatus: home.status, homeLength: home.text.length, candidateLinks: uniq, openedPages: tried });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message ?? String(e) });
+  }
+});
+
 export default bookingRouter;

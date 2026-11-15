@@ -41,6 +41,7 @@ import SourceManager from '@/components/source-manager';
 import AutoBooking from '@/components/auto-booking';
 import TideTable from '@/components/tide-table';
 import AdminUsers from '@/components/admin-users';
+import CatchInsights from '@/components/catch-insights';
 import LoginPage from '@/components/login-page';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -808,6 +809,7 @@ function Home() {
   const [showAutoBooking, setShowAutoBooking] = useState(false);
   const [showTide, setShowTide] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showCatch, setShowCatch] = useState(false);
   const [noPerm, setNoPerm] = useState(false);
   const { user, logout } = useAuth();
   const canBook = Boolean(user?.canBook);
@@ -917,9 +919,10 @@ function Home() {
           <div className="flex items-center gap-3 text-xs text-sidebar-foreground/65">
             <div className="hidden items-center gap-2 md:flex"><span className="h-1.5 w-1.5 rounded-full bg-sidebar-primary" />실시간 예약처 연결됨</div>
             <div className="hidden h-8 w-px bg-sidebar-border sm:block" />
-            <button type="button" onClick={() => (canBook ? (setShowAdmin(false), setShowSourceManager(true)) : setNoPerm(true))} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-manage-sources"><Settings2 size={15} />예약처 관리</button>
-            <button type="button" onClick={() => (canBook ? (setShowAdmin(false), setShowAutoBooking(true)) : setNoPerm(true))} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-auto-booking">자동 예약</button>
-            <button type="button" onClick={() => { setShowAdmin(false); setShowTide(true); }} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-tide"><Waves size={15} />물때 정보</button>
+            <button type="button" onClick={() => (canBook ? (setShowAdmin(false), setShowCatch(false), setShowSourceManager(true)) : setNoPerm(true))} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-manage-sources"><Settings2 size={15} />예약처 관리</button>
+            <button type="button" onClick={() => (canBook ? (setShowAdmin(false), setShowCatch(false), setShowAutoBooking(true)) : setNoPerm(true))} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-auto-booking">자동 예약</button>
+            <button type="button" onClick={() => { setShowAdmin(false); setShowCatch(false); setShowTide(true); }} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-tide"><Waves size={15} />물때 정보</button>
+            <button type="button" onClick={() => { setShowAdmin(false); setShowTide(false); setShowCatch(true); }} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-catch"><Fish size={15} />조황</button>
             {user?.isAdmin && <button type="button" onClick={() => setShowAdmin(true)} className="hidden items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent sm:flex" data-testid="button-admin-users"><Users size={15} />계정 관리</button>}
             <div className="hidden h-8 w-px bg-sidebar-border sm:block" />
             <button type="button" onClick={() => void logout()} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 hover:bg-sidebar-accent" data-testid="button-logout" aria-label="로그아웃"><span className="max-w-[6rem] truncate">{user?.username}</span><LogOut size={15} /></button>
@@ -927,7 +930,9 @@ function Home() {
         </div>
       </header>
 
-      {showAdmin && user?.isAdmin ? (
+      {showCatch ? (
+        <CatchInsights onBack={() => setShowCatch(false)} />
+      ) : showAdmin && user?.isAdmin ? (
         <AdminUsers onBack={() => setShowAdmin(false)} />
       ) : showTide ? (
         <TideTable onBack={() => setShowTide(false)} />
@@ -981,10 +986,11 @@ function Home() {
         </section>
       </main>
       )}
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden" style={{ gridTemplateColumns: `repeat(${user?.isAdmin ? 5 : 4}, minmax(0, 1fr))` }} aria-label="메뉴" data-testid="tab-bar">
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden" style={{ gridTemplateColumns: `repeat(${user?.isAdmin ? 6 : 5}, minmax(0, 1fr))` }} aria-label="메뉴" data-testid="tab-bar">
         {(() => {
-          const none = !showTide && !showAutoBooking && !showSourceManager && !showAdmin;
-          const only = (set: 'tide' | 'auto' | 'src' | 'admin' | 'none') => {
+          const none = !showTide && !showAutoBooking && !showSourceManager && !showAdmin && !showCatch;
+          const only = (set: 'tide' | 'auto' | 'src' | 'admin' | 'catch' | 'none') => {
+            setShowCatch(set === 'catch');
             setShowTide(set === 'tide');
             setShowAutoBooking(set === 'auto');
             setShowSourceManager(set === 'src');
@@ -994,6 +1000,7 @@ function Home() {
             ['조회', Search, none, () => only('none'), 'tab-search'],
             ['자동 예약', Ship, showAutoBooking && canBook, () => (canBook ? only('auto') : setNoPerm(true)), 'button-mobile-auto-booking'],
             ['물때', Waves, showTide, () => only('tide'), 'button-mobile-tide'],
+            ['조황', Fish, showCatch, () => only('catch'), 'button-mobile-catch'],
             ['예약처', Settings2, showSourceManager && canBook, () => (canBook ? only('src') : setNoPerm(true)), 'button-mobile-menu'],
           ];
           if (user?.isAdmin) tabs.push(['계정', Users, showAdmin, () => only('admin'), 'button-mobile-admin']);
