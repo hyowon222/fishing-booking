@@ -20740,27 +20740,27 @@ var require_router = __commonJS({
     var slice2 = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router7;
+    module.exports = Router8;
     module.exports.Route = Route;
-    function Router7(options) {
-      if (!(this instanceof Router7)) {
-        return new Router7(options);
+    function Router8(options) {
+      if (!(this instanceof Router8)) {
+        return new Router8(options);
       }
       const opts = options || {};
-      function router4(req, res, next2) {
-        router4.handle(req, res, next2);
+      function router5(req, res, next2) {
+        router5.handle(req, res, next2);
       }
-      Object.setPrototypeOf(router4, this);
-      router4.caseSensitive = opts.caseSensitive;
-      router4.mergeParams = opts.mergeParams;
-      router4.params = {};
-      router4.strict = opts.strict;
-      router4.stack = [];
-      return router4;
+      Object.setPrototypeOf(router5, this);
+      router5.caseSensitive = opts.caseSensitive;
+      router5.mergeParams = opts.mergeParams;
+      router5.params = {};
+      router5.strict = opts.strict;
+      router5.stack = [];
+      return router5;
     }
-    Router7.prototype = function() {
+    Router8.prototype = function() {
     };
-    Router7.prototype.param = function param(name, fn) {
+    Router8.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20780,7 +20780,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router7.prototype.handle = function handle(req, res, callback) {
+    Router8.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20907,7 +20907,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router7.prototype.use = function use(handler) {
+    Router8.prototype.use = function use(handler) {
       let offset = 0;
       let path2 = "/";
       if (typeof handler !== "function") {
@@ -20940,7 +20940,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router7.prototype.route = function route(path2) {
+    Router8.prototype.route = function route(path2) {
       const route2 = new Route(path2);
       const layer = new Layer(path2, {
         sensitive: this.caseSensitive,
@@ -20955,7 +20955,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router7.prototype[method] = function(path2) {
+      Router8.prototype[method] = function(path2) {
         const route = this.route(path2);
         route[method].apply(route, slice2.call(arguments, 1));
         return this;
@@ -21138,13 +21138,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router7 = require_router();
+    var Router8 = require_router();
     var slice2 = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router4 = null;
+      var router5 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21153,13 +21153,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router4 === null) {
-            router4 = new Router7({
+          if (router5 === null) {
+            router5 = new Router8({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router4;
+          return router5;
         }
       });
     };
@@ -21230,15 +21230,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router4 = this.router;
+      var router5 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router4.use(path2, fn2);
+          return router5.use(path2, fn2);
         }
         debug(".use app under %s", path2);
         fn2.mountpath = path2;
         fn2.parent = this;
-        router4.use(path2, function mounted_app(req, res, next2) {
+        router5.use(path2, function mounted_app(req, res, next2) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23747,7 +23747,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router7 = require_router();
+    var Router8 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23769,8 +23769,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router7.Route;
-    exports.Router = Router7;
+    exports.Route = Router8.Route;
+    exports.Router = Router8;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -28743,7 +28743,7 @@ var require_postgres_date = __commonJS({
   "../../node_modules/.pnpm/postgres-date@1.0.7/node_modules/postgres-date/index.js"(exports, module) {
     "use strict";
     var DATE_TIME = /(\d{1,})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(\.\d{1,})?.*?( BC)?$/;
-    var DATE = /^(\d{1,})-(\d{2})-(\d{2})( BC)?$/;
+    var DATE2 = /^(\d{1,})-(\d{2})-(\d{2})( BC)?$/;
     var TIME_ZONE = /([Z+-])(\d{2})?:?(\d{2})?:?(\d{2})?/;
     var INFINITY = /^-?infinity$/;
     module.exports = function parseDate(isoDate) {
@@ -28785,7 +28785,7 @@ var require_postgres_date = __commonJS({
       return date6;
     };
     function getDate(isoDate) {
-      var matches = DATE.exec(isoDate);
+      var matches = DATE2.exec(isoDate);
       if (!matches) {
         return;
       }
@@ -64549,12 +64549,12 @@ var require_mime_type = __commonJS({
 });
 
 // src/app.ts
-var import_express7 = __toESM(require_express2(), 1);
+var import_express8 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express4 = __toESM(require_express2(), 1);
+var import_express5 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -104881,8 +104881,8 @@ function parseSunsangDay(html3) {
   });
 }
 function parseSunsangMonthDay(html3, date6) {
-  const iso = `${date6.slice(0, 4)}-${date6.slice(4, 6)}-${date6.slice(6, 8)}`;
-  const at = html3.search(new RegExp(`id=["']d${iso}["']`));
+  const iso2 = `${date6.slice(0, 4)}-${date6.slice(4, 6)}-${date6.slice(6, 8)}`;
+  const at = html3.search(new RegExp(`id=["']d${iso2}["']`));
   if (at < 0) return [];
   const rest = html3.slice(at + 10);
   const nextDay = rest.search(/id=["']d\d{4}-\d{2}-\d{2}["']/);
@@ -105197,20 +105197,246 @@ bookingRouter.get("/booking/ship-debug", guard, async (req, res) => {
     res.status(400).json({ error: e?.message ?? String(e) });
   }
 });
+bookingRouter.get("/booking/catch-debug", guard, async (req, res) => {
+  try {
+    const base = normalizeBase(req.query.url);
+    const strip = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    const home = await new Session(base).request("GET", "/");
+    const links = [...home.text.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)].map((m) => ({ href: m[1], text: strip(m[2]).slice(0, 40) })).filter((l) => /조황|조과|포토|후기|갤러리|catch|report|photo|gallery|bbs|board/i.test(`${l.text} ${l.href}`));
+    const uniq = [...new Map(links.map((l) => [l.href, l])).values()].slice(0, 25);
+    const tried = [];
+    for (const l of uniq.filter((x) => /조황|조과|catch|report/i.test(`${x.text} ${x.href}`)).slice(0, 3)) {
+      try {
+        const u = new URL(l.href, base);
+        const page = await new Session(base).request("GET", u.pathname + u.search);
+        tried.push({ href: l.href, text: l.text, status: page.status, length: page.text.length, title: strip(/<title>([\s\S]*?)<\/title>/i.exec(page.text)?.[1] ?? ""), sample: strip(page.text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, "")).slice(0, 700) });
+      } catch (e) {
+        tried.push({ href: l.href, error: e?.message ?? String(e) });
+      }
+    }
+    res.json({ homeStatus: home.status, homeLength: home.text.length, candidateLinks: uniq, openedPages: tried });
+  } catch (e) {
+    res.status(400).json({ error: e?.message ?? String(e) });
+  }
+});
 var booking_default = bookingRouter;
 
-// src/routes/index.ts
+// src/routes/catch.ts
+var import_express4 = __toESM(require_express2(), 1);
+
+// src/lib/catch-reports.ts
+var ready = null;
+function ensureTable() {
+  ready ??= pool.query(
+    `CREATE TABLE IF NOT EXISTS catch_reports (
+         id serial PRIMARY KEY,
+         fish_date date NOT NULL,
+         port text NOT NULL,
+         vessel text NOT NULL DEFAULT '',
+         species text NOT NULL DEFAULT '',
+         fish_count integer,
+         note text NOT NULL DEFAULT '',
+         marked_good boolean NOT NULL DEFAULT false,
+         source text NOT NULL DEFAULT 'manual',
+         created_by text NOT NULL DEFAULT '',
+         created_at timestamptz NOT NULL DEFAULT now()
+       )`
+  ).then(() => void 0).catch((err) => {
+    ready = null;
+    throw err;
+  });
+  return ready;
+}
+var iso = (v) => {
+  if (v instanceof Date) return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, "0")}-${String(v.getDate()).padStart(2, "0")}`;
+  return String(v).slice(0, 10);
+};
+function rowToReport(r) {
+  return {
+    id: r.id,
+    date: iso(r.fish_date),
+    port: r.port,
+    vessel: r.vessel,
+    species: r.species,
+    count: r.fish_count,
+    note: r.note,
+    markedGood: r.marked_good,
+    source: r.source
+  };
+}
+async function listReports(from, to) {
+  await ensureTable();
+  const r = await pool.query("SELECT * FROM catch_reports WHERE fish_date BETWEEN $1 AND $2 ORDER BY fish_date DESC, id DESC", [from, to]);
+  return r.rows.map(rowToReport);
+}
+function validateReport(b) {
+  if (!b || typeof b !== "object") return { ok: false, error: "\uB0B4\uC6A9\uC774 \uBE44\uC5C8\uC5B4\uC694" };
+  if (typeof b.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(b.date)) return { ok: false, error: "\uB0A0\uC9DC\uB97C \uC785\uB825\uD558\uC138\uC694" };
+  if (typeof b.port !== "string" || !TIDE_PORTS.includes(b.port)) return { ok: false, error: `\uD56D\uAD6C\uB294 ${TIDE_PORTS.join(", ")} \uC911\uC5D0\uC11C \uACE8\uB77C \uC8FC\uC138\uC694` };
+  const count = b.count === null || b.count === void 0 || b.count === "" ? null : Number(b.count);
+  if (count !== null && (!Number.isInteger(count) || count < 0 || count > 1e5)) return { ok: false, error: "\uB9C8\uB9BF\uC218\uB294 0 \uC774\uC0C1\uC758 \uC22B\uC790\uB85C \uC785\uB825\uD558\uC138\uC694" };
+  const text4 = (v, max) => typeof v === "string" ? v.trim().slice(0, max) : "";
+  return {
+    ok: true,
+    value: { date: b.date, port: b.port, vessel: text4(b.vessel, 40), species: text4(b.species, 40), count, note: text4(b.note, 300), markedGood: b.markedGood === true }
+  };
+}
+async function addReport(v, by, source = "manual") {
+  await ensureTable();
+  await pool.query(
+    "INSERT INTO catch_reports (fish_date, port, vessel, species, fish_count, note, marked_good, source, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+    [v.date, v.port, v.vessel ?? "", v.species ?? "", v.count ?? null, v.note ?? "", v.markedGood === true, source, by]
+  );
+}
+async function deleteReport(id) {
+  await ensureTable();
+  await pool.query("DELETE FROM catch_reports WHERE id = $1", [id]);
+}
+var GOOD_WORDS = /대박|만선|호황|대량|폭발|풍년|입질\s*좋|잘\s*나|많이\s*잡|터졌|터짐|쿨러\s*(가득|꽉)/;
+var WEEKDAYS2 = ["\uC77C", "\uC6D4", "\uD654", "\uC218", "\uBAA9", "\uAE08", "\uD1A0"];
+async function buildInsights(from, to, port2, topPercent = 20) {
+  const all = (await listReports(from, to)).filter((r) => !port2 || r.port === port2);
+  const groups = /* @__PURE__ */ new Map();
+  for (const r of all) {
+    const k = `${r.date}|${r.port}`;
+    (groups.get(k) ?? groups.set(k, []).get(k)).push(r);
+  }
+  const totals = [...groups.entries()].map(([k, rs]) => ({ k, rs, total: rs.some((x) => x.count !== null) ? rs.reduce((a, x) => a + (x.count ?? 0), 0) : null }));
+  const counted = totals.filter((t) => t.total !== null && t.total > 0).map((t) => t.total).sort((a, b) => b - a);
+  const keep = counted.length ? Math.max(1, Math.ceil(counted.length * topPercent / 100)) : 0;
+  const threshold = keep ? counted[keep - 1] : Infinity;
+  const good = [];
+  for (const t of totals) {
+    const reasons = [];
+    if (t.total !== null && t.total > 0 && t.total >= threshold) reasons.push(`\uB9C8\uB9BF\uC218 \uC0C1\uC704 ${topPercent}% (${t.total}\uB9C8\uB9AC)`);
+    if (t.rs.some((x) => GOOD_WORDS.test(`${x.note} ${x.species}`))) reasons.push("\uC870\uD669 \uAE00\uC5D0 \uC88B\uB2E4\uB294 \uD45C\uD604");
+    if (t.rs.some((x) => x.markedGood)) reasons.push("\uC9C1\uC811 \u2018\uC870\uD669 \uC88B\uC74C\u2019 \uD45C\uC2DC");
+    if (!reasons.length) continue;
+    const [date6, p] = t.k.split("|");
+    good.push({
+      date: date6,
+      weekday: WEEKDAYS2[(/* @__PURE__ */ new Date(`${date6}T00:00:00Z`)).getUTCDay()],
+      port: p,
+      totalCount: t.total,
+      reasons,
+      vessels: [...new Set(t.rs.map((x) => x.vessel).filter(Boolean))],
+      species: [...new Set(t.rs.map((x) => x.species).filter(Boolean))],
+      reports: t.rs,
+      mulddae: null,
+      flowPercent: null,
+      flowLabel: null,
+      weather: null,
+      tideRange: null,
+      tideNote: null
+    });
+  }
+  good.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  const needed = [...new Set(good.map((g) => `${g.port}|${g.date.slice(0, 7)}`))];
+  const tideByKey = /* @__PURE__ */ new Map();
+  for (const key of needed) {
+    const [p, ym] = key.split("|");
+    tideByKey.set(key, await getTideMonth(p, Number(ym.slice(0, 4)), Number(ym.slice(5, 7))));
+  }
+  for (const g of good) {
+    const month = tideByKey.get(`${g.port}|${g.date.slice(0, 7)}`);
+    const day = month?.days.find((d) => d.date === g.date);
+    if (day) {
+      g.mulddae = day.mulddae;
+      g.flowPercent = day.flowPercent;
+      g.flowLabel = day.flowLabel;
+      g.weather = day.weather;
+      g.tideRange = day.range;
+    } else {
+      g.tideNote = month?.message ?? "\uADF8\uB0A0 \uBB3C\uB54C \uC790\uB8CC\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC5B4\uC694";
+    }
+  }
+  const tally = (pick2) => {
+    const m = /* @__PURE__ */ new Map();
+    for (const g of good) {
+      const k = pick2(g);
+      if (k) m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return [...m.entries()].map(([label, days]) => ({ label, days })).sort((a, b) => b.days - a.days);
+  };
+  const flowBucket = (g) => g.flowPercent === null ? null : g.flowPercent >= 80 ? "\uAC15\uD568 (80% \uC774\uC0C1)" : g.flowPercent >= 50 ? "\uBCF4\uD1B5 (50~79%)" : "\uC57D\uD568 (50% \uBBF8\uB9CC)";
+  return {
+    from,
+    to,
+    totalReports: all.length,
+    days: good,
+    byMulddae: tally((g) => g.mulddae),
+    byFlow: tally(flowBucket),
+    byPort: tally((g) => g.port),
+    topPercent
+  };
+}
+
+// src/routes/catch.ts
 var router3 = (0, import_express4.Router)();
-router3.use(health_default);
-router3.use(fishing_default);
-router3.use(booking_default);
-var routes_default = router3;
+var DATE = /^\d{4}-\d{2}-\d{2}$/;
+router3.get("/catch/insights", async (req, res, next2) => {
+  try {
+    const year = (/* @__PURE__ */ new Date()).getFullYear();
+    const from = typeof req.query.from === "string" && DATE.test(req.query.from) ? req.query.from : `${year}-09-01`;
+    const to = typeof req.query.to === "string" && DATE.test(req.query.to) ? req.query.to : `${year}-11-30`;
+    const port2 = typeof req.query.port === "string" && req.query.port ? req.query.port : null;
+    const top = Math.min(100, Math.max(1, Number(req.query.top) || 20));
+    res.json(await buildInsights(from, to, port2, top));
+  } catch (err) {
+    next2(err);
+  }
+});
+router3.get("/catch/reports", async (req, res, next2) => {
+  try {
+    const year = (/* @__PURE__ */ new Date()).getFullYear();
+    const from = typeof req.query.from === "string" && DATE.test(req.query.from) ? req.query.from : `${year}-09-01`;
+    const to = typeof req.query.to === "string" && DATE.test(req.query.to) ? req.query.to : `${year}-11-30`;
+    res.json({ reports: await listReports(from, to) });
+  } catch (err) {
+    next2(err);
+  }
+});
+router3.post("/catch/reports", async (req, res, next2) => {
+  try {
+    const v = validateReport(req.body);
+    if (!v.ok) {
+      res.status(400).json({ error: v.error });
+      return;
+    }
+    await addReport(v.value, req.header("x-user") ?? "");
+    res.json({ ok: true });
+  } catch (err) {
+    next2(err);
+  }
+});
+router3.delete("/catch/reports/:id", async (req, res, next2) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: "\uC798\uBABB\uB41C \uBC88\uD638\uC608\uC694" });
+      return;
+    }
+    await deleteReport(id);
+    res.json({ ok: true });
+  } catch (err) {
+    next2(err);
+  }
+});
+var catch_default = router3;
+
+// src/routes/index.ts
+var router4 = (0, import_express5.Router)();
+router4.use(health_default);
+router4.use(fishing_default);
+router4.use(booking_default);
+router4.use(catch_default);
+var routes_default = router4;
 
 // src/routes/home-agent.ts
-var import_express5 = __toESM(require_express2(), 1);
+var import_express6 = __toESM(require_express2(), 1);
 import fs from "node:fs";
 import path from "node:path";
-var homeAgentRouter = (0, import_express5.Router)();
+var homeAgentRouter = (0, import_express6.Router)();
 function agentGuard(req, res, next2) {
   if (!homeAgentEnabled()) {
     res.status(404).json({ error: "\uC9D1 PC \uC911\uACC4\uAC00 \uCF1C\uC838 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (HOME_AGENT_TOKEN \uC5C6\uC74C)" });
@@ -105299,7 +105525,7 @@ homeAgentRouter.get("/home-agent/start.bat", agentGuard, (req, res) => {
 });
 
 // src/routes/auth.ts
-var import_express6 = __toESM(require_express2(), 1);
+var import_express7 = __toESM(require_express2(), 1);
 
 // src/lib/auth.ts
 import crypto4 from "node:crypto";
@@ -105483,7 +105709,7 @@ async function authMiddleware(req, res, next2) {
 }
 
 // src/routes/auth.ts
-var authRouter = (0, import_express6.Router)();
+var authRouter = (0, import_express7.Router)();
 authRouter.get("/auth/me", async (req, res, next2) => {
   try {
     const s = await sessionFromRequest(req);
@@ -105576,7 +105802,7 @@ authRouter.delete("/admin/users/:name", async (req, res, next2) => {
 });
 
 // src/app.ts
-var app = (0, import_express7.default)();
+var app = (0, import_express8.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -105597,10 +105823,10 @@ app.use(
   })
 );
 app.use((0, import_cors.default)());
-app.use("/api/home-agent", import_express7.default.json({ limit: "20mb" }));
+app.use("/api/home-agent", import_express8.default.json({ limit: "20mb" }));
 app.use("/api", homeAgentRouter);
-app.use(import_express7.default.json());
-app.use(import_express7.default.urlencoded({ extended: true }));
+app.use(import_express8.default.json());
+app.use(import_express8.default.urlencoded({ extended: true }));
 app.use("/api", authMiddleware);
 app.use("/api", authRouter);
 app.use("/api", routes_default);

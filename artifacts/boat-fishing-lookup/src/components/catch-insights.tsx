@@ -67,6 +67,8 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ date: todayIso(), port: '삼길포', vessel: '', species: '', count: '', note: '', markedGood: false });
   const [saving, setSaving] = useState(false);
+  const [collecting, setCollecting] = useState(false);
+  const [notice, setNotice] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,6 +89,22 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const collect = async () => {
+    setCollecting(true);
+    setError('');
+    setNotice('');
+    try {
+      const r = await call('/collect', { method: 'POST', body: '{}' });
+      const found = (r.results as Array<{ host: string; postsFound: number; pagesRead: number }>).map((x) => `${x.host.replace('.sunsang24.com', '')} 글 ${x.postsFound}개`).join(', ');
+      setNotice(`사이트 조황 ${r.added}건을 새로 가져왔어요${found ? ` (${found})` : ''}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCollecting(false);
+    }
+  };
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,6 +137,14 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
         <Fish size={18} className="text-primary" />
         <h2 className="text-lg font-bold">조황 좋았던 날</h2>
         {loading && <LoaderCircle size={16} className="animate-spin text-muted-foreground" />}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => void collect()} disabled={collecting} className="flex h-10 items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 text-sm font-semibold text-primary disabled:opacity-50" data-testid="button-collect-site">
+          {collecting ? <LoaderCircle size={14} className="animate-spin" /> : <Fish size={14} />}
+          사이트 조황 가져오기
+        </button>
+        {notice && <span className="text-xs text-muted-foreground" data-testid="collect-notice">{notice}</span>}
       </div>
 
       <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-card p-3 sm:grid-cols-4">

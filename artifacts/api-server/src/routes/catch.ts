@@ -1,5 +1,8 @@
 // routes/catch.ts — 조황 기록과 좋았던 날 모아 보기
 import { Router, type IRouter } from "express";
+import { collectCooldown, collectSunsang, markCollectRun } from "../lib/catch-collect";
+import { normalizeBase } from "../lib/booking";
+import { listConfiguredSources } from "../lib/fishing-source";
 import { addReport, buildInsights, deleteReport, listReports, validateReport } from "../lib/catch-reports";
 
 const router: IRouter = Router();
@@ -38,6 +41,38 @@ router.post("/catch/reports", async (req, res, next) => {
     }
     await addReport(v.value, req.header("x-user") ?? "");
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 등록된 선상24 예약처의 조황 게시판을 읽어 조황 기록에 넣는다
+router.post("/catch/collect", async (req, res, next) => {
+  try {
+    const wait = collectCooldown();
+    if (wait > 0) {
+      res.status(429).json({ error: `잠시 후 다시 눌러 주세요 (${Math.ceil(wait / 1000)}초)` });
+      return;
+    }
+    markCollectRun();
+    const hosts = new Set<string>();
+    try {
+      for (const src of await listConfiguredSources()) {
+        try {
+          const u = new URL(src.sourceUrl);
+          if (/sunsang24\.com$/i.test(u.hostname)) hosts.add(`${u.protocol}//${u.hostname}`);
+        } catch {
+          /* 주소가 이상한 예약처는 건너뛴다 */
+        }
+      }
+    } catch {
+      /* 예약처를 못 읽으면 아래 직접 입력 주소만 쓴다 */
+    }
+    if (typeof req.body?.url === "string" && req.body.url) hosts.add(normalizeBase(req.body.url));
+    const since = `${new Date().getFullYear()}-09-01`;
+    const results = [];
+    for (const h of hosts) results.push(await collectSunsang(h, since, req.header("x-user") ?? ""));
+    res.json({ results, added: results.reduce((a, r) => a + r.added, 0) });
   } catch (err) {
     next(err);
   }
