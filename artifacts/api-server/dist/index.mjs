@@ -105139,7 +105139,7 @@ bookingRouter.post("/booking/ships", guard, async (req, res) => {
     let platform = "unknown";
     if (/sunsang24\.com$/i.test(new URL(base).hostname)) {
       platform = "sunsang24";
-      const strip = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+      const strip2 = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
       const now = /* @__PURE__ */ new Date();
       for (let k = 0; k < 2; k++) {
         const d = new Date(now.getFullYear(), now.getMonth() + k, 1);
@@ -105149,7 +105149,7 @@ bookingRouter.post("/booking/ships", guard, async (req, res) => {
           const marks = [...page.text.matchAll(/<[a-z]+[^>]*class=["'][^"']*\bship_unit\b(?!_)[^"']*["'][^>]*>/g)];
           marks.forEach((m, i) => {
             const chunk = page.text.slice(m.index + m[0].length, i + 1 < marks.length ? marks[i + 1].index : page.text.length).slice(0, 4e3);
-            const name = strip(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+            const name = strip2(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
             if (name && name.length <= 30 && !names.includes(name)) names.push(name);
           });
         } catch {
@@ -105174,25 +105174,25 @@ bookingRouter.get("/booking/ship-debug", guard, async (req, res) => {
     const sess = new Session(base);
     const r = await sess.request("GET", `/ship/schedule_fleet/${month}`);
     const html3 = r.text;
-    const strip = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    const strip2 = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
     const days = [...html3.matchAll(/id=["']d(\d{4}-\d{2}-\d{2})["']/g)].map((m) => m[1]);
     const marks = [...html3.matchAll(/<[a-z]+[^>]*class=["'][^"']*\bship_unit\b[^"']*["'][^>]*>/g)];
     const units = marks.map((m, i) => {
       const chunk = html3.slice(m.index + m[0].length, i + 1 < marks.length ? marks[i + 1].index : html3.length).slice(0, 4e3);
       return {
         tag: m[0].slice(0, 160),
-        title: strip(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? ""),
-        remain: strip(/class=["'][^"']*\bremain\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "").slice(0, 60),
+        title: strip2(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? ""),
+        remain: strip2(/class=["'][^"']*\bremain\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "").slice(0, 60),
         status: /data-status_code=["']([A-Z]+)["']/.exec(chunk)?.[1] ?? "",
         scheduleNo: /data-schedule_no=["'](\d+)["']/.exec(chunk)?.[1] ?? ""
       };
     });
     const byTitle = {};
     for (const u of units) byTitle[u.title || "(\uC81C\uBAA9\uC5C6\uC74C)"] = (byTitle[u.title || "(\uC81C\uBAA9\uC5C6\uC74C)"] ?? 0) + 1;
-    const allTitles = [...new Set([...html3.matchAll(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/g)].map((m) => strip(m[1])))].slice(0, 60);
+    const allTitles = [...new Set([...html3.matchAll(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/g)].map((m) => strip2(m[1])))].slice(0, 60);
     const shipNos = [...new Set([...html3.matchAll(/ship_no[_=:"' ]+(\d+)/g)].map((m) => m[1]))].slice(0, 40);
     const names = [...new Set([...html3.matchAll(/(뉴항구[^<"'\s]{0,6}|레전드[^<"'\s]{0,6})/g)].map((m) => m[1]))].slice(0, 40);
-    res.json({ url: r.url, status: r.status, htmlLength: html3.length, pageTitle: strip(/<title>([\s\S]*?)<\/title>/.exec(html3)?.[1] ?? ""), dayCount: days.length, unitCount: units.length, unitsPerTitle: byTitle, allTitlesOnPage: allTitles, shipNosOnPage: shipNos, nameMentions: names, sampleUnits: units.slice(0, 6) });
+    res.json({ url: r.url, status: r.status, htmlLength: html3.length, pageTitle: strip2(/<title>([\s\S]*?)<\/title>/.exec(html3)?.[1] ?? ""), dayCount: days.length, unitCount: units.length, unitsPerTitle: byTitle, allTitlesOnPage: allTitles, shipNosOnPage: shipNos, nameMentions: names, sampleUnits: units.slice(0, 6) });
   } catch (e) {
     res.status(400).json({ error: e?.message ?? String(e) });
   }
@@ -105200,16 +105200,16 @@ bookingRouter.get("/booking/ship-debug", guard, async (req, res) => {
 bookingRouter.get("/booking/catch-debug", guard, async (req, res) => {
   try {
     const base = normalizeBase(req.query.url);
-    const strip = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    const strip2 = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
     const home = await new Session(base).request("GET", "/");
-    const links = [...home.text.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)].map((m) => ({ href: m[1], text: strip(m[2]).slice(0, 40) })).filter((l) => /조황|조과|포토|후기|갤러리|catch|report|photo|gallery|bbs|board/i.test(`${l.text} ${l.href}`));
+    const links = [...home.text.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)].map((m) => ({ href: m[1], text: strip2(m[2]).slice(0, 40) })).filter((l) => /조황|조과|포토|후기|갤러리|catch|report|photo|gallery|bbs|board/i.test(`${l.text} ${l.href}`));
     const uniq = [...new Map(links.map((l) => [l.href, l])).values()].slice(0, 25);
     const tried = [];
     for (const l of uniq.filter((x) => /조황|조과|catch|report/i.test(`${x.text} ${x.href}`)).slice(0, 3)) {
       try {
         const u = new URL(l.href, base);
         const page = await new Session(base).request("GET", u.pathname + u.search);
-        tried.push({ href: l.href, text: l.text, status: page.status, length: page.text.length, title: strip(/<title>([\s\S]*?)<\/title>/i.exec(page.text)?.[1] ?? ""), sample: strip(page.text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, "")).slice(0, 700) });
+        tried.push({ href: l.href, text: l.text, status: page.status, length: page.text.length, title: strip2(/<title>([\s\S]*?)<\/title>/i.exec(page.text)?.[1] ?? ""), sample: strip2(page.text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, "")).slice(0, 700) });
       } catch (e) {
         tried.push({ href: l.href, error: e?.message ?? String(e) });
       }
@@ -105371,6 +105371,96 @@ async function buildInsights(from, to, port2, topPercent = 20) {
   };
 }
 
+// src/lib/catch-collect.ts
+var strip = (t) => t.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+var SPECIES = ["\uCB48\uAFB8\uBBF8", "\uC8FC\uAFB8\uBBF8", "\uAC11\uC624\uC9D5\uC5B4", "\uBB38\uC5B4", "\uD55C\uCE58", "\uC624\uC9D5\uC5B4", "\uAC08\uCE58", "\uC6B0\uB7ED", "\uAD11\uC5B4", "\uB178\uB798\uBBF8", "\uB3C4\uB2E4\uB9AC", "\uB300\uAD6C", "\uBBFC\uC5B4", "\uCC38\uB3D4", "\uC0BC\uCE58", "\uB18D\uC5B4"];
+var lastRun = 0;
+function parseTitle(title) {
+  const m = /(\d{1,2})\s*\.\s*(\d{1,2})\s*일\s*(.*?)\s*조황/.exec(title);
+  if (!m) return null;
+  const rest = m[3].trim();
+  const port2 = TIDE_PORTS.find((p) => rest.includes(p)) ?? "";
+  return { month: Number(m[1]), day: Number(m[2]), port: port2, vessel: (port2 ? rest.replace(port2, "") : rest).trim().slice(0, 40) };
+}
+function parseBody(text4) {
+  const reg = /등록일\s*:\s*(\d{4})-(\d{2})-(\d{2})/.exec(text4);
+  let body = "";
+  if (reg) {
+    const after2 = text4.slice(reg.index + reg[0].length);
+    const end2 = after2.search(/이전글|다음글|목록/);
+    body = (end2 >= 0 ? after2.slice(0, end2) : after2).trim();
+  }
+  const nums = [...body.matchAll(/(\d{1,4})\s*(?:마리|수|미)(?![가-힣])/g)].map((m) => Number(m[1]));
+  const count = nums.length ? Math.max(...nums) : null;
+  const species = SPECIES.filter((s) => body.includes(s)).slice(0, 3).join(", ");
+  return { regDate: reg ? `${reg[1]}-${reg[2]}-${reg[3]}` : null, note: body.slice(0, 300), count, species };
+}
+async function collectSunsang(base, since, by) {
+  const host2 = new URL(base).hostname;
+  const out = { host: host2, pagesRead: 0, postsFound: 0, added: 0, skipped: 0, failed: 0 };
+  const seen = /* @__PURE__ */ new Map();
+  const session = new Session(base);
+  const paths = ["/ship/board", ...Array.from({ length: 5 }, (_, i) => `/ship/board?page=${i + 2}`)];
+  for (const p of paths) {
+    let text4 = "";
+    try {
+      text4 = (await session.request("GET", p)).text;
+    } catch {
+      break;
+    }
+    out.pagesRead++;
+    const before2 = seen.size;
+    for (const m of text4.matchAll(/<a\b[^>]*href=["'][^"']*board_detail\/(\d+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+      const t = strip(m[2]);
+      if (t && !seen.has(m[1])) seen.set(m[1], t);
+    }
+    if (seen.size === before2) break;
+  }
+  out.postsFound = seen.size;
+  const today = /* @__PURE__ */ new Date();
+  for (const [id, title] of seen) {
+    const t = parseTitle(title);
+    if (!t) {
+      out.skipped++;
+      continue;
+    }
+    const source = `site:${host2}:${id}`;
+    try {
+      const exists2 = await pool.query("SELECT 1 FROM catch_reports WHERE source = $1 LIMIT 1", [source]).catch(() => ({ rows: [] }));
+      if (exists2.rows.length) {
+        out.skipped++;
+        continue;
+      }
+      const page = await session.request("GET", `/ship/board_detail/${id}`);
+      const plain = strip(page.text);
+      const b = parseBody(plain);
+      const port2 = t.port || TIDE_PORTS.find((p) => plain.includes(p)) || "";
+      if (!port2) {
+        out.skipped++;
+        continue;
+      }
+      let year = b.regDate ? Number(b.regDate.slice(0, 4)) : today.getFullYear();
+      if (b.regDate && t.month > Number(b.regDate.slice(5, 7)) + 6) year -= 1;
+      const date6 = `${year}-${String(t.month).padStart(2, "0")}-${String(t.day).padStart(2, "0")}`;
+      if (date6 < since) {
+        out.skipped++;
+        continue;
+      }
+      await addReport({ date: date6, port: port2, vessel: t.vessel, species: b.species, count: b.count, note: b.note, markedGood: false }, by, source);
+      out.added++;
+    } catch {
+      out.failed++;
+    }
+  }
+  return out;
+}
+function collectCooldown() {
+  return Math.max(0, 6e4 - (Date.now() - lastRun));
+}
+function markCollectRun() {
+  lastRun = Date.now();
+}
+
 // src/routes/catch.ts
 var router3 = (0, import_express4.Router)();
 var DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -105405,6 +105495,34 @@ router3.post("/catch/reports", async (req, res, next2) => {
     }
     await addReport(v.value, req.header("x-user") ?? "");
     res.json({ ok: true });
+  } catch (err) {
+    next2(err);
+  }
+});
+router3.post("/catch/collect", async (req, res, next2) => {
+  try {
+    const wait = collectCooldown();
+    if (wait > 0) {
+      res.status(429).json({ error: `\uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uB20C\uB7EC \uC8FC\uC138\uC694 (${Math.ceil(wait / 1e3)}\uCD08)` });
+      return;
+    }
+    markCollectRun();
+    const hosts = /* @__PURE__ */ new Set();
+    try {
+      for (const src of await listConfiguredSources()) {
+        try {
+          const u = new URL(src.sourceUrl);
+          if (/sunsang24\.com$/i.test(u.hostname)) hosts.add(`${u.protocol}//${u.hostname}`);
+        } catch {
+        }
+      }
+    } catch {
+    }
+    if (typeof req.body?.url === "string" && req.body.url) hosts.add(normalizeBase(req.body.url));
+    const since = `${(/* @__PURE__ */ new Date()).getFullYear()}-09-01`;
+    const results = [];
+    for (const h of hosts) results.push(await collectSunsang(h, since, req.header("x-user") ?? ""));
+    res.json({ results, added: results.reduce((a, r) => a + r.added, 0) });
   } catch (err) {
     next2(err);
   }

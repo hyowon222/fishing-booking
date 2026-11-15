@@ -1,9 +1,11 @@
 // routes/catch.ts — 조황 기록과 좋았던 날 모아 보기
 import { Router, type IRouter } from "express";
+import { parsePasted } from "../lib/catch-paste";
+import { TIDE_PORTS } from "../lib/tide-table";
 import { collectCooldown, collectSunsang, markCollectRun } from "../lib/catch-collect";
 import { normalizeBase } from "../lib/booking";
 import { listConfiguredSources } from "../lib/fishing-source";
-import { addReport, buildInsights, deleteReport, listReports, validateReport } from "../lib/catch-reports";
+import { addReport, buildInsights, deleteReport, listReports, setMarkedGood, validateReport } from "../lib/catch-reports";
 
 const router: IRouter = Router();
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -73,6 +75,47 @@ router.post("/catch/collect", async (req, res, next) => {
     const results = [];
     for (const h of hosts) results.push(await collectSunsang(h, since, req.header("x-user") ?? ""));
     res.json({ results, added: results.reduce((a, r) => a + r.added, 0) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 붙여넣은 글을 분석만 한다 (저장은 /catch/reports/bulk)
+router.post("/catch/parse", (req, res) => {
+  const text = typeof req.body?.text === "string" ? req.body.text.slice(0, 60000) : "";
+  const port = typeof req.body?.port === "string" && TIDE_PORTS.includes(req.body.port) ? req.body.port : "삼길포";
+  if (!text.trim()) {
+    res.status(400).json({ error: "붙여넣은 글이 없어요" });
+    return;
+  }
+  res.json(parsePasted(text, port));
+});
+
+router.post("/catch/reports/bulk", async (req, res, next) => {
+  try {
+    const items: unknown[] = Array.isArray(req.body?.items) ? req.body.items.slice(0, 200) : [];
+    let added = 0;
+    for (const it of items) {
+      const v = validateReport(it);
+      if (!v.ok) continue;
+      await addReport(v.value, req.header("x-user") ?? "", "paste");
+      added++;
+    }
+    res.json({ ok: true, added });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/catch/reports/:id/good", async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: "잘못된 번호예요" });
+      return;
+    }
+    await setMarkedGood(id, req.body?.good === true);
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

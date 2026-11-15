@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Fish, LoaderCircle, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ClipboardPaste, Fish, LoaderCircle, Plus, Star, Trash2, X } from 'lucide-react';
 
 type Report = { id: number; date: string; port: string; vessel: string; species: string; count: number | null; note: string; markedGood: boolean; source: string };
 type GoodDay = {
@@ -68,6 +68,11 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
   const [form, setForm] = useState({ date: todayIso(), port: '삼길포', vessel: '', species: '', count: '', note: '', markedGood: false });
   const [saving, setSaving] = useState(false);
   const [collecting, setCollecting] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [pastePort, setPastePort] = useState('삼길포');
+  const [parsed, setParsed] = useState<Array<{ date: string; port: string; vessel?: string; species: string; count: number | null; note: string; markedGood: boolean }> | null>(null);
+  const [parsedSkipped, setParsedSkipped] = useState(0);
   const [notice, setNotice] = useState('');
 
   const load = useCallback(async () => {
@@ -103,6 +108,39 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setCollecting(false);
+    }
+  };
+
+  const analyze = async () => {
+    setError('');
+    setNotice('');
+    try {
+      const r = await call('/parse', { method: 'POST', body: JSON.stringify({ text: pasteText, port: pastePort }) });
+      setParsed(r.posts);
+      setParsedSkipped(r.skipped);
+      if (r.posts.length === 0) setError('날짜를 찾지 못했어요. 글마다 날짜(예: 11/3, 11월 3일)가 들어 있어야 해요');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const saveParsed = async () => {
+    if (!parsed?.length) return;
+    try {
+      const r = await call('/reports/bulk', { method: 'POST', body: JSON.stringify({ items: parsed }) });
+      setNotice(`붙여넣은 글에서 ${r.added}건을 저장했어요`);
+      setParsed(null);
+      setPasteText('');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const toggleGood = async (r: Report) => {
+    try {
+      await call(`/reports/${r.id}/good`, { method: 'PATCH', body: JSON.stringify({ good: !r.markedGood }) });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -230,6 +268,37 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
+      <div className="rounded-xl border border-border bg-card p-3">
+        <button type="button" onClick={() => setPasteOpen((v) => !v)} className="flex w-full items-center gap-2 text-sm font-bold" data-testid="button-toggle-paste">
+          <ClipboardPaste size={16} /> 글 붙여넣어서 기록 추가 {pasteOpen ? '▴' : '▾'}
+        </button>
+        {pasteOpen && (
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-muted-foreground">카페·블로그 조황 글을 복사해서 붙여넣으세요. 글이 여러 개면 한꺼번에 붙여도 되고, 글 사이는 빈 줄이나 날짜로 나뉘어요.</p>
+            <select className={input} value={pastePort} onChange={(e) => setPastePort(e.target.value)} aria-label="글에 항구가 없을 때 쓸 항구">
+              {PORTS.map((p) => <option key={p} value={p}>항구가 안 적힌 글은 {p}</option>)}
+            </select>
+            <textarea className="min-h-32 w-full rounded-lg border border-input bg-background p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder="여기에 붙여넣기" value={pasteText} onChange={(e) => { setPasteText(e.target.value); setParsed(null); }} data-testid="input-paste-text" />
+            <button type="button" onClick={() => void analyze()} disabled={!pasteText.trim()} className="h-11 rounded-lg bg-primary px-5 text-sm font-bold text-primary-foreground disabled:opacity-50" data-testid="button-analyze-paste">글 분석하기</button>
+            {parsed && parsed.length > 0 && (
+              <div className="space-y-1.5" data-testid="paste-preview">
+                <div className="text-xs font-bold text-muted-foreground">{parsed.length}건을 찾았어요{parsedSkipped ? ` (날짜 없는 ${parsedSkipped}개 제외)` : ''}. 틀린 건 x 로 빼고 저장하세요</div>
+                {parsed.map((p, i) => (
+                  <div key={i} className="flex items-start gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold">{p.date.slice(5).replace('-', '/')} · {p.port}{p.species ? ` · ${p.species}` : ''}{p.count !== null ? ` · ${p.count}마리` : ' · 마릿수 없음'}</div>
+                      <div className="line-clamp-2 text-[11px] text-muted-foreground">{p.note}</div>
+                    </div>
+                    <button type="button" onClick={() => setParsed((cur) => (cur ? cur.filter((_, k) => k !== i) : cur))} className="rounded-lg border p-1.5" aria-label="빼기"><X size={14} /></button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => void saveParsed()} className="h-11 rounded-lg bg-primary px-5 text-sm font-bold text-primary-foreground" data-testid="button-save-paste">{parsed.length}건 저장</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {reports.length > 0 && (
         <div className="space-y-1.5">
           <div className="text-sm font-bold">입력한 기록 ({reports.length})</div>
@@ -239,6 +308,7 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
                 <div className="truncate">{r.date.slice(5).replace('-', '/')} · {r.port}{r.vessel ? ` · ${r.vessel}` : ''}{r.species ? ` · ${r.species}` : ''}{r.count !== null ? ` · ${r.count}마리` : ''}</div>
                 {(r.note || r.markedGood) && <div className="truncate text-[11px] text-muted-foreground">{r.markedGood ? '★ ' : ''}{r.note}</div>}
               </div>
+              <button type="button" onClick={() => void toggleGood(r)} className={`rounded-lg border p-1.5 ${r.markedGood ? 'border-amber-400 bg-amber-100 text-amber-600' : 'text-muted-foreground'}`} aria-label={r.markedGood ? '좋았던 날 표시 해제' : '좋았던 날로 표시'} data-testid={`star-${r.id}`}><Star size={14} fill={r.markedGood ? 'currentColor' : 'none'} /></button>
               <button type="button" onClick={() => remove(r)} className="rounded-lg border p-1.5 text-destructive" aria-label="삭제"><Trash2 size={14} /></button>
             </div>
           ))}

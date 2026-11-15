@@ -94,6 +94,11 @@ export async function addReport(v: NewReport, by: string, source = "manual"): Pr
   );
 }
 
+export async function setMarkedGood(id: number, good: boolean): Promise<void> {
+  await ensureTable();
+  await pool.query("UPDATE catch_reports SET marked_good = $2 WHERE id = $1", [id, good]);
+}
+
 export async function deleteReport(id: number): Promise<void> {
   await ensureTable();
   await pool.query("DELETE FROM catch_reports WHERE id = $1", [id]);
