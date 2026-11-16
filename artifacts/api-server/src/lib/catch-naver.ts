@@ -31,8 +31,15 @@ const IS_REPORT = /조황|조과|출조|마릿수|조행|쭈꾸미|주꾸미|갑
 export type NaverItem = { title: string; description: string; link: string; postdate?: string };
 export type NaverResult = { queries: number; items: number; added: number; skipped: number; failed: number; error?: string };
 
+// 환경변수 앞뒤의 공백·따옴표는 지우고 쓴다 (붙여넣다 들어간 경우가 많다)
+function naverEnv(): { id: string; secret: string } {
+  const clean = (v: string | undefined) => (v ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
+  return { id: clean(process.env.NAVER_CLIENT_ID), secret: clean(process.env.NAVER_CLIENT_SECRET) };
+}
+
 export function naverConfigured(): boolean {
-  return !!process.env.NAVER_CLIENT_ID && !!process.env.NAVER_CLIENT_SECRET;
+  const e = naverEnv();
+  return !!e.id && !!e.secret;
 }
 
 // 검색 결과 한 건을 조황 기록으로 바꾼다 (쓸 수 없으면 null)
@@ -55,11 +62,25 @@ export function itemToReport(it: NaverItem, port: string, kind: "blog" | "cafe",
 async function search(kind: "blog" | "cafe", query: string, fetcher: typeof fetch): Promise<NaverItem[]> {
   const url = `https://openapi.naver.com/v1/search/${kind === "blog" ? "blog" : "cafearticle"}.json?query=${encodeURIComponent(query)}&display=100&sort=date`;
   const r = await fetcher(url, {
-    headers: { "X-Naver-Client-Id": process.env.NAVER_CLIENT_ID ?? "", "X-Naver-Client-Secret": process.env.NAVER_CLIENT_SECRET ?? "" },
+    headers: { "X-Naver-Client-Id": naverEnv().id, "X-Naver-Client-Secret": naverEnv().secret },
   });
   if (!r.ok) {
     const body = await r.text().catch(() => "");
-    throw new Error(r.status === 401 || r.status === 403 ? "네이버 API 키가 올바르지 않거나 검색 API 권한이 없어요" : `네이버 검색 오류 (${r.status}) ${body.slice(0, 80)}`);
+    let code = "";
+    let msg = "";
+    try {
+      const j = JSON.parse(body) as { errorCode?: string; errorMessage?: string };
+      code = j.errorCode ?? "";
+      msg = j.errorMessage ?? "";
+    } catch {
+      msg = body.slice(0, 120);
+    }
+    const e = naverEnv();
+    const detail = `HTTP ${r.status} · 네이버 응답: ${code} ${msg}`.trim();
+    if (r.status === 401 || r.status === 403) {
+      throw new Error(`네이버가 키를 거절했어요 (${detail}) · 서버에 들어간 ID ${e.id.length}자, Secret ${e.secret.length}자 · 키가 올바르지 않거나 검색 API 권한이 없어요`);
+    }
+    throw new Error(`네이버 검색 오류 (${detail})`);
   }
   const j = (await r.json()) as { items?: NaverItem[] };
   return j.items ?? [];
@@ -81,7 +102,7 @@ export async function collectNaver(since: string, by: string, fetcher: typeof fe
           items = await search(kind, `${PORT_WORDS[port]![0]} ${f}`, fetcher);
         } catch (e: any) {
           out.error = e?.message ?? String(e);
-          if (/키가|권한/.test(out.error!)) return out;
+          if (/거절/.test(out.error!)) return out;
           out.failed++;
           continue;
         }
