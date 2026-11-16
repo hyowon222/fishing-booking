@@ -29189,7 +29189,7 @@ var require_pg_int8 = __commonJS({
       var carry;
       var t;
       var digits;
-      var pad;
+      var pad3;
       var l;
       var i;
       {
@@ -29201,12 +29201,12 @@ var require_pg_int8 = __commonJS({
         if (low === 0 && high === 0) {
           return sign2 + digits + result;
         }
-        pad = "";
+        pad3 = "";
         l = 6 - digits.length;
         for (i = 0; i < l; i++) {
-          pad += "0";
+          pad3 += "0";
         }
-        result = pad + digits + result;
+        result = pad3 + digits + result;
       }
       {
         carry = high % BASE;
@@ -29217,12 +29217,12 @@ var require_pg_int8 = __commonJS({
         if (low === 0 && high === 0) {
           return sign2 + digits + result;
         }
-        pad = "";
+        pad3 = "";
         l = 6 - digits.length;
         for (i = 0; i < l; i++) {
-          pad += "0";
+          pad3 += "0";
         }
-        result = pad + digits + result;
+        result = pad3 + digits + result;
       }
       {
         carry = high % BASE;
@@ -29233,12 +29233,12 @@ var require_pg_int8 = __commonJS({
         if (low === 0 && high === 0) {
           return sign2 + digits + result;
         }
-        pad = "";
+        pad3 = "";
         l = 6 - digits.length;
         for (i = 0; i < l; i++) {
-          pad += "0";
+          pad3 += "0";
         }
-        result = pad + digits + result;
+        result = pad3 + digits + result;
       }
       {
         carry = high % BASE;
@@ -105224,6 +105224,82 @@ var booking_default = bookingRouter;
 // src/routes/catch.ts
 var import_express4 = __toESM(require_express2(), 1);
 
+// src/lib/catch-paste.ts
+var SPECIES = ["\uCB48\uAFB8\uBBF8", "\uC8FC\uAFB8\uBBF8", "\uCB48\uAC11", "\uAC11\uC624\uC9D5\uC5B4", "\uBB38\uC5B4", "\uD55C\uCE58", "\uC624\uC9D5\uC5B4", "\uAC08\uCE58", "\uC6B0\uB7ED", "\uAD11\uC5B4", "\uB178\uB798\uBBF8", "\uB3C4\uB2E4\uB9AC", "\uB300\uAD6C", "\uBBFC\uC5B4", "\uCC38\uB3D4", "\uC0BC\uCE58", "\uB18D\uC5B4", "\uCB48", "\uAC11"];
+var PORT_ALIASES = [
+  ["\uC0BC\uAE38\uD3EC", "\uC0BC\uAE38\uD3EC"],
+  ["\uB300\uCC9C", "\uB300\uCC9C\uD56D"],
+  ["\uC2E0\uC9C4\uB3C4", "\uC2E0\uC9C4\uB3C4"],
+  ["\uC624\uCC9C", "\uC624\uCC9C\uD56D"],
+  ["\uB9C8\uAC80\uD3EC", "\uB9C8\uAC80\uD3EC"]
+];
+var DATE_FULL = /(20\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/;
+var DATE_KR = /(\d{1,2})\s*월\s*(\d{1,2})\s*일?/;
+var DATE_SHORT = /(?:^|[^\d])(\d{1,2})\s*[./]\s*(\d{1,2})(?![\d])/;
+var LINE_STARTS_WITH_DATE = /^\s*(?:\[?\(?)(?:20\d{2}\s*[.\-/년]\s*)?\d{1,2}\s*[./월\-]\s*\d{1,2}/;
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+function splitPosts(text4) {
+  const blocks = [];
+  for (const chunk of text4.replace(/\r/g, "").split(/\n\s*\n+/)) {
+    let cur = [];
+    for (const line2 of chunk.split("\n")) {
+      if (cur.length && LINE_STARTS_WITH_DATE.test(line2)) {
+        blocks.push(cur.join("\n"));
+        cur = [];
+      }
+      cur.push(line2);
+    }
+    if (cur.length) blocks.push(cur.join("\n"));
+  }
+  return blocks.map((b) => b.trim()).filter((b) => b.length > 0);
+}
+function parsePost(block, defaultPort, now = /* @__PURE__ */ new Date()) {
+  let y = now.getFullYear();
+  let m = 0;
+  let d = 0;
+  let hit = DATE_FULL.exec(block);
+  if (hit) {
+    y = Number(hit[1]);
+    m = Number(hit[2]);
+    d = Number(hit[3]);
+  } else if (hit = DATE_KR.exec(block)) {
+    m = Number(hit[1]);
+    d = Number(hit[2]);
+  } else if (hit = DATE_SHORT.exec(block)) {
+    m = Number(hit[1]);
+    d = Number(hit[2]);
+  }
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const date6 = `${y}-${pad(m)}-${pad(d)}`;
+  if (!DATE_FULL.test(block) && (/* @__PURE__ */ new Date(`${date6}T00:00:00`)).getTime() > now.getTime() + 30 * 864e5) {
+    y -= 1;
+  }
+  const port2 = PORT_ALIASES.find(([k]) => block.includes(k))?.[1] ?? defaultPort;
+  if (!TIDE_PORTS.includes(port2)) return null;
+  const found = SPECIES.filter((s) => s.length > 1 && block.includes(s));
+  const species = found.filter((s) => !found.some((o) => o !== s && o.includes(s))).slice(0, 3).join(", ");
+  const nums = [];
+  for (const mm of block.matchAll(/(\d{1,4})(?:\s*[~\-]\s*(\d{1,4}))?\s*(?:마리|수|미)(?![가-힣])/g)) {
+    nums.push(Number(mm[2] ?? mm[1]));
+  }
+  const count = nums.length ? Math.max(...nums) : null;
+  const note = block.replace(/\s+/g, " ").trim().slice(0, 300);
+  return { date: `${y}-${pad(m)}-${pad(d)}`, port: port2, vessel: "", species, count, note, markedGood: false, raw: block.slice(0, 200) };
+}
+function parsePasted(text4, defaultPort) {
+  const blocks = splitPosts(text4).slice(0, 200);
+  const posts = [];
+  let skipped = 0;
+  for (const b of blocks) {
+    const p = parsePost(b, defaultPort);
+    if (p) posts.push(p);
+    else skipped++;
+  }
+  return { posts, skipped };
+}
+
 // src/lib/catch-reports.ts
 var ready = null;
 function ensureTable() {
@@ -105287,6 +105363,10 @@ async function addReport(v, by, source = "manual") {
     "INSERT INTO catch_reports (fish_date, port, vessel, species, fish_count, note, marked_good, source, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
     [v.date, v.port, v.vessel ?? "", v.species ?? "", v.count ?? null, v.note ?? "", v.markedGood === true, source, by]
   );
+}
+async function setMarkedGood(id, good) {
+  await ensureTable();
+  await pool.query("UPDATE catch_reports SET marked_good = $2 WHERE id = $1", [id, good]);
 }
 async function deleteReport(id) {
   await ensureTable();
@@ -105373,7 +105453,7 @@ async function buildInsights(from, to, port2, topPercent = 20) {
 
 // src/lib/catch-collect.ts
 var strip = (t) => t.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
-var SPECIES = ["\uCB48\uAFB8\uBBF8", "\uC8FC\uAFB8\uBBF8", "\uAC11\uC624\uC9D5\uC5B4", "\uBB38\uC5B4", "\uD55C\uCE58", "\uC624\uC9D5\uC5B4", "\uAC08\uCE58", "\uC6B0\uB7ED", "\uAD11\uC5B4", "\uB178\uB798\uBBF8", "\uB3C4\uB2E4\uB9AC", "\uB300\uAD6C", "\uBBFC\uC5B4", "\uCC38\uB3D4", "\uC0BC\uCE58", "\uB18D\uC5B4"];
+var SPECIES2 = ["\uCB48\uAFB8\uBBF8", "\uC8FC\uAFB8\uBBF8", "\uAC11\uC624\uC9D5\uC5B4", "\uBB38\uC5B4", "\uD55C\uCE58", "\uC624\uC9D5\uC5B4", "\uAC08\uCE58", "\uC6B0\uB7ED", "\uAD11\uC5B4", "\uB178\uB798\uBBF8", "\uB3C4\uB2E4\uB9AC", "\uB300\uAD6C", "\uBBFC\uC5B4", "\uCC38\uB3D4", "\uC0BC\uCE58", "\uB18D\uC5B4"];
 var lastRun = 0;
 function parseTitle(title) {
   const m = /(\d{1,2})\s*\.\s*(\d{1,2})\s*일\s*(.*?)\s*조황/.exec(title);
@@ -105392,7 +105472,7 @@ function parseBody(text4) {
   }
   const nums = [...body.matchAll(/(\d{1,4})\s*(?:마리|수|미)(?![가-힣])/g)].map((m) => Number(m[1]));
   const count = nums.length ? Math.max(...nums) : null;
-  const species = SPECIES.filter((s) => body.includes(s)).slice(0, 3).join(", ");
+  const species = SPECIES2.filter((s) => body.includes(s)).slice(0, 3).join(", ");
   return { regDate: reg ? `${reg[1]}-${reg[2]}-${reg[3]}` : null, note: body.slice(0, 300), count, species };
 }
 async function collectSunsang(base, since, by) {
@@ -105523,6 +105603,43 @@ router3.post("/catch/collect", async (req, res, next2) => {
     const results = [];
     for (const h of hosts) results.push(await collectSunsang(h, since, req.header("x-user") ?? ""));
     res.json({ results, added: results.reduce((a, r) => a + r.added, 0) });
+  } catch (err) {
+    next2(err);
+  }
+});
+router3.post("/catch/parse", (req, res) => {
+  const text4 = typeof req.body?.text === "string" ? req.body.text.slice(0, 6e4) : "";
+  const port2 = typeof req.body?.port === "string" && TIDE_PORTS.includes(req.body.port) ? req.body.port : "\uC0BC\uAE38\uD3EC";
+  if (!text4.trim()) {
+    res.status(400).json({ error: "\uBD99\uC5EC\uB123\uC740 \uAE00\uC774 \uC5C6\uC5B4\uC694" });
+    return;
+  }
+  res.json(parsePasted(text4, port2));
+});
+router3.post("/catch/reports/bulk", async (req, res, next2) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 200) : [];
+    let added = 0;
+    for (const it of items) {
+      const v = validateReport(it);
+      if (!v.ok) continue;
+      await addReport(v.value, req.header("x-user") ?? "", "paste");
+      added++;
+    }
+    res.json({ ok: true, added });
+  } catch (err) {
+    next2(err);
+  }
+});
+router3.patch("/catch/reports/:id/good", async (req, res, next2) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: "\uC798\uBABB\uB41C \uBC88\uD638\uC608\uC694" });
+      return;
+    }
+    await setMarkedGood(id, req.body?.good === true);
+    res.json({ ok: true });
   } catch (err) {
     next2(err);
   }

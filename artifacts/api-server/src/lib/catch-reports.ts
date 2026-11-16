@@ -104,7 +104,8 @@ export async function deleteReport(id: number): Promise<void> {
   await pool.query("DELETE FROM catch_reports WHERE id = $1", [id]);
 }
 
-const GOOD_WORDS = /대박|만선|호황|대량|폭발|풍년|입질\s*좋|잘\s*나|많이\s*잡|터졌|터짐|쿨러\s*(가득|꽉)/;
+// 조황이 좋았다는 표현. 모자란 말이 있으면 여기에 | 로 이어서 추가하면 된다.
+const GOOD_WORDS = /대박|호황|만선|만쿨(?:러)?|만클|가득|와우|와[!~]|폭조|넘치|풍년|대량|폭발|입질\s*(?:좋|폭발)|잘\s*나|많이\s*잡|터졌|터짐|쿨러\s*꽉/;
 
 export type GoodDay = {
   date: string;

@@ -68,6 +68,7 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
   const [form, setForm] = useState({ date: todayIso(), port: '삼길포', vessel: '', species: '', count: '', note: '', markedGood: false });
   const [saving, setSaving] = useState(false);
   const [collecting, setCollecting] = useState(false);
+  const [naverBusy, setNaverBusy] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [pastePort, setPastePort] = useState('삼길포');
@@ -108,6 +109,21 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setCollecting(false);
+    }
+  };
+
+  const collectNaver = async () => {
+    setNaverBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const r = await call('/collect-naver', { method: 'POST', body: '{}' });
+      setNotice(`네이버 글 ${r.items}개를 살펴서 ${r.added}건을 새로 가져왔어요${r.error ? ` (일부 오류: ${r.error})` : ''}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setNaverBusy(false);
     }
   };
 
@@ -181,6 +197,10 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
         <button type="button" onClick={() => void collect()} disabled={collecting} className="flex h-10 items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 text-sm font-semibold text-primary disabled:opacity-50" data-testid="button-collect-site">
           {collecting ? <LoaderCircle size={14} className="animate-spin" /> : <Fish size={14} />}
           사이트 조황 가져오기
+        </button>
+        <button type="button" onClick={() => void collectNaver()} disabled={naverBusy || collecting} className="flex h-10 items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 text-sm font-semibold text-primary disabled:opacity-50" data-testid="button-collect-naver">
+          {naverBusy ? <LoaderCircle size={14} className="animate-spin" /> : <Fish size={14} />}
+          네이버 글 가져오기
         </button>
         {notice && <span className="text-xs text-muted-foreground" data-testid="collect-notice">{notice}</span>}
       </div>
