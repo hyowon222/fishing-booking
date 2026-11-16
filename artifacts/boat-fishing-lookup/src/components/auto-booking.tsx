@@ -591,7 +591,7 @@ export default function AutoBooking({ onBack }: { onBack: () => void }) {
 
         <div>
           <label className={label}>낚시 종류</label>
-          <p className="rounded-lg bg-muted px-3 py-2 text-sm leading-6">쭈꾸미 · 갑오징어 · 쭈갑 (이 중 하나라도 있으면 진행)</p>
+          <p className="rounded-lg bg-muted px-3 py-2 text-sm leading-6">쭈꾸미 · 갑오징어 · 쭈갑 · 낙지 (이 중 하나라도 있으면 진행)</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">

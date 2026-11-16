@@ -79,7 +79,15 @@ export type Job = {
   stopRequested: boolean;
 };
 
-export const SPECIES_WORDS = ["쭈꾸미", "주꾸미", "갑오징어", "쭈갑"];
+export const SPECIES_WORDS = ["쭈꾸미", "주꾸미", "갑오징어", "쭈갑", "낙지"];
+// 낚시 종류가 여러 개면 앞에 적힌 어종(쭈꾸미 등)을 먼저 고르고, 낙지는 다른 게 없을 때만 고른다
+function pickBySpecies<T extends { label: string }>(types: T[]): T | undefined {
+  for (const w of SPECIES_WORDS) {
+    const hit = types.find((t) => t.label.includes(w));
+    if (hit) return hit;
+  }
+  return undefined;
+}
 const MODULE = "/_core/module/reservation_boat_v5.2_seat1";
 const KNOWN_SEEDS = ["2955", "4443", "2954", "5866", "5579", "3570", "2961", "2956", "2950", "6407", "5578", "4920", "5679", "5891", "3571"];
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -679,7 +687,7 @@ export async function prewarm(sess: Session, cfg: BookingConfig, log: (m: string
   try {
     const pages = await sess.batch(uids.map((uid) => ({ method: "GET" as const, path: step1Url(cfg.date, uid) })));
     pages.forEach((p, i) => {
-      const type = parseRadios(p.text, "PS_N_UID").find((t) => SPECIES_WORDS.some((w) => t.label.includes(w)));
+      const type = pickBySpecies(parseRadios(p.text, "PS_N_UID"));
       if (type) out.set(uids[i], { type, naun: /naun=(\d+)/.exec(p.text)?.[1] ?? "1" });
     });
     if (out.size) log(`미리 준비 완료 (${out.size}척): 낚시 종류 번호를 확인해 두었습니다.`);
@@ -721,12 +729,12 @@ export async function prepareBooking(sess: Session, cfg: BookingConfig, found: {
     }
   }
   if (!type) {
-    // 일반 길: 낚시 종류 (쭈꾸미·갑오징어만)
+    // 일반 길: 낚시 종류 (쭈꾸미·갑오징어·낙지만)
     let page = await sess.request("GET", step1Url(cfg.date, uid));
     const types = parseRadios(page.text, "PS_N_UID");
     log(`낚시 종류: ${types.map((t) => t.label).join(" | ") || "없음"}`);
-    type = types.find((t) => SPECIES_WORDS.some((w) => t.label.includes(w)));
-    if (!type) throw new Error(`${choice.label}: 쭈꾸미/갑오징어 낚시종류가 없어 중단합니다`);
+    type = pickBySpecies(types);
+    if (!type) throw new Error(`${choice.label}: 쭈꾸미/갑오징어/낙지 낚시종류가 없어 중단합니다`);
     page = await sess.request("GET", step1Url(cfg.date, uid, type.value));
     html = page.text;
     const naun = /naun=(\d+)/.exec(html)?.[1] ?? "1";
@@ -1303,8 +1311,8 @@ export async function prepareSunsang(sess: Session, cfg: BookingConfig, ship: Su
   const sc = data.schedule;
   const fish: string[] = (sc.fish_type ?? []).map((f: any) => String(f.name));
   log(`어종: ${fish.join(", ") || ship.fish || "정보 없음"} / 남은 자리 ${sc.remain_embarkation_num}명`);
-  if (!SPECIES_WORDS.some((w) => fish.join(",").includes(w)) && !/주꾸미|쭈꾸미|갑오징어|쭈갑/.test(ship.fish)) {
-    throw new SkipShip(`${ship.name}: 쭈꾸미/갑오징어 어종이 아니라 건너뜁니다 (${fish.join(", ") || ship.fish})`);
+  if (!SPECIES_WORDS.some((w) => fish.join(",").includes(w)) && !/주꾸미|쭈꾸미|갑오징어|쭈갑|낙지/.test(ship.fish)) {
+    throw new SkipShip(`${ship.name}: 쭈꾸미/갑오징어/낙지 어종이 아니라 건너뜁니다 (${fish.join(", ") || ship.fish})`);
   }
   if (sc.is_reservation_login) throw new Error(`${ship.name}: 로그인이 필요한 예약이라 지원하지 않습니다`);
   if (sc.is_reservation_phone_auth) throw new Error(`${ship.name}: 휴대전화 인증이 필요한 예약이라 지원하지 않습니다`);

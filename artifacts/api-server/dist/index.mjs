@@ -274,13 +274,13 @@ var require_common = __commonJS({
           }
         }
       }
-      function matchesTemplate(search, template) {
+      function matchesTemplate(search2, template) {
         let searchIndex = 0;
         let templateIndex = 0;
         let starIndex = -1;
         let matchIndex = 0;
-        while (searchIndex < search.length) {
-          if (templateIndex < template.length && (template[templateIndex] === search[searchIndex] || template[templateIndex] === "*")) {
+        while (searchIndex < search2.length) {
+          if (templateIndex < template.length && (template[templateIndex] === search2[searchIndex] || template[templateIndex] === "*")) {
             if (template[templateIndex] === "*") {
               starIndex = templateIndex;
               matchIndex = searchIndex;
@@ -18621,14 +18621,14 @@ var require_parseurl = __commonJS({
       }
       var pathname = str;
       var query = null;
-      var search = null;
+      var search2 = null;
       for (var i = 1; i < str.length; i++) {
         switch (str.charCodeAt(i)) {
           case 63:
-            if (search === null) {
+            if (search2 === null) {
               pathname = str.substring(0, i);
               query = str.substring(i + 1);
-              search = str.substring(i);
+              search2 = str.substring(i);
             }
             break;
           case 9:
@@ -18652,9 +18652,9 @@ var require_parseurl = __commonJS({
       url3.path = str;
       url3.href = str;
       url3.pathname = pathname;
-      if (search !== null) {
+      if (search2 !== null) {
         url3.query = query;
-        url3.search = search;
+        url3.search = search2;
       }
       return url3;
     }
@@ -53004,8 +53004,8 @@ var require_redirect_handler = __commonJS({
           this.handler.onResponseStart?.(controller, statusCode, headers, statusMessage);
           return;
         }
-        const { origin, pathname, search } = util2.parseURL(new URL(this.location, this.opts.origin && new URL(this.opts.path, this.opts.origin)));
-        const path2 = search ? `${pathname}${search}` : pathname;
+        const { origin, pathname, search: search2 } = util2.parseURL(new URL(this.location, this.opts.origin && new URL(this.opts.path, this.opts.origin)));
+        const path2 = search2 ? `${pathname}${search2}` : pathname;
         const redirectUrlString = `${origin}${path2}`;
         for (const historyUrl of this.history) {
           if (historyUrl.toString() === redirectUrlString) {
@@ -93080,7 +93080,7 @@ function getLoad(parse10, render3) {
       if (typeof selector !== "string") {
         throw new TypeError("Unexpected type of selector");
       }
-      let search = selector;
+      let search2 = selector;
       const searchContext = context ? (
         // If we don't have a context, maybe we have a root, from loading
         typeof context === "string" ? isHtml(context) ? (
@@ -93088,7 +93088,7 @@ function getLoad(parse10, render3) {
           new LoadedCheerio([parse10(context, options2, false, null)], rootInstance, options2)
         ) : (
           // $('li', 'ul')
-          (search = `${context} ${search}`, rootInstance)
+          (search2 = `${context} ${search2}`, rootInstance)
         ) : isCheerio(context) ? (
           // $('li', $)
           context
@@ -93099,7 +93099,7 @@ function getLoad(parse10, render3) {
       ) : rootInstance;
       if (!searchContext)
         return instance;
-      return searchContext.find(search);
+      return searchContext.find(search2);
     }
     Object.assign(initialize, static_exports, {
       load: load2,
@@ -101832,8 +101832,8 @@ function takeJobs(isClosed) {
   touchAgent();
   const grab = () => {
     const jobs2 = queue.splice(0, 8);
-    for (const job of jobs2) job.delivered = true;
-    return jobs2.map((job) => ({ id: job.id, payload: job.payload }));
+    for (const job2 of jobs2) job2.delivered = true;
+    return jobs2.map((job2) => ({ id: job2.id, payload: job2.payload }));
   };
   if (waiter) waiter.cancel();
   if (queue.length) return Promise.resolve(grab());
@@ -103552,9 +103552,9 @@ function refreshFilterOptionsInBackground(startDate, endDate) {
   refreshPromise = getSchedules(startDate, endDate, {
     priority: "low",
     withTide: false
-  }).then((search) => {
+  }).then((search2) => {
     if (generation === filterOptionsRefreshGeneration) {
-      getFilterOptions(search.items, search.sources);
+      getFilterOptions(search2.items, search2.sources);
     }
   }).catch((error40) => {
     if (generation === filterOptionsRefreshGeneration) {
@@ -103628,15 +103628,15 @@ router2.get("/fishing/schedules", async (req, res) => {
     const region = parsed.data.region || [];
     const ship = parsed.data.ship || [];
     const regionOrPortSelected = region.length > 0 || Boolean(parsed.data.port);
-    const search = await getSchedules(startDate, endDate, {
+    const search2 = await getSchedules(startDate, endDate, {
       // 지역/항구/선박을 골랐다면 그쪽 예약처만 조회한다. 고르지 않은("전체") 검색은 모든 예약처를 조회한다.
       filter: regionOrPortSelected || ship.length > 0 ? { region, port: parsed.data.port, ship } : void 0,
       // 사용자가 직접 누른 검색은 필터 목록용 백그라운드 조회보다 항상 먼저 처리한다.
       priority: "high",
       softDeadlineMs: SEARCH_SOFT_DEADLINE_MS > 0 ? SEARCH_SOFT_DEADLINE_MS : void 0
     });
-    getFilterOptions(search.items, search.sources);
-    const items = search.items.filter((item) => {
+    getFilterOptions(search2.items, search2.sources);
+    const items = search2.items.filter((item) => {
       const departureMatches = item.departureDate >= startDate && item.departureDate <= endDate;
       const regionMatches = region.length === 0 || region.includes(item.region);
       const portMatches = !parsed.data.port || parsed.data.port === item.port;
@@ -103646,29 +103646,29 @@ router2.get("/fishing/schedules", async (req, res) => {
     });
     items.sort((a, b) => a.departureDate.localeCompare(b.departureDate) || a.vessel.localeCompare(b.vessel, "ko"));
     const warnings = [];
-    if (search.failures.length) {
+    if (search2.failures.length) {
       warnings.push(
-        `\uC77C\uBD80 \uC608\uC57D\uCC98\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${search.failures.map((failure) => `${failure.name}(${failure.reason})`).join(", ")}`
+        `\uC77C\uBD80 \uC608\uC57D\uCC98\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${search2.failures.map((failure) => `${failure.name}(${failure.reason})`).join(", ")}`
       );
     }
-    if (search.partialSources.length) {
+    if (search2.partialSources.length) {
       warnings.push(
-        `\uC77C\uBD80 \uB0A0\uC9DC\uB294 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD55C \uC608\uC57D\uCC98\uAC00 \uC788\uC5B4\uC694. \uC7A0\uC2DC \uB4A4 '\uC790\uB9AC \uCC3E\uAE30'\uB97C \uB2E4\uC2DC \uB204\uB974\uBA74 \uCC44\uC6CC\uC9C8 \uC218 \uC788\uC5B4\uC694: ${search.partialSources.map((partial2) => `${partial2.name}(${partial2.message})`).join(", ")}`
+        `\uC77C\uBD80 \uB0A0\uC9DC\uB294 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD55C \uC608\uC57D\uCC98\uAC00 \uC788\uC5B4\uC694. \uC7A0\uC2DC \uB4A4 '\uC790\uB9AC \uCC3E\uAE30'\uB97C \uB2E4\uC2DC \uB204\uB974\uBA74 \uCC44\uC6CC\uC9C8 \uC218 \uC788\uC5B4\uC694: ${search2.partialSources.map((partial2) => `${partial2.name}(${partial2.message})`).join(", ")}`
       );
     }
-    if (search.pendingSources.length) {
+    if (search2.pendingSources.length) {
       warnings.push(
-        `\uC751\uB2F5\uC774 \uB2A6\uC740 \uC608\uC57D\uCC98\uB294 \uC6B0\uC120 \uBE7C\uACE0 \uBA3C\uC800 \uBCF4\uC5EC\uB4DC\uB824\uC694. \uC790\uB3D9\uC73C\uB85C \uB2E4\uC2DC \uBD88\uB7EC\uC624\uACE0, \uACC4\uC18D \uC548 \uB098\uC624\uBA74 '\uC790\uB9AC \uCC3E\uAE30'\uB97C \uB2E4\uC2DC \uB20C\uB7EC \uC8FC\uC138\uC694: ${search.pendingSources.join(", ")}`
+        `\uC751\uB2F5\uC774 \uB2A6\uC740 \uC608\uC57D\uCC98\uB294 \uC6B0\uC120 \uBE7C\uACE0 \uBA3C\uC800 \uBCF4\uC5EC\uB4DC\uB824\uC694. \uC790\uB3D9\uC73C\uB85C \uB2E4\uC2DC \uBD88\uB7EC\uC624\uACE0, \uACC4\uC18D \uC548 \uB098\uC624\uBA74 '\uC790\uB9AC \uCC3E\uAE30'\uB97C \uB2E4\uC2DC \uB20C\uB7EC \uC8FC\uC138\uC694: ${search2.pendingSources.join(", ")}`
       );
     }
     const response = SearchFishingSchedulesResponse.parse({
       items,
       total: items.length,
       searchedAt: /* @__PURE__ */ new Date(),
-      source: getSourceLabel(search.sources),
+      source: getSourceLabel(search2.sources),
       cachedUntil: new Date(Date.now() + CACHE_TTL_MS),
       warning: warnings.length ? warnings.join(" / ") : null,
-      unavailableSources: toUnavailableSources(search.failures)
+      unavailableSources: toUnavailableSources(search2.failures)
     });
     res.json(response);
   } catch (error40) {
@@ -104591,25 +104591,25 @@ async function submitSunsang24(sess, result, log) {
   return { state: "unknown", message: `\uC0AC\uC774\uD2B8 \uC751\uB2F5\uC744 \uD574\uC11D\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${pageNotes(r.text).plain.slice(0, 120) || "\uB0B4\uC6A9 \uC5C6\uC74C"}`, httpStatus: r.status, at: Date.now() };
 }
 var groupSubmit = /* @__PURE__ */ new Map();
-async function submitFinal(job, cfg, sess, log) {
-  const result = job.result;
+async function submitFinal(job2, cfg, sess, log) {
+  const result = job2.result;
   const gid = cfg.stopOthersOnSuccess ? cfg.groupId : void 0;
   if (gid) {
     while (groupSubmit.get(gid) === "busy") {
-      if (job.stopRequested) throw new StopError();
+      if (job2.stopRequested) throw new StopError();
       await sleep(100);
     }
     if (groupSubmit.get(gid) === "done") {
-      job.status = "stopped";
+      job2.status = "stopped";
       log("\uAC19\uC740 \uBB36\uC74C\uC758 \uB2E4\uB978 \uB0A0\uC9DC\uAC00 \uC774\uBBF8 \uC608\uC57D\uB418\uC5B4, \uC774 \uB0A0\uC9DC\uB294 \uC81C\uCD9C\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
       return;
     }
   }
-  if (job.stopRequested) throw new StopError();
+  if (job2.stopRequested) throw new StopError();
   if (gid) groupSubmit.set(gid, "busy");
   let keep = false;
   try {
-    job.status = "submitting";
+    job2.status = "submitting";
     log("\uC2E4\uC81C \uC81C\uCD9C: \uC608\uC57D \uC694\uCCAD\uC744 \uBCF4\uB0C5\uB2C8\uB2E4. (\uD55C \uBC88\uB9CC \uBCF4\uB0B4\uBA70 \uC790\uB3D9\uC73C\uB85C \uB2E4\uC2DC \uBCF4\uB0B4\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4)");
     const t0 = Date.now();
     let out;
@@ -104623,16 +104623,16 @@ async function submitFinal(job, cfg, sess, log) {
     result.submit = out;
     log(`\uC81C\uCD9C \uC18C\uC694 ${Date.now() - t0}ms`);
     if (out.state === "failed") {
-      job.status = "failed";
-      job.error = `\uC81C\uCD9C\uC774 \uBC1B\uC544\uB4E4\uC5EC\uC9C0\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4: ${out.message}`;
-      log(job.error);
+      job2.status = "failed";
+      job2.error = `\uC81C\uCD9C\uC774 \uBC1B\uC544\uB4E4\uC5EC\uC9C0\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4: ${out.message}`;
+      log(job2.error);
       return;
     }
     keep = true;
-    job.status = "done";
+    job2.status = "done";
     log(out.state === "success" ? `\uC608\uC57D\uC774 \uC811\uC218\uB418\uC5C8\uC2B5\uB2C8\uB2E4.${out.reservationNo ? ` \uC608\uC57D\uBC88\uD638 ${out.reservationNo}` : ""}` : "\uC81C\uCD9C\uC740 \uD588\uC9C0\uB9CC \uC811\uC218 \uC5EC\uBD80\uB97C \uD655\uC778\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC608\uC57D\uCC98 \uC0AC\uC774\uD2B8\uC5D0\uC11C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694.");
     if (gid) {
-      for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job.id) stopJob(o.id);
+      for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job2.id) stopJob(o.id);
     }
   } finally {
     if (gid) {
@@ -104742,9 +104742,9 @@ function startJobs(cfgs) {
     }
   }
   return cfgs.map((c) => {
-    const job = startJob(c);
-    if (c.submit) liveSubmits.set(submitKey(c), job.id);
-    return job;
+    const job2 = startJob(c);
+    if (c.submit) liveSubmits.set(submitKey(c), job2.id);
+    return job2;
   });
 }
 function startJob(cfg) {
@@ -104753,7 +104753,7 @@ function startJob(cfg) {
     if (oldest) jobs.delete(oldest.id);
   }
   const id = crypto3.randomBytes(6).toString("hex");
-  const job = {
+  const job2 = {
     id,
     createdAt: Date.now(),
     status: "waiting",
@@ -104762,14 +104762,14 @@ function startJob(cfg) {
     log: [],
     stopRequested: false
   };
-  jobs.set(id, job);
-  void runJob(job, cfg);
-  return publicJob(job);
+  jobs.set(id, job2);
+  void runJob(job2, cfg);
+  return publicJob(job2);
 }
-async function runJob(job, cfg) {
+async function runJob(job2, cfg) {
   const log = (m) => {
-    job.log.push(`${(/* @__PURE__ */ new Date()).toLocaleTimeString("ko-KR", { hour12: false, timeZone: "Asia/Seoul" })} ${m}`);
-    if (job.log.length > 200) job.log.splice(0, job.log.length - 200);
+    job2.log.push(`${(/* @__PURE__ */ new Date()).toLocaleTimeString("ko-KR", { hour12: false, timeZone: "Asia/Seoul" })} ${m}`);
+    if (job2.log.length > 200) job2.log.splice(0, job2.log.length - 200);
   };
   const sess = new Session(cfg.baseUrl);
   sess.onSlow = log;
@@ -104779,13 +104779,13 @@ async function runJob(job, cfg) {
       const target = new Date(cfg.openAt).getTime() - (cfg.warmupSeconds ?? 5) * 1e3;
       log(`\uC624\uD508(${new Date(cfg.openAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}) \uC804\uAE4C\uC9C0 \uB300\uAE30\uD569\uB2C8\uB2E4.`);
       while (Date.now() < target) {
-        if (job.stopRequested) throw new StopError();
+        if (job2.stopRequested) throw new StopError();
         await sleep(Math.min(1e3, Math.max(50, target - Date.now())));
       }
     }
-    job.status = "polling";
+    job2.status = "polling";
     if (cfg.kind === "sunsang24") {
-      await runSunsang(job, cfg, sess, log);
+      await runSunsang(job2, cfg, sess, log);
       return;
     }
     const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 6e4;
@@ -104801,7 +104801,7 @@ async function runJob(job, cfg) {
     let workingSeed = fastTarget(cfg, warm)?.uid ?? null;
     let attempt = 0;
     while (Date.now() < deadline) {
-      if (job.stopRequested) throw new StopError();
+      if (job2.stopRequested) throw new StopError();
       attempt++;
       const t0 = Date.now();
       let open = [];
@@ -104836,19 +104836,19 @@ async function runJob(job, cfg) {
       const hit = pickShip(open, cfg.ships);
       if (hit) {
         log(`\uC608\uC57D \uAC00\uB2A5\uD55C \uBC30 \uBC1C\uACAC: ${hit.choice.label} (${hit.choice.value})`);
-        job.result = await prepareBooking(sess, cfg, hit, log, warm.get(hit.choice.value), pre);
+        job2.result = await prepareBooking(sess, cfg, hit, log, warm.get(hit.choice.value), pre);
         log(`\uC18C\uC694: \uBC30 \uBC1C\uACAC \uD6C4 ${Date.now() - t0}ms`);
         if (cfg.submit) {
-          log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.species}, ${job.result.people}\uBA85, \uC88C\uC11D: ${job.result.seats.join(",") || "\uBBF8\uC120\uD0DD"}`);
-          await submitFinal(job, cfg, sess, log);
+          log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job2.result.ship.name}, ${job2.result.species}, ${job2.result.people}\uBA85, \uC88C\uC11D: ${job2.result.seats.join(",") || "\uBBF8\uC120\uD0DD"}`);
+          await submitFinal(job2, cfg, sess, log);
           log(`\uC18C\uC694: \uBC30 \uBC1C\uACAC\uBD80\uD130 \uC81C\uCD9C \uC751\uB2F5\uAE4C\uC9C0 ${Date.now() - t0}ms`);
           return;
         }
-        job.status = "done";
-        log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.species}, ${job.result.people}\uBA85, \uC88C\uC11D: ${job.result.seats.join(",") || "\uBBF8\uC120\uD0DD"}`);
+        job2.status = "done";
+        log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job2.result.ship.name}, ${job2.result.species}, ${job2.result.people}\uBA85, \uC88C\uC11D: ${job2.result.seats.join(",") || "\uBBF8\uC120\uD0DD"}`);
         log("\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC\uC774\uBBC0\uB85C \uC81C\uCD9C\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
         if (cfg.stopOthersOnSuccess && cfg.groupId) {
-          for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job.id) stopJob(o.id);
+          for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job2.id) stopJob(o.id);
         }
         return;
       }
@@ -104858,12 +104858,12 @@ async function runJob(job, cfg) {
     throw new Error("\uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uC608\uC57D \uAC00\uB2A5\uD55C \uBC30\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
   } catch (e) {
     if (e instanceof StopError) {
-      job.status = "stopped";
+      job2.status = "stopped";
       log("\uC0AC\uC6A9\uC790\uAC00 \uC911\uC9C0\uD588\uC2B5\uB2C8\uB2E4.");
     } else {
-      job.status = "failed";
-      job.error = e?.message ?? String(e);
-      log(`\uC911\uB2E8: ${job.error}`);
+      job2.status = "failed";
+      job2.error = e?.message ?? String(e);
+      log(`\uC911\uB2E8: ${job2.error}`);
     }
   }
 }
@@ -105013,13 +105013,13 @@ async function prepareSunsang(sess, cfg, ship, log) {
 }
 var SkipShip = class extends Error {
 };
-async function runSunsang(job, cfg, sess, log) {
+async function runSunsang(job2, cfg, sess, log) {
   const deadline = Date.now() + (cfg.maxPollMinutes ?? 10) * 6e4;
   const nextDelay = makePoller(cfg, log);
   const skipped = /* @__PURE__ */ new Set();
   let attempt = 0;
   while (Date.now() < deadline) {
-    if (job.stopRequested) throw new StopError();
+    if (job2.stopRequested) throw new StopError();
     attempt++;
     const t0 = Date.now();
     let ships = [];
@@ -105051,7 +105051,7 @@ async function runSunsang(job, cfg, sess, log) {
     if (hit) {
       log(`\uC608\uC57D \uAC00\uB2A5\uD55C \uBC30 \uBC1C\uACAC: ${hit.name} (\uC77C\uC815 ${hit.scheduleNo})`);
       try {
-        job.result = await prepareSunsang(sess, cfg, hit, log);
+        job2.result = await prepareSunsang(sess, cfg, hit, log);
       } catch (e) {
         if (e instanceof SkipShip) {
           skipped.add(hit.scheduleNo);
@@ -105062,16 +105062,16 @@ async function runSunsang(job, cfg, sess, log) {
       }
       log(`\uC18C\uC694: \uBC30 \uBC1C\uACAC \uD6C4 ${Date.now() - t0}ms`);
       if (cfg.submit) {
-        log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.people}\uBA85`);
-        await submitFinal(job, cfg, sess, log);
+        log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job2.result.ship.name}, ${job2.result.people}\uBA85`);
+        await submitFinal(job2, cfg, sess, log);
         log(`\uC18C\uC694: \uBC30 \uBC1C\uACAC\uBD80\uD130 \uC81C\uCD9C \uC751\uB2F5\uAE4C\uC9C0 ${Date.now() - t0}ms`);
         return;
       }
-      job.status = "done";
-      log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job.result.ship.name}, ${job.result.people}\uBA85`);
+      job2.status = "done";
+      log(`\uC785\uB825 \uC900\uBE44 \uC644\uB8CC \u2014 ${job2.result.ship.name}, ${job2.result.people}\uBA85`);
       log("\uD14C\uC2A4\uD2B8 \uBAA8\uB4DC\uC774\uBBC0\uB85C \uC81C\uCD9C\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.");
       if (cfg.stopOthersOnSuccess && cfg.groupId) {
-        for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job.id) stopJob(o.id);
+        for (const o of jobs.values()) if (o.groupId === cfg.groupId && o.id !== job2.id) stopJob(o.id);
       }
       return;
     }
@@ -105101,12 +105101,12 @@ bookingRouter.get("/booking/jobs", guard, (_req, res) => {
   res.json({ jobs: listJobs() });
 });
 bookingRouter.get("/booking/jobs/:id", guard, (req, res) => {
-  const job = getJob(String(req.params.id));
-  if (!job) {
+  const job2 = getJob(String(req.params.id));
+  if (!job2) {
     res.status(404).json({ error: "\uC791\uC5C5\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4" });
     return;
   }
-  res.json({ job });
+  res.json({ job: job2 });
 });
 bookingRouter.post("/booking/jobs", guard, (req, res) => {
   try {
@@ -105139,7 +105139,7 @@ bookingRouter.post("/booking/ships", guard, async (req, res) => {
     let platform = "unknown";
     if (/sunsang24\.com$/i.test(new URL(base).hostname)) {
       platform = "sunsang24";
-      const strip2 = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+      const strip3 = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
       const now = /* @__PURE__ */ new Date();
       for (let k = 0; k < 2; k++) {
         const d = new Date(now.getFullYear(), now.getMonth() + k, 1);
@@ -105149,7 +105149,7 @@ bookingRouter.post("/booking/ships", guard, async (req, res) => {
           const marks = [...page.text.matchAll(/<[a-z]+[^>]*class=["'][^"']*\bship_unit\b(?!_)[^"']*["'][^>]*>/g)];
           marks.forEach((m, i) => {
             const chunk = page.text.slice(m.index + m[0].length, i + 1 < marks.length ? marks[i + 1].index : page.text.length).slice(0, 4e3);
-            const name = strip2(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
+            const name = strip3(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "");
             if (name && name.length <= 30 && !names.includes(name)) names.push(name);
           });
         } catch {
@@ -105174,25 +105174,25 @@ bookingRouter.get("/booking/ship-debug", guard, async (req, res) => {
     const sess = new Session(base);
     const r = await sess.request("GET", `/ship/schedule_fleet/${month}`);
     const html3 = r.text;
-    const strip2 = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    const strip3 = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
     const days = [...html3.matchAll(/id=["']d(\d{4}-\d{2}-\d{2})["']/g)].map((m) => m[1]);
     const marks = [...html3.matchAll(/<[a-z]+[^>]*class=["'][^"']*\bship_unit\b[^"']*["'][^>]*>/g)];
     const units = marks.map((m, i) => {
       const chunk = html3.slice(m.index + m[0].length, i + 1 < marks.length ? marks[i + 1].index : html3.length).slice(0, 4e3);
       return {
         tag: m[0].slice(0, 160),
-        title: strip2(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? ""),
-        remain: strip2(/class=["'][^"']*\bremain\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "").slice(0, 60),
+        title: strip3(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? ""),
+        remain: strip3(/class=["'][^"']*\bremain\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/.exec(chunk)?.[1] ?? "").slice(0, 60),
         status: /data-status_code=["']([A-Z]+)["']/.exec(chunk)?.[1] ?? "",
         scheduleNo: /data-schedule_no=["'](\d+)["']/.exec(chunk)?.[1] ?? ""
       };
     });
     const byTitle = {};
     for (const u of units) byTitle[u.title || "(\uC81C\uBAA9\uC5C6\uC74C)"] = (byTitle[u.title || "(\uC81C\uBAA9\uC5C6\uC74C)"] ?? 0) + 1;
-    const allTitles = [...new Set([...html3.matchAll(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/g)].map((m) => strip2(m[1])))].slice(0, 60);
+    const allTitles = [...new Set([...html3.matchAll(/class=["']title["'][^>]*>([\s\S]*?)<\/div>/g)].map((m) => strip3(m[1])))].slice(0, 60);
     const shipNos = [...new Set([...html3.matchAll(/ship_no[_=:"' ]+(\d+)/g)].map((m) => m[1]))].slice(0, 40);
     const names = [...new Set([...html3.matchAll(/(뉴항구[^<"'\s]{0,6}|레전드[^<"'\s]{0,6})/g)].map((m) => m[1]))].slice(0, 40);
-    res.json({ url: r.url, status: r.status, htmlLength: html3.length, pageTitle: strip2(/<title>([\s\S]*?)<\/title>/.exec(html3)?.[1] ?? ""), dayCount: days.length, unitCount: units.length, unitsPerTitle: byTitle, allTitlesOnPage: allTitles, shipNosOnPage: shipNos, nameMentions: names, sampleUnits: units.slice(0, 6) });
+    res.json({ url: r.url, status: r.status, htmlLength: html3.length, pageTitle: strip3(/<title>([\s\S]*?)<\/title>/.exec(html3)?.[1] ?? ""), dayCount: days.length, unitCount: units.length, unitsPerTitle: byTitle, allTitlesOnPage: allTitles, shipNosOnPage: shipNos, nameMentions: names, sampleUnits: units.slice(0, 6) });
   } catch (e) {
     res.status(400).json({ error: e?.message ?? String(e) });
   }
@@ -105200,16 +105200,16 @@ bookingRouter.get("/booking/ship-debug", guard, async (req, res) => {
 bookingRouter.get("/booking/catch-debug", guard, async (req, res) => {
   try {
     const base = normalizeBase(req.query.url);
-    const strip2 = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    const strip3 = (t) => t.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
     const home = await new Session(base).request("GET", "/");
-    const links = [...home.text.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)].map((m) => ({ href: m[1], text: strip2(m[2]).slice(0, 40) })).filter((l) => /조황|조과|포토|후기|갤러리|catch|report|photo|gallery|bbs|board/i.test(`${l.text} ${l.href}`));
+    const links = [...home.text.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)].map((m) => ({ href: m[1], text: strip3(m[2]).slice(0, 40) })).filter((l) => /조황|조과|포토|후기|갤러리|catch|report|photo|gallery|bbs|board/i.test(`${l.text} ${l.href}`));
     const uniq = [...new Map(links.map((l) => [l.href, l])).values()].slice(0, 25);
     const tried = [];
     for (const l of uniq.filter((x) => /조황|조과|catch|report/i.test(`${x.text} ${x.href}`)).slice(0, 3)) {
       try {
         const u = new URL(l.href, base);
         const page = await new Session(base).request("GET", u.pathname + u.search);
-        tried.push({ href: l.href, text: l.text, status: page.status, length: page.text.length, title: strip2(/<title>([\s\S]*?)<\/title>/i.exec(page.text)?.[1] ?? ""), sample: strip2(page.text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, "")).slice(0, 700) });
+        tried.push({ href: l.href, text: l.text, status: page.status, length: page.text.length, title: strip3(/<title>([\s\S]*?)<\/title>/i.exec(page.text)?.[1] ?? ""), sample: strip3(page.text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, "")).slice(0, 700) });
       } catch (e) {
         tried.push({ href: l.href, error: e?.message ?? String(e) });
       }
@@ -105223,82 +105223,6 @@ var booking_default = bookingRouter;
 
 // src/routes/catch.ts
 var import_express4 = __toESM(require_express2(), 1);
-
-// src/lib/catch-paste.ts
-var SPECIES = ["\uCB48\uAFB8\uBBF8", "\uC8FC\uAFB8\uBBF8", "\uCB48\uAC11", "\uAC11\uC624\uC9D5\uC5B4", "\uBB38\uC5B4", "\uD55C\uCE58", "\uC624\uC9D5\uC5B4", "\uAC08\uCE58", "\uC6B0\uB7ED", "\uAD11\uC5B4", "\uB178\uB798\uBBF8", "\uB3C4\uB2E4\uB9AC", "\uB300\uAD6C", "\uBBFC\uC5B4", "\uCC38\uB3D4", "\uC0BC\uCE58", "\uB18D\uC5B4", "\uCB48", "\uAC11"];
-var PORT_ALIASES = [
-  ["\uC0BC\uAE38\uD3EC", "\uC0BC\uAE38\uD3EC"],
-  ["\uB300\uCC9C", "\uB300\uCC9C\uD56D"],
-  ["\uC2E0\uC9C4\uB3C4", "\uC2E0\uC9C4\uB3C4"],
-  ["\uC624\uCC9C", "\uC624\uCC9C\uD56D"],
-  ["\uB9C8\uAC80\uD3EC", "\uB9C8\uAC80\uD3EC"]
-];
-var DATE_FULL = /(20\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/;
-var DATE_KR = /(\d{1,2})\s*월\s*(\d{1,2})\s*일?/;
-var DATE_SHORT = /(?:^|[^\d])(\d{1,2})\s*[./]\s*(\d{1,2})(?![\d])/;
-var LINE_STARTS_WITH_DATE = /^\s*(?:\[?\(?)(?:20\d{2}\s*[.\-/년]\s*)?\d{1,2}\s*[./월\-]\s*\d{1,2}/;
-function pad(n) {
-  return String(n).padStart(2, "0");
-}
-function splitPosts(text4) {
-  const blocks = [];
-  for (const chunk of text4.replace(/\r/g, "").split(/\n\s*\n+/)) {
-    let cur = [];
-    for (const line2 of chunk.split("\n")) {
-      if (cur.length && LINE_STARTS_WITH_DATE.test(line2)) {
-        blocks.push(cur.join("\n"));
-        cur = [];
-      }
-      cur.push(line2);
-    }
-    if (cur.length) blocks.push(cur.join("\n"));
-  }
-  return blocks.map((b) => b.trim()).filter((b) => b.length > 0);
-}
-function parsePost(block, defaultPort, now = /* @__PURE__ */ new Date()) {
-  let y = now.getFullYear();
-  let m = 0;
-  let d = 0;
-  let hit = DATE_FULL.exec(block);
-  if (hit) {
-    y = Number(hit[1]);
-    m = Number(hit[2]);
-    d = Number(hit[3]);
-  } else if (hit = DATE_KR.exec(block)) {
-    m = Number(hit[1]);
-    d = Number(hit[2]);
-  } else if (hit = DATE_SHORT.exec(block)) {
-    m = Number(hit[1]);
-    d = Number(hit[2]);
-  }
-  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
-  const date6 = `${y}-${pad(m)}-${pad(d)}`;
-  if (!DATE_FULL.test(block) && (/* @__PURE__ */ new Date(`${date6}T00:00:00`)).getTime() > now.getTime() + 30 * 864e5) {
-    y -= 1;
-  }
-  const port2 = PORT_ALIASES.find(([k]) => block.includes(k))?.[1] ?? defaultPort;
-  if (!TIDE_PORTS.includes(port2)) return null;
-  const found = SPECIES.filter((s) => s.length > 1 && block.includes(s));
-  const species = found.filter((s) => !found.some((o) => o !== s && o.includes(s))).slice(0, 3).join(", ");
-  const nums = [];
-  for (const mm of block.matchAll(/(\d{1,4})(?:\s*[~\-]\s*(\d{1,4}))?\s*(?:마리|수|미)(?![가-힣])/g)) {
-    nums.push(Number(mm[2] ?? mm[1]));
-  }
-  const count = nums.length ? Math.max(...nums) : null;
-  const note = block.replace(/\s+/g, " ").trim().slice(0, 300);
-  return { date: `${y}-${pad(m)}-${pad(d)}`, port: port2, vessel: "", species, count, note, markedGood: false, raw: block.slice(0, 200) };
-}
-function parsePasted(text4, defaultPort) {
-  const blocks = splitPosts(text4).slice(0, 200);
-  const posts = [];
-  let skipped = 0;
-  for (const b of blocks) {
-    const p = parsePost(b, defaultPort);
-    if (p) posts.push(p);
-    else skipped++;
-  }
-  return { posts, skipped };
-}
 
 // src/lib/catch-reports.ts
 var ready = null;
@@ -105372,7 +105296,7 @@ async function deleteReport(id) {
   await ensureTable();
   await pool.query("DELETE FROM catch_reports WHERE id = $1", [id]);
 }
-var GOOD_WORDS = /대박|만선|호황|대량|폭발|풍년|입질\s*좋|잘\s*나|많이\s*잡|터졌|터짐|쿨러\s*(가득|꽉)/;
+var GOOD_WORDS = /대박|호황|만선|만쿨(?:러)?|만클|가득|와우|와[!~]|폭조|넘치|풍년|대량|폭발|입질\s*(?:좋|폭발)|잘\s*나|많이\s*잡|터졌|터짐|쿨러\s*꽉/;
 var WEEKDAYS2 = ["\uC77C", "\uC6D4", "\uD654", "\uC218", "\uBAA9", "\uAE08", "\uD1A0"];
 async function buildInsights(from, to, port2, topPercent = 20) {
   const all = (await listReports(from, to)).filter((r) => !port2 || r.port === port2);
@@ -105451,8 +105375,225 @@ async function buildInsights(from, to, port2, topPercent = 20) {
   };
 }
 
+// src/lib/catch-paste.ts
+var SPECIES = ["\uCB48\uAFB8\uBBF8", "\uC8FC\uAFB8\uBBF8", "\uCB48\uAC11", "\uAC11\uC624\uC9D5\uC5B4", "\uBB38\uC5B4", "\uD55C\uCE58", "\uC624\uC9D5\uC5B4", "\uAC08\uCE58", "\uC6B0\uB7ED", "\uAD11\uC5B4", "\uB178\uB798\uBBF8", "\uB3C4\uB2E4\uB9AC", "\uB300\uAD6C", "\uBBFC\uC5B4", "\uCC38\uB3D4", "\uC0BC\uCE58", "\uB18D\uC5B4", "\uCB48", "\uAC11"];
+var PORT_ALIASES = [
+  ["\uC0BC\uAE38\uD3EC", "\uC0BC\uAE38\uD3EC"],
+  ["\uB300\uCC9C", "\uB300\uCC9C\uD56D"],
+  ["\uC2E0\uC9C4\uB3C4", "\uC2E0\uC9C4\uB3C4"],
+  ["\uC624\uCC9C", "\uC624\uCC9C\uD56D"],
+  ["\uB9C8\uAC80\uD3EC", "\uB9C8\uAC80\uD3EC"]
+];
+var DATE_FULL = /(20\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/;
+var DATE_KR = /(\d{1,2})\s*월\s*(\d{1,2})\s*일?/;
+var DATE_SHORT = /(?:^|[^\d])(\d{1,2})\s*[./]\s*(\d{1,2})(?![\d])/;
+var LINE_STARTS_WITH_DATE = /^\s*(?:\[?\(?)(?:20\d{2}\s*[.\-/년]\s*)?\d{1,2}\s*[./월\-]\s*\d{1,2}/;
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+function splitPosts(text4) {
+  const blocks = [];
+  for (const chunk of text4.replace(/\r/g, "").split(/\n\s*\n+/)) {
+    let cur = [];
+    for (const line2 of chunk.split("\n")) {
+      if (cur.length && LINE_STARTS_WITH_DATE.test(line2)) {
+        blocks.push(cur.join("\n"));
+        cur = [];
+      }
+      cur.push(line2);
+    }
+    if (cur.length) blocks.push(cur.join("\n"));
+  }
+  return blocks.map((b) => b.trim()).filter((b) => b.length > 0);
+}
+function parsePost(block, defaultPort, now = /* @__PURE__ */ new Date()) {
+  let y = now.getFullYear();
+  let m = 0;
+  let d = 0;
+  let hit = DATE_FULL.exec(block);
+  if (hit) {
+    y = Number(hit[1]);
+    m = Number(hit[2]);
+    d = Number(hit[3]);
+  } else if (hit = DATE_KR.exec(block)) {
+    m = Number(hit[1]);
+    d = Number(hit[2]);
+  } else if (hit = DATE_SHORT.exec(block)) {
+    m = Number(hit[1]);
+    d = Number(hit[2]);
+  }
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const date6 = `${y}-${pad(m)}-${pad(d)}`;
+  if (!DATE_FULL.test(block) && (/* @__PURE__ */ new Date(`${date6}T00:00:00`)).getTime() > now.getTime() + 30 * 864e5) {
+    y -= 1;
+  }
+  const port2 = PORT_ALIASES.find(([k]) => block.includes(k))?.[1] ?? defaultPort;
+  if (!TIDE_PORTS.includes(port2)) return null;
+  const found = SPECIES.filter((s) => s.length > 1 && block.includes(s));
+  const species = found.filter((s) => !found.some((o) => o !== s && o.includes(s))).slice(0, 3).join(", ");
+  const nums = [];
+  for (const mm of block.matchAll(/(\d{1,4})(?:\s*[~\-]\s*(\d{1,4}))?\s*(?:마리|수|미)(?![가-힣])/g)) {
+    nums.push(Number(mm[2] ?? mm[1]));
+  }
+  const count = nums.length ? Math.max(...nums) : null;
+  const note = block.replace(/\s+/g, " ").trim().slice(0, 300);
+  return { date: `${y}-${pad(m)}-${pad(d)}`, port: port2, vessel: "", species, count, note, markedGood: false, raw: block.slice(0, 200) };
+}
+function parsePasted(text4, defaultPort) {
+  const blocks = splitPosts(text4).slice(0, 200);
+  const posts = [];
+  let skipped = 0;
+  for (const b of blocks) {
+    const p = parsePost(b, defaultPort);
+    if (p) posts.push(p);
+    else skipped++;
+  }
+  return { posts, skipped };
+}
+
+// src/lib/catch-naver.ts
+var strip = (t) => t.replace(/<[^>]*>/g, " ").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+var PORT_WORDS = {
+  \uC0BC\uAE38\uD3EC: ["\uC0BC\uAE38\uD3EC"],
+  \uB300\uCC9C\uD56D: ["\uB300\uCC9C\uD56D", "\uB300\uCC9C"],
+  \uC2E0\uC9C4\uB3C4: ["\uC2E0\uC9C4\uB3C4"],
+  \uC624\uCC9C\uD56D: ["\uC624\uCC9C\uD56D", "\uC624\uCC9C"],
+  \uB9C8\uAC80\uD3EC: ["\uB9C8\uAC80\uD3EC"]
+};
+var FISH_QUERY = ["\uCB48\uAFB8\uBBF8 \uC870\uD669", "\uAC11\uC624\uC9D5\uC5B4 \uC870\uD669", "\uCB48\uAC11 \uC870\uD669"];
+var IS_REPORT = /조황|조과|출조|마릿수|조행|쭈꾸미|주꾸미|갑오징어|쭈갑/;
+function naverEnv() {
+  const clean = (v) => (v ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
+  return { id: clean(process.env.NAVER_CLIENT_ID), secret: clean(process.env.NAVER_CLIENT_SECRET) };
+}
+function naverConfigured() {
+  const e = naverEnv();
+  return !!e.id && !!e.secret;
+}
+function itemToReport(it, port2, kind, since, now = /* @__PURE__ */ new Date()) {
+  const text4 = `${strip(it.title)} ${strip(it.description)}`;
+  if (!IS_REPORT.test(text4)) return null;
+  if (!PORT_WORDS[port2].some((w) => text4.includes(w))) return null;
+  let block = text4;
+  const hasDate = /\d{1,2}\s*[./월]\s*\d{1,2}/.test(text4);
+  if (!hasDate && kind === "blog" && it.postdate && /^\d{8}$/.test(it.postdate)) {
+    const d = it.postdate;
+    block = `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6, 8)} ${text4}`;
+  }
+  const p = parsePost(block, port2, now);
+  if (!p || p.date < since) return null;
+  const tag = kind === "blog" ? "\uBE14\uB85C\uADF8" : "\uCE74\uD398";
+  return { ...p, note: `[${tag}] ${p.note}`.slice(0, 300), port: port2 };
+}
+async function search(kind, query, fetcher) {
+  const e = naverEnv();
+  const legacy = (process.env.NAVER_API_MODE ?? "").trim().toLowerCase() === "legacy";
+  const q = `query=${encodeURIComponent(query)}&display=100&sort=date`;
+  const url2 = legacy ? `https://openapi.naver.com/v1/search/${kind === "blog" ? "blog" : "cafearticle"}.json?${q}` : `https://naverapihub.apigw.ntruss.com/search/v1/${kind === "blog" ? "blog" : "cafearticle"}?${q}`;
+  const headers = legacy ? { "X-Naver-Client-Id": e.id, "X-Naver-Client-Secret": e.secret } : { "X-NCP-APIGW-API-KEY-ID": e.id, "X-NCP-APIGW-API-KEY": e.secret };
+  const r = await fetcher(url2, { headers });
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    let code = "";
+    let msg = "";
+    try {
+      const j2 = JSON.parse(body);
+      code = j2.errorCode ?? j2.error?.errorCode ?? "";
+      msg = j2.errorMessage ?? j2.error?.message ?? "";
+    } catch {
+      msg = body.slice(0, 120);
+    }
+    const detail = `HTTP ${r.status} \xB7 \uC751\uB2F5: ${code} ${msg}`.trim();
+    if (r.status === 401 || r.status === 403) {
+      throw new Error(`\uB124\uC774\uBC84\uAC00 \uD0A4\uB97C \uAC70\uC808\uD588\uC5B4\uC694 (${detail}) \xB7 ${legacy ? "\uAC1C\uBC1C\uC790\uC13C\uD130" : "API HUB"} \uBC29\uC2DD \xB7 \uC11C\uBC84\uC5D0 \uB4E4\uC5B4\uAC04 ID ${e.id.length}\uC790, Secret ${e.secret.length}\uC790 \xB7 API HUB\uC5D0\uC11C \uBE14\uB85C\uADF8\xB7\uCE74\uD398\uAE00 \uAC80\uC0C9 API\uB97C \uC2E0\uCCAD\uD558\uACE0 \uC560\uD50C\uB9AC\uCF00\uC774\uC158\uC5D0 \uC120\uD0DD\uD588\uB294\uC9C0 \uD655\uC778\uD574 \uC8FC\uC138\uC694`);
+    }
+    throw new Error(`\uB124\uC774\uBC84 \uAC80\uC0C9 \uC624\uB958 (${detail})`);
+  }
+  const j = await r.json();
+  return j.items ?? [];
+}
+async function collectNaver(since, by, fetcher = fetch, onProgress) {
+  const out = { queries: 0, items: 0, added: 0, skipped: 0, failed: 0 };
+  if (!naverConfigured()) {
+    out.error = "NAVER_CLIENT_ID / NAVER_CLIENT_SECRET \uD658\uACBD\uBCC0\uC218\uAC00 \uC5C6\uC5B4\uC694";
+    return out;
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const tasks = [];
+  for (const port2 of TIDE_PORTS) for (const f of FISH_QUERY) for (const kind of ["blog", "cafe"]) tasks.push({ port: port2, f, kind });
+  let stop = false;
+  const runOne = async (t) => {
+    if (stop) return;
+    let items = [];
+    try {
+      items = await search(t.kind, `${PORT_WORDS[t.port][0]} ${t.f}`, fetcher);
+    } catch (e) {
+      out.error = e?.message ?? String(e);
+      if (/거절/.test(out.error)) stop = true;
+      out.failed++;
+      out.queries++;
+      onProgress?.(out, tasks.length);
+      return;
+    }
+    for (const it of items) {
+      out.items++;
+      const key = `naver:${it.link}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const rep = itemToReport(it, t.port, t.kind, since);
+      if (!rep) {
+        out.skipped++;
+        continue;
+      }
+      try {
+        const ex = await pool.query("SELECT 1 FROM catch_reports WHERE source = $1 LIMIT 1", [key]).catch(() => ({ rows: [] }));
+        if (ex.rows.length) {
+          out.skipped++;
+          continue;
+        }
+        await addReport({ date: rep.date, port: rep.port, vessel: "", species: rep.species, count: rep.count, note: rep.note, markedGood: false }, by, key);
+        out.added++;
+      } catch {
+        out.failed++;
+      }
+    }
+    out.queries++;
+    onProgress?.(out, tasks.length);
+  };
+  let next2 = 0;
+  await Promise.all(
+    Array.from({ length: 4 }, async () => {
+      while (next2 < tasks.length && !stop) await runOne(tasks[next2++]);
+    })
+  );
+  return out;
+}
+var job = { running: false, total: 0, startedAt: null, finishedAt: null, result: null };
+function naverJobStatus() {
+  return job;
+}
+function startNaverJob(since, by) {
+  if (job.running) return false;
+  job.running = true;
+  job.total = TIDE_PORTS.length * FISH_QUERY.length * 2;
+  job.startedAt = Date.now();
+  job.finishedAt = null;
+  job.result = { queries: 0, items: 0, added: 0, skipped: 0, failed: 0 };
+  void collectNaver(since, by, fetch, (r) => {
+    job.result = { ...r };
+  }).then((r) => {
+    job.result = r;
+  }).catch((e) => {
+    job.result = { ...job.result ?? { queries: 0, items: 0, added: 0, skipped: 0, failed: 0 }, error: e?.message ?? String(e) };
+  }).finally(() => {
+    job.running = false;
+    job.finishedAt = Date.now();
+  });
+  return true;
+}
+
 // src/lib/catch-collect.ts
-var strip = (t) => t.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+var strip2 = (t) => t.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 var SPECIES2 = ["\uCB48\uAFB8\uBBF8", "\uC8FC\uAFB8\uBBF8", "\uAC11\uC624\uC9D5\uC5B4", "\uBB38\uC5B4", "\uD55C\uCE58", "\uC624\uC9D5\uC5B4", "\uAC08\uCE58", "\uC6B0\uB7ED", "\uAD11\uC5B4", "\uB178\uB798\uBBF8", "\uB3C4\uB2E4\uB9AC", "\uB300\uAD6C", "\uBBFC\uC5B4", "\uCC38\uB3D4", "\uC0BC\uCE58", "\uB18D\uC5B4"];
 var lastRun = 0;
 function parseTitle(title) {
@@ -105491,7 +105632,7 @@ async function collectSunsang(base, since, by) {
     out.pagesRead++;
     const before2 = seen.size;
     for (const m of text4.matchAll(/<a\b[^>]*href=["'][^"']*board_detail\/(\d+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi)) {
-      const t = strip(m[2]);
+      const t = strip2(m[2]);
       if (t && !seen.has(m[1])) seen.set(m[1], t);
     }
     if (seen.size === before2) break;
@@ -105512,7 +105653,7 @@ async function collectSunsang(base, since, by) {
         continue;
       }
       const page = await session.request("GET", `/ship/board_detail/${id}`);
-      const plain = strip(page.text);
+      const plain = strip2(page.text);
       const b = parseBody(plain);
       const port2 = t.port || TIDE_PORTS.find((p) => plain.includes(p)) || "";
       if (!port2) {
@@ -105606,6 +105747,18 @@ router3.post("/catch/collect", async (req, res, next2) => {
   } catch (err) {
     next2(err);
   }
+});
+router3.post("/catch/collect-naver", (req, res) => {
+  if (!naverConfigured()) {
+    res.status(400).json({ error: "\uC11C\uBC84\uC5D0 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET \uC774 \uC544\uC9C1 \uC5C6\uC5B4\uC694" });
+    return;
+  }
+  const since = `${(/* @__PURE__ */ new Date()).getFullYear()}-09-01`;
+  const started = startNaverJob(since, req.header("x-user") ?? "");
+  res.json({ started, ...naverJobStatus() });
+});
+router3.get("/catch/collect-naver/status", (_req, res) => {
+  res.json(naverJobStatus());
 });
 router3.post("/catch/parse", (req, res) => {
   const text4 = typeof req.body?.text === "string" ? req.body.text.slice(0, 6e4) : "";
