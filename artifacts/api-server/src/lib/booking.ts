@@ -832,21 +832,40 @@ export function judgeThefishing(finalUrl: string, text: string): { state: Submit
   return { state: "unknown", message: plain ? `사이트 응답: ${plain.slice(0, 120)}` : "사이트 응답이 비어 있습니다" };
 }
 
+// 진단용: 응답 화면의 요약 (이름·전화번호 같은 숫자는 가린다)
+function brief(text: string): string {
+  const { alerts, plain } = pageNotes(text);
+  const forms = [...text.matchAll(/<form\b[^>]*>/gi)].map((m) => attr(m[0], "action") ?? "").filter(Boolean).slice(0, 3);
+  const mask = (t: string) => t.replace(/\d{2,4}[-\s]?\d{3,4}[-\s]?\d{4}/g, "***");
+  return `안내창[${alerts.join(" / ").slice(0, 120)}] 폼[${forms.join(" , ").slice(-160)}] 본문[${mask(plain).slice(0, 220)}]`;
+}
+
 async function submitThefishing(sess: Session, result: BookingResult, log: (m: string) => void): Promise<SubmitOutcome> {
   const r = await sess.request("POST", result.actionUrl, { body: result.payload, referer: result.referer, headers: { origin: new URL(sess.base).origin } });
   const v = judgeThefishing(r.url, r.text);
   log(`제출 응답: HTTP ${r.status} · ${new URL(r.url).pathname.split("/").slice(-1)[0] || "/"}${v.message ? ` · ${v.message.slice(0, 160)}` : ""}`);
+  log(`응답 요약: ${brief(r.text)}`);
   let message = v.message;
-  if (v.state === "success") {
-    // 완료 화면(입금 안내 등)을 읽어 두면 화면에서 바로 볼 수 있다. 읽기만 하는 요청이라 실패해도 상관없다.
+  let state = v.state;
+  if (state === "success") {
+    // 다음 화면으로 넘어갔다는 말만으로는 접수됐다고 볼 수 없다. 완료 화면에 예약번호·입금 안내가 있는지 직접 읽어서 확인한다.
     try {
-      const page = /popup\.step2\.php/i.test(r.url) ? r.text : v.next ? (await sess.request("GET", new URL(v.next, r.url).toString(), { referer: r.url })).text : "";
-      const info = keyInfo(pageNotes(page).plain);
-      if (info) message = [message, info].filter(Boolean).join(" · ");
+      const nextUrl = /popup\.step2\.php/i.test(r.url) ? r.url : v.next ? new URL(v.next, r.url).toString() : "";
+      const page = /popup\.step2\.php/i.test(r.url) ? r.text : nextUrl ? (await sess.request("GET", nextUrl, { referer: r.url })).text : "";
+      if (nextUrl) log(`다음 화면: ${new URL(nextUrl).pathname.split("/").slice(-1)[0]} · ${brief(page)}`);
+      const plain = pageNotes(page).plain;
+      const hits = [...plain.matchAll(/(예약\s*번호|입금\s*(?:계좌|금액|기한|은행)|계좌\s*번호|예금주)[\s:：]*\S.{0,40}/g)].map((m) => m[0].trim());
+      if (hits.length) {
+        message = [message, hits.slice(0, 4).join(" / ")].filter(Boolean).join(" · ");
+      } else {
+        state = "unknown";
+        message = [message, "다음 화면으로 이동했지만 예약번호·입금 안내가 보이지 않아 접수됐는지 확인할 수 없어요"].filter(Boolean).join(" · ");
+      }
     } catch {
-      /* 무시 */
+      state = "unknown";
+      message = [message, "접수 확인 화면을 읽지 못했어요"].filter(Boolean).join(" · ");
     }
-  } else if (v.state === "unknown" && result.seats.length && result.referer) {
+  } else if (state === "unknown" && result.seats.length && result.referer) {
     // 응답을 해석하지 못했을 때: 내가 고른 좌석이 지금 어떻게 보이는지로 접수 여부를 가늠한다
     try {
       const again = await sess.request("GET", result.referer);
@@ -860,7 +879,7 @@ async function submitThefishing(sess: Session, result: BookingResult, log: (m: s
       /* 무시 */
     }
   }
-  return { state: v.state, message: message || "사이트가 별도 안내 문구를 주지 않았습니다", httpStatus: r.status, at: Date.now() };
+  return { state, message: message || "사이트가 별도 안내 문구를 주지 않았습니다", httpStatus: r.status, at: Date.now() };
 }
 
 // 선상24: 예약 화면의 스크립트와 같은 방식 — POST /mypage/reservation_end (JSON 응답, 성공이면 reservation_no 가 들어 있음)

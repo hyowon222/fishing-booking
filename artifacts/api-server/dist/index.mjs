@@ -103910,7 +103910,14 @@ var import_express3 = __toESM(require_express2(), 1);
 
 // src/lib/booking.ts
 import crypto3 from "node:crypto";
-var SPECIES_WORDS = ["\uCB48\uAFB8\uBBF8", "\uC8FC\uAFB8\uBBF8", "\uAC11\uC624\uC9D5\uC5B4", "\uCB48\uAC11"];
+var SPECIES_WORDS = ["\uCB48\uAFB8\uBBF8", "\uC8FC\uAFB8\uBBF8", "\uAC11\uC624\uC9D5\uC5B4", "\uCB48\uAC11", "\uB099\uC9C0", "\uB09A\uC9C0", "\uC655\uB09A\uC9C0"];
+function pickBySpecies(types3) {
+  for (const w of SPECIES_WORDS) {
+    const hit = types3.find((t) => t.label.includes(w));
+    if (hit) return hit;
+  }
+  return void 0;
+}
 var MODULE = "/_core/module/reservation_boat_v5.2_seat1";
 var KNOWN_SEEDS = ["2955", "4443", "2954", "5866", "5579", "3570", "2961", "2956", "2950", "6407", "5578", "4920", "5679", "5891", "3571"];
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -104424,7 +104431,7 @@ async function prewarm(sess, cfg, log, extra = []) {
   try {
     const pages = await sess.batch(uids.map((uid) => ({ method: "GET", path: step1Url(cfg.date, uid) })));
     pages.forEach((p, i) => {
-      const type = parseRadios(p.text, "PS_N_UID").find((t) => SPECIES_WORDS.some((w) => t.label.includes(w)));
+      const type = pickBySpecies(parseRadios(p.text, "PS_N_UID"));
       if (type) out.set(uids[i], { type, naun: /naun=(\d+)/.exec(p.text)?.[1] ?? "1" });
     });
     if (out.size) log(`\uBBF8\uB9AC \uC900\uBE44 \uC644\uB8CC (${out.size}\uCC99): \uB09A\uC2DC \uC885\uB958 \uBC88\uD638\uB97C \uD655\uC778\uD574 \uB450\uC5C8\uC2B5\uB2C8\uB2E4.`);
@@ -104464,8 +104471,8 @@ async function prepareBooking(sess, cfg, found, log, warm, pre) {
     let page = await sess.request("GET", step1Url(cfg.date, uid));
     const types3 = parseRadios(page.text, "PS_N_UID");
     log(`\uB09A\uC2DC \uC885\uB958: ${types3.map((t) => t.label).join(" | ") || "\uC5C6\uC74C"}`);
-    type = types3.find((t) => SPECIES_WORDS.some((w) => t.label.includes(w)));
-    if (!type) throw new Error(`${choice.label}: \uCB48\uAFB8\uBBF8/\uAC11\uC624\uC9D5\uC5B4 \uB09A\uC2DC\uC885\uB958\uAC00 \uC5C6\uC5B4 \uC911\uB2E8\uD569\uB2C8\uB2E4`);
+    type = pickBySpecies(types3);
+    if (!type) throw new Error(`${choice.label}: \uCB48\uAFB8\uBBF8/\uAC11\uC624\uC9D5\uC5B4/\uB099\uC9C0 \uB09A\uC2DC\uC885\uB958\uAC00 \uC5C6\uC5B4 \uC911\uB2E8\uD569\uB2C8\uB2E4`);
     page = await sess.request("GET", step1Url(cfg.date, uid, type.value));
     html3 = page.text;
     const naun = /naun=(\d+)/.exec(html3)?.[1] ?? "1";
@@ -104964,8 +104971,8 @@ async function prepareSunsang(sess, cfg, ship, log) {
   const sc = data2.schedule;
   const fish = (sc.fish_type ?? []).map((f) => String(f.name));
   log(`\uC5B4\uC885: ${fish.join(", ") || ship.fish || "\uC815\uBCF4 \uC5C6\uC74C"} / \uB0A8\uC740 \uC790\uB9AC ${sc.remain_embarkation_num}\uBA85`);
-  if (!SPECIES_WORDS.some((w) => fish.join(",").includes(w)) && !/주꾸미|쭈꾸미|갑오징어|쭈갑/.test(ship.fish)) {
-    throw new SkipShip(`${ship.name}: \uCB48\uAFB8\uBBF8/\uAC11\uC624\uC9D5\uC5B4 \uC5B4\uC885\uC774 \uC544\uB2C8\uB77C \uAC74\uB108\uB701\uB2C8\uB2E4 (${fish.join(", ") || ship.fish})`);
+  if (!SPECIES_WORDS.some((w) => fish.join(",").includes(w)) && !/주꾸미|쭈꾸미|갑오징어|쭈갑|낙지/.test(ship.fish)) {
+    throw new SkipShip(`${ship.name}: \uCB48\uAFB8\uBBF8/\uAC11\uC624\uC9D5\uC5B4/\uB099\uC9C0 \uC5B4\uC885\uC774 \uC544\uB2C8\uB77C \uAC74\uB108\uB701\uB2C8\uB2E4 (${fish.join(", ") || ship.fish})`);
   }
   if (sc.is_reservation_login) throw new Error(`${ship.name}: \uB85C\uADF8\uC778\uC774 \uD544\uC694\uD55C \uC608\uC57D\uC774\uB77C \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4`);
   if (sc.is_reservation_phone_auth) throw new Error(`${ship.name}: \uD734\uB300\uC804\uD654 \uC778\uC99D\uC774 \uD544\uC694\uD55C \uC608\uC57D\uC774\uB77C \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4`);
