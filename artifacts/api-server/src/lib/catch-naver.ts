@@ -1,5 +1,5 @@
 // lib/catch-naver.ts — 네이버 검색 API(블로그·카페)에서 공개된 조황 글을 찾아 조황 기록에 넣는다
-//   필요한 환경변수: NAVER_CLIENT_ID, NAVER_CLIENT_SECRET (developers.naver.com 의 "검색" API)
+//   필요한 환경변수: NAVER_CLIENT_ID, NAVER_CLIENT_SECRET (네이버 클라우드 플랫폼 NAVER API HUB 의 검색 API 인증 정보)
 //   블로그는 작성일(postdate)이 오고, 카페 글은 날짜가 안 와서 제목·요약에 날짜가 적힌 글만 쓴다.
 
 import { pool } from "@workspace/db";
@@ -59,26 +59,32 @@ export function itemToReport(it: NaverItem, port: string, kind: "blog" | "cafe",
   return { ...p, note: `[${tag}] ${p.note}`.slice(0, 300), port };
 }
 
+// 기본은 NAVER API HUB(네이버 클라우드 플랫폼), NAVER_API_MODE=legacy 이면 예전 개발자센터 주소를 쓴다
 async function search(kind: "blog" | "cafe", query: string, fetcher: typeof fetch): Promise<NaverItem[]> {
-  const url = `https://openapi.naver.com/v1/search/${kind === "blog" ? "blog" : "cafearticle"}.json?query=${encodeURIComponent(query)}&display=100&sort=date`;
-  const r = await fetcher(url, {
-    headers: { "X-Naver-Client-Id": naverEnv().id, "X-Naver-Client-Secret": naverEnv().secret },
-  });
+  const e = naverEnv();
+  const legacy = (process.env.NAVER_API_MODE ?? "").trim().toLowerCase() === "legacy";
+  const q = `query=${encodeURIComponent(query)}&display=100&sort=date`;
+  const url = legacy
+    ? `https://openapi.naver.com/v1/search/${kind === "blog" ? "blog" : "cafearticle"}.json?${q}`
+    : `https://naverapihub.apigw.ntruss.com/search/v1/${kind === "blog" ? "blog" : "cafearticle"}?${q}`;
+  const headers: Record<string, string> = legacy
+    ? { "X-Naver-Client-Id": e.id, "X-Naver-Client-Secret": e.secret }
+    : { "X-NCP-APIGW-API-KEY-ID": e.id, "X-NCP-APIGW-API-KEY": e.secret };
+  const r = await fetcher(url, { headers });
   if (!r.ok) {
     const body = await r.text().catch(() => "");
     let code = "";
     let msg = "";
     try {
-      const j = JSON.parse(body) as { errorCode?: string; errorMessage?: string };
-      code = j.errorCode ?? "";
-      msg = j.errorMessage ?? "";
+      const j = JSON.parse(body) as { errorCode?: string; errorMessage?: string; error?: { errorCode?: string; message?: string } };
+      code = j.errorCode ?? j.error?.errorCode ?? "";
+      msg = j.errorMessage ?? j.error?.message ?? "";
     } catch {
       msg = body.slice(0, 120);
     }
-    const e = naverEnv();
-    const detail = `HTTP ${r.status} · 네이버 응답: ${code} ${msg}`.trim();
+    const detail = `HTTP ${r.status} · 응답: ${code} ${msg}`.trim();
     if (r.status === 401 || r.status === 403) {
-      throw new Error(`네이버가 키를 거절했어요 (${detail}) · 서버에 들어간 ID ${e.id.length}자, Secret ${e.secret.length}자 · 키가 올바르지 않거나 검색 API 권한이 없어요`);
+      throw new Error(`네이버가 키를 거절했어요 (${detail}) · ${legacy ? "개발자센터" : "API HUB"} 방식 · 서버에 들어간 ID ${e.id.length}자, Secret ${e.secret.length}자 · API HUB에서 블로그·카페글 검색 API를 신청하고 애플리케이션에 선택했는지 확인해 주세요`);
     }
     throw new Error(`네이버 검색 오류 (${detail})`);
   }
