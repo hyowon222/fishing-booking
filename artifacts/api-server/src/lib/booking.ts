@@ -79,7 +79,7 @@ export type Job = {
   stopRequested: boolean;
 };
 
-export const SPECIES_WORDS = ["쭈꾸미", "주꾸미", "갑오징어", "쭈갑", "낙지"];
+export const SPECIES_WORDS = ["쭈꾸미", "주꾸미", "갑오징어", "쭈갑", "낙지", "낚지", "왕낚지"];
 // 낚시 종류가 여러 개면 앞에 적힌 어종(쭈꾸미 등)을 먼저 고르고, 낙지는 다른 게 없을 때만 고른다
 function pickBySpecies<T extends { label: string }>(types: T[]): T | undefined {
   for (const w of SPECIES_WORDS) {
