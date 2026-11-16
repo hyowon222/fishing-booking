@@ -1,6 +1,6 @@
 // routes/catch.ts — 조황 기록과 좋았던 날 모아 보기
 import { Router, type IRouter } from "express";
-import { collectNaver, naverConfigured } from "../lib/catch-naver";
+import { naverConfigured, naverJobStatus, startNaverJob } from "../lib/catch-naver";
 import { parsePasted } from "../lib/catch-paste";
 import { TIDE_PORTS } from "../lib/tide-table";
 import { collectCooldown, collectSunsang, markCollectRun } from "../lib/catch-collect";
@@ -81,24 +81,19 @@ router.post("/catch/collect", async (req, res, next) => {
   }
 });
 
-// 네이버 블로그·카페(공개 글) 검색으로 조황 글을 가져온다
-router.post("/catch/collect-naver", async (req, res, next) => {
-  try {
-    if (!naverConfigured()) {
-      res.status(400).json({ error: "서버에 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 이 아직 없어요" });
-      return;
-    }
-    const wait = collectCooldown();
-    if (wait > 0) {
-      res.status(429).json({ error: `잠시 후 다시 눌러 주세요 (${Math.ceil(wait / 1000)}초)` });
-      return;
-    }
-    markCollectRun();
-    const since = `${new Date().getFullYear()}-09-01`;
-    res.json(await collectNaver(since, req.header("x-user") ?? ""));
-  } catch (err) {
-    next(err);
+// 네이버 블로그·카페(공개 글) 검색으로 조황 글을 가져온다 (뒤에서 돌리고 진행 상황은 status 로 본다)
+router.post("/catch/collect-naver", (req, res) => {
+  if (!naverConfigured()) {
+    res.status(400).json({ error: "서버에 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 이 아직 없어요" });
+    return;
   }
+  const since = `${new Date().getFullYear()}-09-01`;
+  const started = startNaverJob(since, req.header("x-user") ?? "");
+  res.json({ started, ...naverJobStatus() });
+});
+
+router.get("/catch/collect-naver/status", (_req, res) => {
+  res.json(naverJobStatus());
 });
 
 // 붙여넣은 글을 분석만 한다 (저장은 /catch/reports/bulk)

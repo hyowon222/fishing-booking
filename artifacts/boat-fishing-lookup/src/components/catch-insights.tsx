@@ -115,12 +115,23 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
   const collectNaver = async () => {
     setNaverBusy(true);
     setError('');
-    setNotice('');
+    setNotice('네이버 글을 찾는 중이에요…');
     try {
-      const r = await call('/collect-naver', { method: 'POST', body: '{}' });
-      setNotice(`네이버 글 ${r.items}개를 살펴서 ${r.added}건을 새로 가져왔어요${r.error ? ` (일부 오류: ${r.error})` : ''}`);
+      await call('/collect-naver', { method: 'POST', body: '{}' });
+      for (let i = 0; i < 150; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const st = await call('/collect-naver/status');
+        const r = st.result as { queries: number; items: number; added: number; error?: string } | null;
+        if (st.running) {
+          setNotice(`네이버 글을 찾는 중이에요… 검색 ${r?.queries ?? 0}/${st.total}, 새 기록 ${r?.added ?? 0}건`);
+          continue;
+        }
+        setNotice(`네이버 글 ${r?.items ?? 0}개를 살펴서 ${r?.added ?? 0}건을 새로 가져왔어요${r?.error ? ` (일부 오류: ${r.error})` : ''}`);
+        break;
+      }
       await load();
     } catch (err) {
+      setNotice('');
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setNaverBusy(false);

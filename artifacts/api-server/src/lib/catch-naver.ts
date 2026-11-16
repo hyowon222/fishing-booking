@@ -92,50 +92,91 @@ async function search(kind: "blog" | "cafe", query: string, fetcher: typeof fetc
   return j.items ?? [];
 }
 
-export async function collectNaver(since: string, by: string, fetcher: typeof fetch = fetch): Promise<NaverResult> {
+export async function collectNaver(since: string, by: string, fetcher: typeof fetch = fetch, onProgress?: (r: NaverResult, total: number) => void): Promise<NaverResult> {
   const out: NaverResult = { queries: 0, items: 0, added: 0, skipped: 0, failed: 0 };
   if (!naverConfigured()) {
     out.error = "NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 환경변수가 없어요";
     return out;
   }
   const seen = new Set<string>();
-  for (const port of TIDE_PORTS) {
-    for (const f of FISH_QUERY) {
-      for (const kind of ["blog", "cafe"] as const) {
-        out.queries++;
-        let items: NaverItem[] = [];
-        try {
-          items = await search(kind, `${PORT_WORDS[port]![0]} ${f}`, fetcher);
-        } catch (e: any) {
-          out.error = e?.message ?? String(e);
-          if (/거절/.test(out.error!)) return out;
-          out.failed++;
+  const tasks: Array<{ port: string; f: string; kind: "blog" | "cafe" }> = [];
+  for (const port of TIDE_PORTS) for (const f of FISH_QUERY) for (const kind of ["blog", "cafe"] as const) tasks.push({ port, f, kind });
+  let stop = false;
+  const runOne = async (t: { port: string; f: string; kind: "blog" | "cafe" }) => {
+    if (stop) return;
+    let items: NaverItem[] = [];
+    try {
+      items = await search(t.kind, `${PORT_WORDS[t.port]![0]} ${t.f}`, fetcher);
+    } catch (e: any) {
+      out.error = e?.message ?? String(e);
+      if (/거절/.test(out.error!)) stop = true;
+      out.failed++;
+      out.queries++;
+      onProgress?.(out, tasks.length);
+      return;
+    }
+    for (const it of items) {
+      out.items++;
+      const key = `naver:${it.link}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const rep = itemToReport(it, t.port, t.kind, since);
+      if (!rep) {
+        out.skipped++;
+        continue;
+      }
+      try {
+        const ex = await pool.query("SELECT 1 FROM catch_reports WHERE source = $1 LIMIT 1", [key]).catch(() => ({ rows: [] as unknown[] }));
+        if (ex.rows.length) {
+          out.skipped++;
           continue;
         }
-        for (const it of items) {
-          out.items++;
-          const key = `naver:${it.link}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          const rep = itemToReport(it, port, kind, since);
-          if (!rep) {
-            out.skipped++;
-            continue;
-          }
-          try {
-            const ex = await pool.query("SELECT 1 FROM catch_reports WHERE source = $1 LIMIT 1", [key]).catch(() => ({ rows: [] as unknown[] }));
-            if (ex.rows.length) {
-              out.skipped++;
-              continue;
-            }
-            await addReport({ date: rep.date, port: rep.port, vessel: "", species: rep.species, count: rep.count, note: rep.note, markedGood: false }, by, key);
-            out.added++;
-          } catch {
-            out.failed++;
-          }
-        }
+        await addReport({ date: rep.date, port: rep.port, vessel: "", species: rep.species, count: rep.count, note: rep.note, markedGood: false }, by, key);
+        out.added++;
+      } catch {
+        out.failed++;
       }
     }
-  }
+    out.queries++;
+    onProgress?.(out, tasks.length);
+  };
+  // 검색을 4개씩 동시에 돌려서 시간을 줄인다
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: 4 }, async () => {
+      while (next < tasks.length && !stop) await runOne(tasks[next++]!);
+    }),
+  );
   return out;
+}
+
+// 오래 걸릴 수 있어서 서버가 뒤에서 돌리고, 화면은 진행 상황만 물어본다
+export type NaverJob = { running: boolean; total: number; startedAt: number | null; finishedAt: number | null; result: NaverResult | null };
+const job: NaverJob = { running: false, total: 0, startedAt: null, finishedAt: null, result: null };
+
+export function naverJobStatus(): NaverJob {
+  return job;
+}
+
+export function startNaverJob(since: string, by: string): boolean {
+  if (job.running) return false;
+  job.running = true;
+  job.total = TIDE_PORTS.length * FISH_QUERY.length * 2;
+  job.startedAt = Date.now();
+  job.finishedAt = null;
+  job.result = { queries: 0, items: 0, added: 0, skipped: 0, failed: 0 };
+  void collectNaver(since, by, fetch, (r) => {
+    job.result = { ...r };
+  })
+    .then((r) => {
+      job.result = r;
+    })
+    .catch((e) => {
+      job.result = { ...(job.result ?? { queries: 0, items: 0, added: 0, skipped: 0, failed: 0 }), error: e?.message ?? String(e) };
+    })
+    .finally(() => {
+      job.running = false;
+      job.finishedAt = Date.now();
+    });
+  return true;
 }
