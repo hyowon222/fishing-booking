@@ -104531,10 +104531,6 @@ function pageNotes(text4) {
   const plain = decodeHtml(text4.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
   return { alerts, plain };
 }
-function keyInfo(plain) {
-  const hits = [...plain.matchAll(/(예약\s*번호|입금\s*(?:계좌|금액|기한|은행)|계좌\s*번호|예금주)[\s:：]*\S.{0,40}/g)].map((m) => m[0].trim());
-  return hits.length ? hits.slice(0, 4).join(" / ") : plain.slice(0, 150);
-}
 var FAIL_WORDS = /(실패|오류|에러|불가|마감|초과|부족|이미|중복|잘못|제한|입력해|선택해|동의|확인해|없습니다|않습니다|못했|안됩니다|안 됩니다|거부)/;
 var OK_WORDS = /(완료|접수|예약되|예약 되|등록되|신청되)/;
 function judgeThefishing(finalUrl, text4) {
@@ -104550,19 +104546,37 @@ function judgeThefishing(finalUrl, text4) {
   }
   return { state: "unknown", message: plain ? `\uC0AC\uC774\uD2B8 \uC751\uB2F5: ${plain.slice(0, 120)}` : "\uC0AC\uC774\uD2B8 \uC751\uB2F5\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4" };
 }
+function brief(text4) {
+  const { alerts, plain } = pageNotes(text4);
+  const forms = [...text4.matchAll(/<form\b[^>]*>/gi)].map((m) => attr2(m[0], "action") ?? "").filter(Boolean).slice(0, 3);
+  const mask = (t) => t.replace(/\d{2,4}[-\s]?\d{3,4}[-\s]?\d{4}/g, "***");
+  return `\uC548\uB0B4\uCC3D[${alerts.join(" / ").slice(0, 120)}] \uD3FC[${forms.join(" , ").slice(-160)}] \uBCF8\uBB38[${mask(plain).slice(0, 220)}]`;
+}
 async function submitThefishing(sess, result, log) {
   const r = await sess.request("POST", result.actionUrl, { body: result.payload, referer: result.referer, headers: { origin: new URL(sess.base).origin } });
   const v = judgeThefishing(r.url, r.text);
   log(`\uC81C\uCD9C \uC751\uB2F5: HTTP ${r.status} \xB7 ${new URL(r.url).pathname.split("/").slice(-1)[0] || "/"}${v.message ? ` \xB7 ${v.message.slice(0, 160)}` : ""}`);
+  log(`\uC751\uB2F5 \uC694\uC57D: ${brief(r.text)}`);
   let message = v.message;
-  if (v.state === "success") {
+  let state = v.state;
+  if (state === "success") {
     try {
-      const page = /popup\.step2\.php/i.test(r.url) ? r.text : v.next ? (await sess.request("GET", new URL(v.next, r.url).toString(), { referer: r.url })).text : "";
-      const info = keyInfo(pageNotes(page).plain);
-      if (info) message = [message, info].filter(Boolean).join(" \xB7 ");
+      const nextUrl = /popup\.step2\.php/i.test(r.url) ? r.url : v.next ? new URL(v.next, r.url).toString() : "";
+      const page = /popup\.step2\.php/i.test(r.url) ? r.text : nextUrl ? (await sess.request("GET", nextUrl, { referer: r.url })).text : "";
+      if (nextUrl) log(`\uB2E4\uC74C \uD654\uBA74: ${new URL(nextUrl).pathname.split("/").slice(-1)[0]} \xB7 ${brief(page)}`);
+      const plain = pageNotes(page).plain;
+      const hits = [...plain.matchAll(/(예약\s*번호|입금\s*(?:계좌|금액|기한|은행)|계좌\s*번호|예금주)[\s:：]*\S.{0,40}/g)].map((m) => m[0].trim());
+      if (hits.length) {
+        message = [message, hits.slice(0, 4).join(" / ")].filter(Boolean).join(" \xB7 ");
+      } else {
+        state = "unknown";
+        message = [message, "\uB2E4\uC74C \uD654\uBA74\uC73C\uB85C \uC774\uB3D9\uD588\uC9C0\uB9CC \uC608\uC57D\uBC88\uD638\xB7\uC785\uAE08 \uC548\uB0B4\uAC00 \uBCF4\uC774\uC9C0 \uC54A\uC544 \uC811\uC218\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5B4\uC694"].filter(Boolean).join(" \xB7 ");
+      }
     } catch {
+      state = "unknown";
+      message = [message, "\uC811\uC218 \uD655\uC778 \uD654\uBA74\uC744 \uC77D\uC9C0 \uBABB\uD588\uC5B4\uC694"].filter(Boolean).join(" \xB7 ");
     }
-  } else if (v.state === "unknown" && result.seats.length && result.referer) {
+  } else if (state === "unknown" && result.seats.length && result.referer) {
     try {
       const again = await sess.request("GET", result.referer);
       const mine = parseSeats(again.text).filter((c) => result.seats.includes(c.seat));
@@ -104574,7 +104588,7 @@ async function submitThefishing(sess, result, log) {
     } catch {
     }
   }
-  return { state: v.state, message: message || "\uC0AC\uC774\uD2B8\uAC00 \uBCC4\uB3C4 \uC548\uB0B4 \uBB38\uAD6C\uB97C \uC8FC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4", httpStatus: r.status, at: Date.now() };
+  return { state, message: message || "\uC0AC\uC774\uD2B8\uAC00 \uBCC4\uB3C4 \uC548\uB0B4 \uBB38\uAD6C\uB97C \uC8FC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4", httpStatus: r.status, at: Date.now() };
 }
 async function submitSunsang24(sess, result, log) {
   const r = await sess.request("POST", result.actionUrl, {

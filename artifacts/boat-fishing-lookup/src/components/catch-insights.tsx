@@ -17,9 +17,11 @@ type GoodDay = {
   weather: { am: string; pm: string } | null;
   tideRange: number | null;
   tideNote: string | null;
+  lunar: string | null;
+  lunarLastYear: string | null;
 };
 type Tally = Array<{ label: string; days: number }>;
-type Insights = { from: string; to: string; totalReports: number; days: GoodDay[]; byMulddae: Tally; byFlow: Tally; byPort: Tally; topPercent: number };
+type Insights = { from: string; to: string; totalReports: number; days: GoodDay[]; byMulddae: Tally; byFlow: Tally; byPort: Tally; byRange: Tally; byLunarMonth: Tally; byLunarPart: Tally; topPercent: number };
 
 const PORTS = ['삼길포', '대천항', '신진도', '오천항', '마검포'];
 const YEAR = new Date().getFullYear();
@@ -244,6 +246,9 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
             <div className="grid gap-2 sm:grid-cols-3">
               <Tallies title="좋았던 날의 물때" items={data.byMulddae} />
               <Tallies title="좋았던 날의 조류 세기" items={data.byFlow} />
+              <Tallies title="좋았던 날의 조위차" items={data.byRange} />
+              <Tallies title="좋았던 날의 음력 (월)" items={data.byLunarMonth} />
+              <Tallies title="좋았던 날의 음력 (초·중·하순)" items={data.byLunarPart} />
               <Tallies title="좋았던 날의 항구" items={data.byPort} />
             </div>
           )}
@@ -266,6 +271,7 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
                   <div><span className="text-xs text-muted-foreground">조류 </span>{g.flowLabel ?? <span className="text-muted-foreground/70">없음</span>}</div>
                   <div><span className="text-xs text-muted-foreground">날씨 </span>{g.weather ? (g.weather.am === g.weather.pm ? g.weather.am : `${g.weather.am}→${g.weather.pm}`) : <span className="text-muted-foreground/70">없음</span>}</div>
                   <div><span className="text-xs text-muted-foreground">조위차 </span>{g.tideRange !== null ? `${g.tideRange}cm` : <span className="text-muted-foreground/70">없음</span>}</div>
+                  <div className="col-span-2"><span className="text-xs text-muted-foreground">음력 </span>{g.lunar ? g.lunar.replace('음력 ', '') : <span className="text-muted-foreground/70">없음</span>}{g.lunarLastYear && <span className="ml-1 text-[11px] text-muted-foreground">(작년 같은 음력일 · 양력 {g.lunarLastYear})</span>}</div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {g.reasons.map((r) => <span key={r} className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">{r}</span>)}

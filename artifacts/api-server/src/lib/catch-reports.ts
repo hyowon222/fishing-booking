@@ -6,6 +6,7 @@
 //   각 좋았던 날에 물때·조류 세기·날씨(바다타임 자료)를 붙여 준다.
 
 import { pool } from "@workspace/db";
+import { lunarLabel, lunarOf, sameLunarLastYear } from "./lunar";
 import { TIDE_PORTS, getTideMonth } from "./tide-table";
 
 let ready: Promise<void> | null = null;
@@ -122,6 +123,8 @@ export type GoodDay = {
   weather: { am: string; pm: string } | null;
   tideRange: number | null;
   tideNote: string | null;
+  lunar: string | null;
+  lunarLastYear: string | null;
 };
 
 export type Insights = {
@@ -132,6 +135,9 @@ export type Insights = {
   byMulddae: Array<{ label: string; days: number }>;
   byFlow: Array<{ label: string; days: number }>;
   byPort: Array<{ label: string; days: number }>;
+  byRange: Array<{ label: string; days: number }>;
+  byLunarMonth: Array<{ label: string; days: number }>;
+  byLunarPart: Array<{ label: string; days: number }>;
   topPercent: number;
 };
 
@@ -173,6 +179,8 @@ export async function buildInsights(from: string, to: string, port: string | nul
       weather: null,
       tideRange: null,
       tideNote: null,
+      lunar: null,
+      lunarLastYear: null,
     });
   }
   good.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
@@ -185,6 +193,11 @@ export async function buildInsights(from: string, to: string, port: string | nul
     tideByKey.set(key, await getTideMonth(p, Number(ym.slice(0, 4)), Number(ym.slice(5, 7))));
   }
   for (const g of good) {
+    const lu = lunarOf(g.date);
+    if (lu) {
+      g.lunar = lunarLabel(lu);
+      g.lunarLastYear = sameLunarLastYear(g.date);
+    }
     const month = tideByKey.get(`${g.port}|${g.date.slice(0, 7)}`);
     const day = month?.days.find((d) => d.date === g.date);
     if (day) {
@@ -198,13 +211,23 @@ export async function buildInsights(from: string, to: string, port: string | nul
     }
   }
 
-  const tally = (pick: (g: GoodDay) => string | null) => {
+  const tally = (pick: (g: GoodDay) => string | null, order?: (a: string, b: string) => number) => {
     const m = new Map<string, number>();
     for (const g of good) {
       const k = pick(g);
       if (k) m.set(k, (m.get(k) ?? 0) + 1);
     }
-    return [...m.entries()].map(([label, days]) => ({ label, days })).sort((a, b) => b.days - a.days);
+    return [...m.entries()].map(([label, days]) => ({ label, days })).sort((a, b) => (order ? order(a.label, b.label) : b.days - a.days));
+  };
+  const num = (t: string) => Number(/\d+/.exec(t)?.[0] ?? 0);
+  const rangeBucket = (g: GoodDay) => (g.tideRange === null ? null : `${Math.floor(g.tideRange / 100) * 100}~${Math.floor(g.tideRange / 100) * 100 + 99}cm`);
+  const lunarMonth = (g: GoodDay) => {
+    const l = lunarOf(g.date);
+    return l ? `음력 ${l.leap ? "윤" : ""}${l.month}월` : null;
+  };
+  const lunarPart = (g: GoodDay) => {
+    const l = lunarOf(g.date);
+    return l ? (l.day <= 10 ? "초순 (1~10일)" : l.day <= 20 ? "중순 (11~20일)" : "하순 (21~30일)") : null;
   };
   const flowBucket = (g: GoodDay) => (g.flowPercent === null ? null : g.flowPercent >= 80 ? "강함 (80% 이상)" : g.flowPercent >= 50 ? "보통 (50~79%)" : "약함 (50% 미만)");
   return {
@@ -215,6 +238,9 @@ export async function buildInsights(from: string, to: string, port: string | nul
     byMulddae: tally((g) => g.mulddae),
     byFlow: tally(flowBucket),
     byPort: tally((g) => g.port),
+    byRange: tally(rangeBucket, (a, b) => num(a) - num(b)),
+    byLunarMonth: tally(lunarMonth, (a, b) => num(a) - num(b) || a.localeCompare(b)),
+    byLunarPart: tally(lunarPart, (a, b) => num(a) - num(b)),
     topPercent,
   };
 }
