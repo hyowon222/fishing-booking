@@ -31,6 +31,14 @@ const YEARS = [NOW.getFullYear(), NOW.getFullYear() + 1];
 const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const DEFAULT_PORTS = ['삼길포', '대천항', '신진도', '오천항', '마검포'];
 const NO_DATA = '데이터 없음';
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const RANGE_BUCKETS = [
+  { key: 'r0', label: '299cm 이하', test: (v: number) => v < 300 },
+  { key: 'r3', label: '300~399', test: (v: number) => v >= 300 && v < 400 },
+  { key: 'r4', label: '400~499', test: (v: number) => v >= 400 && v < 500 },
+  { key: 'r5', label: '500~599', test: (v: number) => v >= 500 && v < 600 },
+  { key: 'r6', label: '600cm 이상', test: (v: number) => v >= 600 },
+];
 
 function NoData() {
   return <span className="text-xs text-muted-foreground/70">{NO_DATA}</span>;
@@ -74,6 +82,8 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [weekdaySel, setWeekdaySel] = useState<string[]>([]);
+  const [rangeSel, setRangeSel] = useState<string[]>([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -101,6 +111,18 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
   }, [port, year, month, reloadKey]);
 
   const ports = data?.ports?.length ? data.ports : DEFAULT_PORTS;
+  const toggle = (list: string[], value: string) => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value]);
+  const allDays = data?.days ?? [];
+  const days = allDays.filter((day) => {
+    if (weekdaySel.length > 0 && !weekdaySel.includes(day.weekday)) return false;
+    if (rangeSel.length > 0) {
+      if (day.range === null) return false;
+      const value = day.range;
+      if (!RANGE_BUCKETS.some((bucket) => rangeSel.includes(bucket.key) && bucket.test(value))) return false;
+    }
+    return true;
+  });
+  const filtered = weekdaySel.length > 0 || rangeSel.length > 0;
   const chip = (active: boolean) =>
     `rounded-full border px-3.5 py-2 text-sm font-semibold transition ${
       active ? 'border-primary bg-primary text-primary-foreground' : 'border-input hover:bg-muted'
@@ -152,6 +174,58 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
               ))}
             </div>
           </div>
+          <div className="flex flex-wrap items-center gap-2" data-testid="tide-weekday-filter">
+            <span className="w-12 text-xs font-bold text-muted-foreground">요일</span>
+            <button type="button" onClick={() => setWeekdaySel([])} className={chip(weekdaySel.length === 0)} data-testid="weekday-all">
+              전체
+            </button>
+            {WEEKDAYS.map((name) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => setWeekdaySel((list) => toggle(list, name))}
+                className={`${chip(weekdaySel.includes(name))} ${weekdaySel.includes(name) ? '' : weekdayClass(name)}`}
+                data-testid={`weekday-${name}`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2" data-testid="tide-range-filter">
+            <span className="w-12 text-xs font-bold text-muted-foreground">고저차</span>
+            <button type="button" onClick={() => setRangeSel([])} className={chip(rangeSel.length === 0)} data-testid="range-all">
+              전체
+            </button>
+            {RANGE_BUCKETS.map((bucket) => (
+              <button
+                key={bucket.key}
+                type="button"
+                onClick={() => setRangeSel((list) => toggle(list, bucket.key))}
+                className={chip(rangeSel.includes(bucket.key))}
+                data-testid={`range-${bucket.key}`}
+              >
+                {bucket.label}
+              </button>
+            ))}
+          </div>
+          {filtered && data && data.days.length > 0 ? (
+            <div className="flex items-center gap-3 pl-14 text-xs text-muted-foreground" data-testid="tide-filter-summary">
+              <span>
+                {allDays.length}일 중 <b className="text-foreground">{days.length}일</b> 표시
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setWeekdaySel([]);
+                  setRangeSel([]);
+                }}
+                className="rounded-lg border border-input px-2.5 py-1 font-semibold hover:bg-muted"
+                data-testid="button-filter-reset"
+              >
+                필터 초기화
+              </button>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -179,9 +253,14 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
             <p className="mt-1.5 text-xs text-muted-foreground">{data?.message ?? '이 달의 물때 정보가 아직 제공되지 않았습니다.'}</p>
           </div>
         ) : (
+          days.length === 0 ? (
+            <div className="rounded-xl border border-border bg-card p-10 text-center text-sm text-muted-foreground" data-testid="tide-filter-empty">
+              선택한 조건에 맞는 날이 없습니다.
+            </div>
+          ) : (
           <>
           <div className="space-y-2 md:hidden" data-testid="tide-cards">
-            {data.days.map((day) => (
+            {days.map((day) => (
               <div key={day.date} className="rounded-xl border border-border bg-card p-3" data-testid={`tide-card-${day.date}`}>
                 <div className="flex items-baseline justify-between gap-2">
                   <div className={`text-sm font-bold ${weekdayClass(day.weekday)}`}>
@@ -216,7 +295,7 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
                 </tr>
               </thead>
               <tbody>
-                {data.days.map((day) => (
+                {days.map((day) => (
                   <tr key={day.date} className="border-b border-border/70 align-top last:border-b-0" data-testid={`tide-row-${day.date}`}>
                     <td className="whitespace-nowrap px-3 py-2.5">
                       <div className={`font-semibold ${weekdayClass(day.weekday)}`}>
@@ -238,6 +317,7 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
             </table>
           </div>
           </>
+          )
         )}
         <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
           고저차는 그날 가장 높은 만조와 가장 낮은 간조의 차이입니다. 조류 세기는 바다타임의 물흐름(%) 값입니다. 날씨는 예보가 있는 날짜만 표시됩니다. 값이 없는 달은 아직 바다타임에 올라오지 않은 것입니다.
