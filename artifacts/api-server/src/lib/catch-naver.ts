@@ -25,7 +25,27 @@ const PORT_WORDS: Record<string, string[]> = {
   오천항: ["오천항", "오천"],
   마검포: ["마검포"],
 };
-const FISH_QUERY = ["쭈꾸미 조황", "갑오징어 조황", "쭈갑 조황"];
+// 기본 검색어 + 시즌 월별 검색어(예: "쭈갑 10월 조황")를 합쳐서 더 옛날 글까지 찾는다
+const BASE_QUERY = ["쭈꾸미 조황", "갑오징어 조황", "쭈갑 조황", "쭈꾸미 낚시", "갑오징어 낚시", "쭈갑 출조", "쭈꾸미 마릿수"];
+const PAGE_SIZE = 100;
+const MAX_PAGES = 3; // 네이버 검색은 start 로 다음 100건씩 넘길 수 있다 (최대 300건)
+
+export function fishQueries(since: string, now = new Date()): string[] {
+  const out = [...BASE_QUERY];
+  const sy = Number(since.slice(0, 4));
+  const sm = Number(since.slice(5, 7));
+  const ey = now.getFullYear();
+  const em = now.getMonth() + 1;
+  for (let y = sy, m = sm; y < ey || (y === ey && m <= em); m++) {
+    if (m > 12) {
+      y++;
+      m = 0;
+      continue;
+    }
+    out.push(`쭈갑 ${m}월 조황`, `쭈꾸미 ${m}월 조황`, `갑오징어 ${m}월 조황`);
+  }
+  return out;
+}
 const IS_REPORT = /조황|조과|출조|마릿수|조행|쭈꾸미|주꾸미|갑오징어|쭈갑/;
 
 export type NaverItem = { title: string; description: string; link: string; postdate?: string };
@@ -60,17 +80,22 @@ export function itemToReport(it: NaverItem, port: string, kind: "blog" | "cafe",
 }
 
 // 기본은 NAVER API HUB(네이버 클라우드 플랫폼), NAVER_API_MODE=legacy 이면 예전 개발자센터 주소를 쓴다
-async function search(kind: "blog" | "cafe", query: string, fetcher: typeof fetch): Promise<NaverItem[]> {
+async function search(kind: "blog" | "cafe", query: string, fetcher: typeof fetch, start = 1): Promise<NaverItem[]> {
   const e = naverEnv();
   const legacy = (process.env.NAVER_API_MODE ?? "").trim().toLowerCase() === "legacy";
-  const q = `query=${encodeURIComponent(query)}&display=100&sort=date`;
+  const q = `query=${encodeURIComponent(query)}&display=${PAGE_SIZE}&start=${start}&sort=date`;
   const url = legacy
     ? `https://openapi.naver.com/v1/search/${kind === "blog" ? "blog" : "cafearticle"}.json?${q}`
     : `https://naverapihub.apigw.ntruss.com/search/v1/${kind === "blog" ? "blog" : "cafearticle"}?${q}`;
   const headers: Record<string, string> = legacy
     ? { "X-Naver-Client-Id": e.id, "X-Naver-Client-Secret": e.secret }
     : { "X-NCP-APIGW-API-KEY-ID": e.id, "X-NCP-APIGW-API-KEY": e.secret };
-  const r = await fetcher(url, { headers });
+  let r = await fetcher(url, { headers });
+  if (r.status === 429) {
+    // 너무 빨리 불렀을 때는 잠깐 쉬었다가 한 번 더
+    await new Promise((res) => setTimeout(res, 1500));
+    r = await fetcher(url, { headers });
+  }
   if (!r.ok) {
     const body = await r.text().catch(() => "");
     let code = "";
@@ -100,13 +125,21 @@ export async function collectNaver(since: string, by: string, fetcher: typeof fe
   }
   const seen = new Set<string>();
   const tasks: Array<{ port: string; f: string; kind: "blog" | "cafe" }> = [];
-  for (const port of TIDE_PORTS) for (const f of FISH_QUERY) for (const kind of ["blog", "cafe"] as const) tasks.push({ port, f, kind });
+  for (const port of TIDE_PORTS) for (const f of fishQueries(since)) for (const kind of ["blog", "cafe"] as const) tasks.push({ port, f, kind });
   let stop = false;
   const runOne = async (t: { port: string; f: string; kind: "blog" | "cafe" }) => {
     if (stop) return;
     let items: NaverItem[] = [];
     try {
-      items = await search(t.kind, `${PORT_WORDS[t.port]![0]} ${t.f}`, fetcher);
+      // 100건이 꽉 차 있고 아직 시작일보다 최근 글이면 다음 100건도 가져온다
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const got = await search(t.kind, `${PORT_WORDS[t.port]![0]} ${t.f}`, fetcher, page * PAGE_SIZE + 1);
+        items.push(...got);
+        if (got.length < PAGE_SIZE) break;
+        const dated = got.map((g) => g.postdate).filter((d): d is string => !!d && /^\d{8}$/.test(d));
+        const oldest = dated.sort()[0];
+        if (oldest && `${oldest.slice(0, 4)}-${oldest.slice(4, 6)}-${oldest.slice(6, 8)}` < since) break;
+      }
     } catch (e: any) {
       out.error = e?.message ?? String(e);
       if (/거절/.test(out.error!)) stop = true;
@@ -161,7 +194,7 @@ export function naverJobStatus(): NaverJob {
 export function startNaverJob(since: string, by: string): boolean {
   if (job.running) return false;
   job.running = true;
-  job.total = TIDE_PORTS.length * FISH_QUERY.length * 2;
+  job.total = TIDE_PORTS.length * fishQueries(since).length * 2;
   job.startedAt = Date.now();
   job.finishedAt = null;
   job.result = { queries: 0, items: 0, added: 0, skipped: 0, failed: 0 };
