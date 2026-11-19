@@ -21328,7 +21328,7 @@ var require_application = __commonJS({
       return this;
     };
     app2.render = function render3(name, options, callback) {
-      var cache2 = this.cache;
+      var cache3 = this.cache;
       var done = callback;
       var engines = this.engines;
       var opts = options;
@@ -21342,7 +21342,7 @@ var require_application = __commonJS({
         renderOptions.cache = this.enabled("view cache");
       }
       if (renderOptions.cache) {
-        view = cache2[name];
+        view = cache3[name];
       }
       if (!view) {
         var View3 = this.get("view");
@@ -21358,7 +21358,7 @@ var require_application = __commonJS({
           return done(err);
         }
         if (renderOptions.cache) {
-          cache2[name] = view;
+          cache3[name] = view;
         }
       }
       tryRender(view, renderOptions, done);
@@ -27010,12 +27010,12 @@ var require_levels = __commonJS({
     function genLsCache(instance) {
       const formatter = instance[formattersSym].level;
       const { labels } = instance.levels;
-      const cache2 = {};
+      const cache3 = {};
       for (const label in labels) {
         const level = formatter(labels[label], Number(label));
-        cache2[label] = JSON.stringify(level).slice(0, -1);
+        cache3[label] = JSON.stringify(level).slice(0, -1);
       }
-      instance[lsCacheSym] = cache2;
+      instance[lsCacheSym] = cache3;
       return instance;
     }
     function isStandardLevel(level, useOnlyCustomLevels) {
@@ -60351,8 +60351,8 @@ var require_cache3 = __commonJS({
        * @returns {requestResponseList}
        */
       #batchCacheOperations(operations) {
-        const cache2 = this.#relevantRequestResponseList;
-        const backupCache = [...cache2];
+        const cache3 = this.#relevantRequestResponseList;
+        const backupCache = [...cache3];
         const addedItems = [];
         const resultList = [];
         try {
@@ -60379,9 +60379,9 @@ var require_cache3 = __commonJS({
                 return [];
               }
               for (const requestResponse of requestResponses) {
-                const idx = cache2.indexOf(requestResponse);
+                const idx = cache3.indexOf(requestResponse);
                 assert2(idx !== -1);
-                cache2.splice(idx, 1);
+                cache3.splice(idx, 1);
               }
             } else if (operation.type === "put") {
               if (operation.response == null) {
@@ -60411,11 +60411,11 @@ var require_cache3 = __commonJS({
               }
               requestResponses = this.#queryCache(operation.request);
               for (const requestResponse of requestResponses) {
-                const idx = cache2.indexOf(requestResponse);
+                const idx = cache3.indexOf(requestResponse);
                 assert2(idx !== -1);
-                cache2.splice(idx, 1);
+                cache3.splice(idx, 1);
               }
-              cache2.push([operation.request, operation.response]);
+              cache3.push([operation.request, operation.response]);
               addedItems.push([operation.request, operation.response]);
             }
             resultList.push([operation.request, operation.response]);
@@ -60592,13 +60592,13 @@ var require_cachestorage = __commonJS({
         if (options.cacheName != null) {
           if (this.#caches.has(options.cacheName)) {
             const cacheList = this.#caches.get(options.cacheName);
-            const cache2 = new Cache2(kConstruct, cacheList);
-            return await cache2.match(request, options);
+            const cache3 = new Cache2(kConstruct, cacheList);
+            return await cache3.match(request, options);
           }
         } else {
           for (const cacheList of this.#caches.values()) {
-            const cache2 = new Cache2(kConstruct, cacheList);
-            const response = await cache2.match(request, options);
+            const cache3 = new Cache2(kConstruct, cacheList);
+            const response = await cache3.match(request, options);
             if (response !== void 0) {
               return response;
             }
@@ -60628,12 +60628,12 @@ var require_cachestorage = __commonJS({
         webidl.argumentLengthCheck(arguments, 1, prefix);
         cacheName = webidl.converters.DOMString(cacheName, prefix, "cacheName");
         if (this.#caches.has(cacheName)) {
-          const cache3 = this.#caches.get(cacheName);
-          return new Cache2(kConstruct, cache3);
+          const cache4 = this.#caches.get(cacheName);
+          return new Cache2(kConstruct, cache4);
         }
-        const cache2 = [];
-        this.#caches.set(cacheName, cache2);
-        return new Cache2(kConstruct, cache2);
+        const cache3 = [];
+        this.#caches.set(cacheName, cache3);
+        return new Cache2(kConstruct, cache3);
       }
       /**
        * @see https://w3c.github.io/ServiceWorker/#cache-storage-delete
@@ -75145,12 +75145,12 @@ async function hashQuery(sql2, params) {
 
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/pg-core/session.js
 var PgPreparedQuery = class {
-  constructor(query, cache2, queryMetadata, cacheConfig) {
+  constructor(query, cache3, queryMetadata, cacheConfig) {
     this.query = query;
-    this.cache = cache2;
+    this.cache = cache3;
     this.queryMetadata = queryMetadata;
     this.cacheConfig = cacheConfig;
-    if (cache2 && cache2.strategy() === "all" && cacheConfig === void 0) {
+    if (cache3 && cache3.strategy() === "all" && cacheConfig === void 0) {
       this.cacheConfig = { enable: true, autoInvalidate: true };
     }
     if (!this.cacheConfig?.enable) {
@@ -75306,8 +75306,8 @@ var PgTransaction = class extends PgDatabase {
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.23.1_pg@8.23.0/node_modules/drizzle-orm/node-postgres/session.js
 var { Pool: Pool2, types: types2 } = esm_default;
 var NodePgPreparedQuery = class extends PgPreparedQuery {
-  constructor(client, queryString, params, logger2, cache2, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
-    super({ sql: queryString, params }, cache2, queryMetadata, cacheConfig);
+  constructor(client, queryString, params, logger2, cache3, queryMetadata, cacheConfig, fields, name, _isResponseInArrayMode, customResultMapper) {
+    super({ sql: queryString, params }, cache3, queryMetadata, cacheConfig);
     this.client = client;
     this.queryString = queryString;
     this.params = params;
@@ -105245,6 +105245,43 @@ var booking_default = bookingRouter;
 // src/routes/catch.ts
 var import_express4 = __toESM(require_express2(), 1);
 
+// src/lib/lunar.ts
+var fmt = null;
+var cache2 = /* @__PURE__ */ new Map();
+function lunarOf(date6) {
+  if (cache2.has(date6)) return cache2.get(date6);
+  let out = null;
+  try {
+    fmt ??= new Intl.DateTimeFormat("ko-KR-u-ca-chinese", { month: "numeric", day: "numeric", timeZone: "Asia/Seoul" });
+    const parts = fmt.formatToParts(/* @__PURE__ */ new Date(`${date6}T12:00:00+09:00`)).filter((p) => p.type === "month" || p.type === "day");
+    const m = parts.find((p) => p.type === "month")?.value ?? "";
+    const d = parts.find((p) => p.type === "day")?.value ?? "";
+    const month = Number(m.replace(/\D/g, ""));
+    const day = Number(d.replace(/\D/g, ""));
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 30) out = { month, day, leap: /윤|bis/i.test(m) };
+  } catch {
+    out = null;
+  }
+  cache2.set(date6, out);
+  return out;
+}
+var lunarLabel = (l) => `\uC74C\uB825 ${l.leap ? "\uC724" : ""}${l.month}\uC6D4 ${l.day}\uC77C`;
+function sameLunarLastYear(date6) {
+  const l = lunarOf(date6);
+  if (!l) return null;
+  const y = Number(date6.slice(0, 4)) - 1;
+  const base = Date.UTC(y, Number(date6.slice(5, 7)) - 1, Number(date6.slice(8, 10)));
+  for (let i = 0; i <= 45; i++) {
+    for (const sign2 of [1, -1]) {
+      const t = new Date(base + sign2 * i * 864e5);
+      const s = t.toISOString().slice(0, 10);
+      const c = lunarOf(s);
+      if (c && c.month === l.month && c.day === l.day && c.leap === l.leap) return `${t.getUTCMonth() + 1}/${t.getUTCDate()}`;
+    }
+  }
+  return null;
+}
+
 // src/lib/catch-reports.ts
 var ready = null;
 function ensureTable() {
@@ -105352,7 +105389,9 @@ async function buildInsights(from, to, port2, topPercent = 20) {
       flowLabel: null,
       weather: null,
       tideRange: null,
-      tideNote: null
+      tideNote: null,
+      lunar: null,
+      lunarLastYear: null
     });
   }
   good.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
@@ -105363,6 +105402,11 @@ async function buildInsights(from, to, port2, topPercent = 20) {
     tideByKey.set(key, await getTideMonth(p, Number(ym.slice(0, 4)), Number(ym.slice(5, 7))));
   }
   for (const g of good) {
+    const lu = lunarOf(g.date);
+    if (lu) {
+      g.lunar = lunarLabel(lu);
+      g.lunarLastYear = sameLunarLastYear(g.date);
+    }
     const month = tideByKey.get(`${g.port}|${g.date.slice(0, 7)}`);
     const day = month?.days.find((d) => d.date === g.date);
     if (day) {
@@ -105375,13 +105419,23 @@ async function buildInsights(from, to, port2, topPercent = 20) {
       g.tideNote = month?.message ?? "\uADF8\uB0A0 \uBB3C\uB54C \uC790\uB8CC\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC5B4\uC694";
     }
   }
-  const tally = (pick2) => {
+  const tally = (pick2, order) => {
     const m = /* @__PURE__ */ new Map();
     for (const g of good) {
       const k = pick2(g);
       if (k) m.set(k, (m.get(k) ?? 0) + 1);
     }
-    return [...m.entries()].map(([label, days]) => ({ label, days })).sort((a, b) => b.days - a.days);
+    return [...m.entries()].map(([label, days]) => ({ label, days })).sort((a, b) => order ? order(a.label, b.label) : b.days - a.days);
+  };
+  const num = (t) => Number(/\d+/.exec(t)?.[0] ?? 0);
+  const rangeBucket = (g) => g.tideRange === null ? null : `${Math.floor(g.tideRange / 100) * 100}~${Math.floor(g.tideRange / 100) * 100 + 99}cm`;
+  const lunarMonth = (g) => {
+    const l = lunarOf(g.date);
+    return l ? `\uC74C\uB825 ${l.leap ? "\uC724" : ""}${l.month}\uC6D4` : null;
+  };
+  const lunarPart = (g) => {
+    const l = lunarOf(g.date);
+    return l ? l.day <= 10 ? "\uCD08\uC21C (1~10\uC77C)" : l.day <= 20 ? "\uC911\uC21C (11~20\uC77C)" : "\uD558\uC21C (21~30\uC77C)" : null;
   };
   const flowBucket = (g) => g.flowPercent === null ? null : g.flowPercent >= 80 ? "\uAC15\uD568 (80% \uC774\uC0C1)" : g.flowPercent >= 50 ? "\uBCF4\uD1B5 (50~79%)" : "\uC57D\uD568 (50% \uBBF8\uB9CC)";
   return {
@@ -105392,6 +105446,9 @@ async function buildInsights(from, to, port2, topPercent = 20) {
     byMulddae: tally((g) => g.mulddae),
     byFlow: tally(flowBucket),
     byPort: tally((g) => g.port),
+    byRange: tally(rangeBucket, (a, b) => num(a) - num(b)),
+    byLunarMonth: tally(lunarMonth, (a, b) => num(a) - num(b) || a.localeCompare(b)),
+    byLunarPart: tally(lunarPart, (a, b) => num(a) - num(b)),
     topPercent
   };
 }
@@ -105481,7 +105538,25 @@ var PORT_WORDS = {
   \uC624\uCC9C\uD56D: ["\uC624\uCC9C\uD56D", "\uC624\uCC9C"],
   \uB9C8\uAC80\uD3EC: ["\uB9C8\uAC80\uD3EC"]
 };
-var FISH_QUERY = ["\uCB48\uAFB8\uBBF8 \uC870\uD669", "\uAC11\uC624\uC9D5\uC5B4 \uC870\uD669", "\uCB48\uAC11 \uC870\uD669"];
+var BASE_QUERY = ["\uCB48\uAFB8\uBBF8 \uC870\uD669", "\uAC11\uC624\uC9D5\uC5B4 \uC870\uD669", "\uCB48\uAC11 \uC870\uD669", "\uCB48\uAFB8\uBBF8 \uB09A\uC2DC", "\uAC11\uC624\uC9D5\uC5B4 \uB09A\uC2DC", "\uCB48\uAC11 \uCD9C\uC870", "\uCB48\uAFB8\uBBF8 \uB9C8\uB9BF\uC218"];
+var PAGE_SIZE = 100;
+var MAX_PAGES = 3;
+function fishQueries(since, now = /* @__PURE__ */ new Date()) {
+  const out = [...BASE_QUERY];
+  const sy = Number(since.slice(0, 4));
+  const sm = Number(since.slice(5, 7));
+  const ey = now.getFullYear();
+  const em = now.getMonth() + 1;
+  for (let y = sy, m = sm; y < ey || y === ey && m <= em; m++) {
+    if (m > 12) {
+      y++;
+      m = 0;
+      continue;
+    }
+    out.push(`\uCB48\uAC11 ${m}\uC6D4 \uC870\uD669`, `\uCB48\uAFB8\uBBF8 ${m}\uC6D4 \uC870\uD669`, `\uAC11\uC624\uC9D5\uC5B4 ${m}\uC6D4 \uC870\uD669`);
+  }
+  return out;
+}
 var IS_REPORT = /조황|조과|출조|마릿수|조행|쭈꾸미|주꾸미|갑오징어|쭈갑/;
 function naverEnv() {
   const clean = (v) => (v ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
@@ -105506,13 +105581,17 @@ function itemToReport(it, port2, kind, since, now = /* @__PURE__ */ new Date()) 
   const tag = kind === "blog" ? "\uBE14\uB85C\uADF8" : "\uCE74\uD398";
   return { ...p, note: `[${tag}] ${p.note}`.slice(0, 300), port: port2 };
 }
-async function search(kind, query, fetcher) {
+async function search(kind, query, fetcher, start = 1) {
   const e = naverEnv();
   const legacy = (process.env.NAVER_API_MODE ?? "").trim().toLowerCase() === "legacy";
-  const q = `query=${encodeURIComponent(query)}&display=100&sort=date`;
+  const q = `query=${encodeURIComponent(query)}&display=${PAGE_SIZE}&start=${start}&sort=date`;
   const url2 = legacy ? `https://openapi.naver.com/v1/search/${kind === "blog" ? "blog" : "cafearticle"}.json?${q}` : `https://naverapihub.apigw.ntruss.com/search/v1/${kind === "blog" ? "blog" : "cafearticle"}?${q}`;
   const headers = legacy ? { "X-Naver-Client-Id": e.id, "X-Naver-Client-Secret": e.secret } : { "X-NCP-APIGW-API-KEY-ID": e.id, "X-NCP-APIGW-API-KEY": e.secret };
-  const r = await fetcher(url2, { headers });
+  let r = await fetcher(url2, { headers });
+  if (r.status === 429) {
+    await new Promise((res) => setTimeout(res, 1500));
+    r = await fetcher(url2, { headers });
+  }
   if (!r.ok) {
     const body = await r.text().catch(() => "");
     let code = "";
@@ -105541,13 +105620,20 @@ async function collectNaver(since, by, fetcher = fetch, onProgress) {
   }
   const seen = /* @__PURE__ */ new Set();
   const tasks = [];
-  for (const port2 of TIDE_PORTS) for (const f of FISH_QUERY) for (const kind of ["blog", "cafe"]) tasks.push({ port: port2, f, kind });
+  for (const port2 of TIDE_PORTS) for (const f of fishQueries(since)) for (const kind of ["blog", "cafe"]) tasks.push({ port: port2, f, kind });
   let stop = false;
   const runOne = async (t) => {
     if (stop) return;
     let items = [];
     try {
-      items = await search(t.kind, `${PORT_WORDS[t.port][0]} ${t.f}`, fetcher);
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const got = await search(t.kind, `${PORT_WORDS[t.port][0]} ${t.f}`, fetcher, page * PAGE_SIZE + 1);
+        items.push(...got);
+        if (got.length < PAGE_SIZE) break;
+        const dated = got.map((g) => g.postdate).filter((d) => !!d && /^\d{8}$/.test(d));
+        const oldest = dated.sort()[0];
+        if (oldest && `${oldest.slice(0, 4)}-${oldest.slice(4, 6)}-${oldest.slice(6, 8)}` < since) break;
+      }
     } catch (e) {
       out.error = e?.message ?? String(e);
       if (/거절/.test(out.error)) stop = true;
@@ -105596,7 +105682,7 @@ function naverJobStatus() {
 function startNaverJob(since, by) {
   if (job.running) return false;
   job.running = true;
-  job.total = TIDE_PORTS.length * FISH_QUERY.length * 2;
+  job.total = TIDE_PORTS.length * fishQueries(since).length * 2;
   job.startedAt = Date.now();
   job.finishedAt = null;
   job.result = { queries: 0, items: 0, added: 0, skipped: 0, failed: 0 };

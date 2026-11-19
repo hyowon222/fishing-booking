@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, ClipboardPaste, Fish, LoaderCircle, Plus, Star, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ClipboardPaste, ExternalLink, Fish, LoaderCircle, Plus, Star, Trash2, X } from 'lucide-react';
 
 type Report = { id: number; date: string; port: string; vessel: string; species: string; count: number | null; note: string; markedGood: boolean; source: string };
+// 저장된 출처에서 원문 주소를 만든다 (네이버 글, 사이트 조황 게시판)
+function sourceLink(source: string): string | null {
+  if (source.startsWith('naver:')) {
+    const url = source.slice(6);
+    return /^https?:\/\//.test(url) ? url : null;
+  }
+  const m = /^site:([^:]+):(\d+)$/.exec(source);
+  return m ? `https://${m[1]}/ship/board_detail/${m[2]}` : null;
+}
 type GoodDay = {
   date: string;
   weekday: string;
@@ -71,6 +80,7 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
   const [saving, setSaving] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [naverBusy, setNaverBusy] = useState(false);
+  const [openId, setOpenId] = useState<number | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [pastePort, setPastePort] = useState('삼길포');
@@ -339,16 +349,37 @@ export default function CatchInsights({ onBack }: { onBack: () => void }) {
       {reports.length > 0 && (
         <div className="space-y-1.5">
           <div className="text-sm font-bold">입력한 기록 ({reports.length})</div>
-          {reports.map((r) => (
-            <div key={r.id} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
-              <div className="min-w-0 flex-1">
-                <div className="truncate">{r.date.slice(5).replace('-', '/')} · {r.port}{r.vessel ? ` · ${r.vessel}` : ''}{r.species ? ` · ${r.species}` : ''}{r.count !== null ? ` · ${r.count}마리` : ''}</div>
-                {(r.note || r.markedGood) && <div className="truncate text-[11px] text-muted-foreground">{r.markedGood ? '★ ' : ''}{r.note}</div>}
+          {reports.map((r) => {
+            const link = sourceLink(r.source);
+            const open = openId === r.id;
+            return (
+            <div key={r.id} className="rounded-lg border border-border bg-card px-3 py-2 text-sm" data-testid={`report-${r.id}`}>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setOpenId(open ? null : r.id)} className="min-w-0 flex-1 text-left" aria-expanded={open} data-testid={`report-toggle-${r.id}`}>
+                  <div className="flex items-center gap-1">
+                    <span className="truncate">{r.date.slice(5).replace('-', '/')} · {r.port}{r.vessel ? ` · ${r.vessel}` : ''}{r.species ? ` · ${r.species}` : ''}{r.count !== null ? ` · ${r.count}마리` : ''}</span>
+                    <ChevronDown size={13} className={`shrink-0 text-muted-foreground transition ${open ? 'rotate-180' : ''}`} />
+                  </div>
+                  {!open && (r.note || r.markedGood) && <div className="truncate text-[11px] text-muted-foreground">{r.markedGood ? '★ ' : ''}{r.note}</div>}
+                </button>
+                <button type="button" onClick={() => void toggleGood(r)} className={`rounded-lg border p-1.5 ${r.markedGood ? 'border-amber-400 bg-amber-100 text-amber-600' : 'text-muted-foreground'}`} aria-label={r.markedGood ? '좋았던 날 표시 해제' : '좋았던 날로 표시'} data-testid={`star-${r.id}`}><Star size={14} fill={r.markedGood ? 'currentColor' : 'none'} /></button>
+                <button type="button" onClick={() => remove(r)} className="rounded-lg border p-1.5 text-destructive" aria-label="삭제"><Trash2 size={14} /></button>
               </div>
-              <button type="button" onClick={() => void toggleGood(r)} className={`rounded-lg border p-1.5 ${r.markedGood ? 'border-amber-400 bg-amber-100 text-amber-600' : 'text-muted-foreground'}`} aria-label={r.markedGood ? '좋았던 날 표시 해제' : '좋았던 날로 표시'} data-testid={`star-${r.id}`}><Star size={14} fill={r.markedGood ? 'currentColor' : 'none'} /></button>
-              <button type="button" onClick={() => remove(r)} className="rounded-lg border p-1.5 text-destructive" aria-label="삭제"><Trash2 size={14} /></button>
+              {open && (
+                <div className="mt-2 space-y-2 border-t border-border pt-2" data-testid={`report-detail-${r.id}`}>
+                  <p className="whitespace-pre-wrap break-words text-xs leading-5 text-foreground/90">{r.note || '(저장된 내용이 없어요)'}</p>
+                  {link ? (
+                    <a href={link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary" data-testid={`report-link-${r.id}`}>
+                      <ExternalLink size={12} /> 원문 글 열기
+                    </a>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">직접 입력한 기록이라 원문 링크가 없어요.</p>
+                  )}
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </main>
