@@ -32,15 +32,17 @@ const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const DEFAULT_PORTS = ['삼길포', '대천항', '신진도', '오천항', '마검포'];
 const NO_DATA = '데이터 없음';
 // 쭈꾸미·갑오징어 시즌(9~11월)의 "좋은 날" 기준. 값이 없는 날은 별표를 달지 않는다.
-//  - 물때: 조류가 센 사리(6~9물)와 조금·무시를 뺀 1~5물, 10~12물
-//  - 조류 세기: 바다타임 물흐름(%)이 너무 세지 않은 날(상한만 둔다)
+//  - 물때: 쭈꾸미 낚시 정보에서 입질이 좋다고 하는 1~5물 (조류가 센 사리 6~8물, 조금·무시, 10물 이후는 뺀다)
+//  - 조류 세기: 바다타임 물흐름(%)이 75% 이하 (그 달 고저차가 가장 작은 날을 0%, 가장 큰 날을 100%로 본 값이라
+//    물때가 맞아도 그 달에 유난히 센 날이면 뺀다)
 const STAR_MONTHS = [9, 10, 11];
-const STAR_MULDDAE = [1, 2, 3, 4, 5, 10, 11, 12];
+const STAR_MULDDAE_MIN = 1;
+const STAR_MULDDAE_MAX = 5;
 const STAR_FLOW_MAX = 75;
 
 function isStarDay(day: TideDay): boolean {
   const m = /^(\d{1,2})물$/.exec((day.mulddae ?? '').replace(/\s+/g, ''));
-  if (!m || !STAR_MULDDAE.includes(Number(m[1]))) return false;
+  if (!m || Number(m[1]) < STAR_MULDDAE_MIN || Number(m[1]) > STAR_MULDDAE_MAX) return false;
   if (day.flowPercent === null) return false;
   return day.flowPercent <= STAR_FLOW_MAX;
 }
@@ -135,6 +137,8 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
   const starSeason = STAR_MONTHS.includes(month);
   const starred = (day: TideDay) => starSeason && isStarDay(day);
   const starCount = allDays.filter(starred).length;
+  // 월을 바꾸는 중에는 이전 달 데이터가 남아 있어서, 새 데이터가 도착한 뒤에만 개수·표시 건수를 보여 준다
+  const ready = !loading && !fetchError && !!data && data.status === 'ok' && data.days.length > 0;
   const days = allDays.filter((day) => {
     if (starOnly && starSeason && !starred(day)) return false;
     if (weekdaySel.length > 0 && !weekdaySel.includes(day.weekday)) return false;
@@ -237,10 +241,10 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
               <button type="button" onClick={() => setStarOnly((v) => !v)} className={`${chip(starOnly)} flex items-center gap-1`} data-testid="star-only">
                 <Star size={14} className={starOnly ? 'fill-current' : 'fill-amber-400 text-amber-500'} /> 좋은 날만
               </button>
-              {data && data.days.length > 0 ? <span className="text-xs text-muted-foreground">이 달 쭈꾸미·갑오징어 좋은 날 <b className="text-foreground">{starCount}일</b></span> : null}
+              {ready ? <span className="text-xs text-muted-foreground">이 달 쭈꾸미·갑오징어 좋은 날 <b className="text-foreground">{starCount}일</b></span> : null}
             </div>
           ) : null}
-          {filtered && data && data.days.length > 0 ? (
+          {filtered && ready ? (
             <div className="flex items-center gap-3 pl-14 text-xs text-muted-foreground" data-testid="tide-filter-summary">
               <span>
                 {allDays.length}일 중 <b className="text-foreground">{days.length}일</b> 표시
@@ -356,7 +360,7 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
         )}
         <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
           고저차는 그날 가장 높은 만조와 가장 낮은 간조의 차이입니다. 조류 세기는 바다타임의 물흐름(%) 값입니다. 날씨는 예보가 있는 날짜만 표시됩니다. 값이 없는 달은 아직 바다타임에 올라오지 않은 것입니다.
-          {starSeason ? ` ★ 표시는 9~11월 쭈꾸미·갑오징어 좋은 날로, 물때가 ${STAR_MULDDAE.map((n) => `${n}물`).join('·')}이고 조류 세기가 ${STAR_FLOW_MAX}% 이하인 날입니다(조류가 센 날은 제외). 물때나 조류 값이 없는 날은 표시하지 않습니다.` : ''}
+          {starSeason ? ` ★ 표시는 9~11월 쭈꾸미·갑오징어 좋은 날로, 물때가 ${STAR_MULDDAE_MIN}~${STAR_MULDDAE_MAX}물이고 조류 세기가 ${STAR_FLOW_MAX}% 이하인 날입니다. 조류가 센 사리 때와 조금·무시는 표시하지 않고, 물때나 조류 값이 없는 날도 표시하지 않습니다. (쭈꾸미 낚시 정보 기준이며 갑오징어도 같은 기준으로 봅니다)` : ''}
         </p>
       </section>
     </main>
