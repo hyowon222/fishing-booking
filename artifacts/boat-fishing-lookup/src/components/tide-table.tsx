@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, RefreshCw, Waves } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Star, Waves } from 'lucide-react';
 
 type TideEvent = { time: string; height: number | null; delta: number | null };
 type TideDay = {
@@ -31,6 +31,25 @@ const YEARS = [NOW.getFullYear(), NOW.getFullYear() + 1];
 const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const DEFAULT_PORTS = ['삼길포', '대천항', '신진도', '오천항', '마검포'];
 const NO_DATA = '데이터 없음';
+// 쭈꾸미·갑오징어 시즌(9~11월)의 "좋은 날" 기준. 값이 없는 날은 별표를 달지 않는다.
+//  - 물때: 조류가 너무 센 사리(6~9물)와 너무 약한 조금 전후(13물~2물)를 피한 중간 물때
+//  - 조류 세기: 바다타임 물흐름(%)이 너무 약하지도 세지도 않은 구간
+const STAR_MONTHS = [9, 10, 11];
+const STAR_MULDDAE = [3, 4, 5, 10, 11, 12];
+const STAR_FLOW_MIN = 25;
+const STAR_FLOW_MAX = 75;
+
+function isStarDay(day: TideDay): boolean {
+  const m = /^(\d{1,2})물$/.exec((day.mulddae ?? '').replace(/\s+/g, ''));
+  if (!m || !STAR_MULDDAE.includes(Number(m[1]))) return false;
+  if (day.flowPercent === null) return false;
+  return day.flowPercent >= STAR_FLOW_MIN && day.flowPercent <= STAR_FLOW_MAX;
+}
+
+function StarMark() {
+  return <Star size={14} className="ml-1 inline-block -translate-y-px fill-amber-400 text-amber-500" aria-label="쭈꾸미·갑오징어 좋은 날" />;
+}
+
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const RANGE_BUCKETS = [
   { key: 'r0', label: '299cm 이하', test: (v: number) => v < 300 },
@@ -84,6 +103,7 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [weekdaySel, setWeekdaySel] = useState<string[]>([]);
   const [rangeSel, setRangeSel] = useState<string[]>([]);
+  const [starOnly, setStarOnly] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -113,7 +133,11 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
   const ports = data?.ports?.length ? data.ports : DEFAULT_PORTS;
   const toggle = (list: string[], value: string) => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value]);
   const allDays = data?.days ?? [];
+  const starSeason = STAR_MONTHS.includes(month);
+  const starred = (day: TideDay) => starSeason && isStarDay(day);
+  const starCount = allDays.filter(starred).length;
   const days = allDays.filter((day) => {
+    if (starOnly && starSeason && !starred(day)) return false;
     if (weekdaySel.length > 0 && !weekdaySel.includes(day.weekday)) return false;
     if (rangeSel.length > 0) {
       if (day.range === null) return false;
@@ -122,7 +146,7 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
     }
     return true;
   });
-  const filtered = weekdaySel.length > 0 || rangeSel.length > 0;
+  const filtered = weekdaySel.length > 0 || rangeSel.length > 0 || (starOnly && starSeason);
   const chip = (active: boolean) =>
     `rounded-full border px-3.5 py-2 text-sm font-semibold transition ${
       active ? 'border-primary bg-primary text-primary-foreground' : 'border-input hover:bg-muted'
@@ -208,6 +232,15 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
               </button>
             ))}
           </div>
+          {starSeason ? (
+            <div className="flex flex-wrap items-center gap-2" data-testid="tide-star-filter">
+              <span className="w-12 text-xs font-bold text-muted-foreground">추천</span>
+              <button type="button" onClick={() => setStarOnly((v) => !v)} className={`${chip(starOnly)} flex items-center gap-1`} data-testid="star-only">
+                <Star size={14} className={starOnly ? 'fill-current' : 'fill-amber-400 text-amber-500'} /> 좋은 날만
+              </button>
+              {data && data.days.length > 0 ? <span className="text-xs text-muted-foreground">이 달 쭈꾸미·갑오징어 좋은 날 <b className="text-foreground">{starCount}일</b></span> : null}
+            </div>
+          ) : null}
           {filtered && data && data.days.length > 0 ? (
             <div className="flex items-center gap-3 pl-14 text-xs text-muted-foreground" data-testid="tide-filter-summary">
               <span>
@@ -218,6 +251,7 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
                 onClick={() => {
                   setWeekdaySel([]);
                   setRangeSel([]);
+                  setStarOnly(false);
                 }}
                 className="rounded-lg border border-input px-2.5 py-1 font-semibold hover:bg-muted"
                 data-testid="button-filter-reset"
@@ -265,6 +299,7 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
                 <div className="flex items-baseline justify-between gap-2">
                   <div className={`text-sm font-bold ${weekdayClass(day.weekday)}`}>
                     {Number(day.date.slice(8, 10))}일({day.weekday})
+                    {starred(day) ? <StarMark /> : null}
                     <span className="ml-2 text-[11px] font-normal text-muted-foreground">{day.lunar ? `음력 ${day.lunar}` : ''}</span>
                   </div>
                   <div className="text-sm font-semibold">{day.mulddae ?? <NoData />}</div>
@@ -300,6 +335,7 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
                     <td className="whitespace-nowrap px-3 py-2.5">
                       <div className={`font-semibold ${weekdayClass(day.weekday)}`}>
                         {Number(day.date.slice(8, 10))}일({day.weekday})
+                        {starred(day) ? <StarMark /> : null}
                       </div>
                       <div className="text-[11px] text-muted-foreground">{day.lunar ? `음력 ${day.lunar}` : ''}</div>
                     </td>
@@ -321,6 +357,7 @@ export default function TideTable({ onBack }: { onBack: () => void }) {
         )}
         <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
           고저차는 그날 가장 높은 만조와 가장 낮은 간조의 차이입니다. 조류 세기는 바다타임의 물흐름(%) 값입니다. 날씨는 예보가 있는 날짜만 표시됩니다. 값이 없는 달은 아직 바다타임에 올라오지 않은 것입니다.
+          {starSeason ? ` ★ 표시는 9~11월 쭈꾸미·갑오징어 좋은 날로, 물때가 ${STAR_MULDDAE.map((n) => `${n}물`).join('·')}이고 조류 세기가 ${STAR_FLOW_MIN}~${STAR_FLOW_MAX}%인 날입니다(조류가 너무 약하거나 센 날은 제외). 물때나 조류 값이 없는 날은 표시하지 않습니다.` : ''}
         </p>
       </section>
     </main>
